@@ -43,4 +43,4 @@ Open `index.html` in a browser. (If your browser blocks local files, run `python
 
 ## Files
 
-See `PLAN.md` for the full design: architecture, physics model, the complete KSP feature map, the mods whose ideas are planned in, and the roadmap.
+See `PLAN.md` for the full design: architecture, physics model, building system, art direction, the complete KSP feature map, the mods whose ideas are planned in, and the step-by-step roadmap. `PARTS.md` lists every stock KSP part and its planned Flatspace equivalent.
