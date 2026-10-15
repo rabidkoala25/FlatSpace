@@ -65,7 +65,8 @@ art/overrides/                  B2  hand-made PNGs that replace generated sprite
 art.html                        B1  sprite gallery for reviewing art
 lib/planck.min.js, js/physics.js   C1  rigid-body engine and its integration
 js/joints.js                    C2  structural loads and articulated joints
-js/aero.js                      C3  atmosphere, drag, lift, buoyancy
+js/ropes.js                     C3  ropes, cables and physical parachutes
+js/aero.js                      C4  atmosphere, drag, lift, buoyancy
 ```
 
 Later steps add `science.js`, `career.js`, `comms.js`, `resources.js`, `crew.js`, `thermal.js`, `autopilot.js`, `missions.js`, `packs.js`.
@@ -98,21 +99,33 @@ Later steps add `science.js`, `career.js`, `comms.js`, `resources.js`, `crew.js`
 
 **Terrain.** Each body's surface is a periodic fractal noise function of longitude, with craters on moons, flattened around the launch site. It's computed on the fly at whatever detail the zoom level needs, so there are no tiles to store.
 
+**Moving parts are simulated, not animated (from Phase C).** Anything that swings, folds, hangs or stretches is a real physics object with mass, joined to the craft by constraints. Its motion comes from the simulation, not from a canned animation or a force added to one rigid body:
+- parachute canopies on their rigging lines;
+- ropes, cables and tethers;
+- hinges, pistons and rotors;
+- landing-leg and gear suspension, and wheels;
+- bay doors, fairing halves, and deployable solar panels and antennas.
+
+So a craft swings under its parachute, a rope pulls on both things it connects, a solar panel left open in thick air bends and snaps off, and a fairing half tumbles away. Parts that never move relative to each other stay welded into one rigid body, so ordinary rockets stay fast to simulate.
+
 #### The physics upgrade (Phase C)
 
-The prototype's physics is enough for a single rigid rocket in flight. Phase C replaces it with a fuller model, before the parts that depend on it (legs, wheels, docking, wings, robotics) are built.
+The prototype's physics is enough for a single rigid rocket in flight. Phase C replaces it with a fuller model, before the parts that depend on it (legs, parachutes, ropes, wheels, docking, wings, robotics) are built.
 
 | Area | Prototype | After Phase C |
 |---|---|---|
 | Bodies and contacts | One rigid rocket; two ground test points | Rigid-body engine (planck.js): every part's hull collides with terrain, debris and other vessels; friction, tipping, rolling, bouncing (C1) |
 | Large distances and speeds | Positions relative to the planet | Floating origin plus a moving reference frame (the idea behind KSP's "Krakensbane"): the solver only sees small coordinates and the speeds relative to the active craft, so orbital velocity doesn't break the rigid-body engine's limits (C1) |
 | Structure | Unbreakable | Loads computed at every joint from thrust, drag and inertia; joints have strengths by size; overloaded joints break (C2) |
-| Mechanisms | None | Springs, hinges, sliders and wheel joints, used later by legs, gear, wheels, robotics and docking (C2) |
-| Atmosphere | Pressure only | Temperature profile, density from pressure and temperature, speed of sound and Mach number (C3) |
-| Aerodynamics | One drag sum and a fin hack | Per-part drag with shielding (parts behind others or inside fairings get less drag), Mach drag rise, lift on fins, wings and bodies, aerodynamic torque from where each force acts (C3) |
-| Water | Splashdown only | Buoyancy and water drag: craft float, tip and sink (C3) |
-| Integration | Semi-implicit Euler | A symplectic integrator that conserves orbital energy; clean hand-off between physics and on-rails; spin kept through time warp; optional thrust during warp for low-thrust engines (C4) |
-| Prediction | 3 patches | Root-finding encounter search, more patches, KSP-style display modes (C4) |
+| Mechanisms | None | Articulated parts: anything with a hinge, slider, spring or wheel is its own body joined to the craft, with motors, limits, springs and damping. Used by legs, gear, wheels, doors, solar panels, robotics and docking (C2) |
+| Separation | Parts jump apart | Decouplers push with a real ejection force; fairing halves and bay doors are bodies that hinge open and fly off (C2) |
+| Parachutes | A drag number added to the craft | A canopy body on rigging lines. It opens in stages with an opening shock; the craft swings beneath it; it drifts with the air, collapses and drapes on landing, and can be cut away (C3) |
+| Ropes and cables | None | Ropes of linked segments with slack, tension, stretch and a breaking strength; they collide with the ground and pull on both ends (C3) |
+| Atmosphere | Pressure only | Temperature profile, density from pressure and temperature, speed of sound and Mach number (C4) |
+| Aerodynamics | One drag sum and a fin hack | Per-part drag with shielding (parts behind others or inside fairings get less drag), Mach drag rise, lift on fins, wings and bodies, aerodynamic torque from where each force acts (C4) |
+| Water | Splashdown only | Buoyancy and water drag: craft float, tip and sink (C4) |
+| Integration | Semi-implicit Euler | A symplectic integrator that conserves orbital energy; clean hand-off between physics and on-rails; spin kept through time warp; optional thrust during warp for low-thrust engines (C5) |
+| Prediction | 3 patches | Root-finding encounter search, more patches, KSP-style display modes (C5) |
 
 ### 1.4 Building: drag-and-drop assembly (steps A1–A4)
 
@@ -228,14 +241,16 @@ Legend: **P** = in the prototype now · **A0–G8** = the roadmap step that deli
 | SAS modes | Normal/anti-normal don't exist in 2D; all others kept | **P** (stability, pro, retro, radial ±, maneuver) / D4 (target) |
 | Navball | 2D attitude dial with horizon and markers | **P** / B5 (pixel art) |
 | Surface / orbit / target speed modes | Auto-switch by altitude, click to toggle | **P** (auto) / D4 |
-| Aerodynamics: drag, lift, stability | Angle-dependent drag (A1); shielding, Mach effects, lift (C3) | **P** / A1 / C3 |
+| Aerodynamics: drag, lift, stability | Angle-dependent drag (A1); shielding, Mach effects, lift (C4) | **P** / A1 / C4 |
 | Reentry heating & part temperature | Per-part temperature, heat shields with ablator | E5 |
-| Parachutes (semi-deploy, full deploy, cut) | Same, with all stack and radial chutes | **P** / D1 |
+| Parachutes (semi-deploy, full deploy, cut) | Physically simulated canopies on rigging lines (C3); all stack and radial chutes (D1) | **P** / C3 / D1 |
+| Ropes, tethers, winches, towing | Rope physics (C3); winch, tether and tow parts (G3) | C3 / G3 |
+| Moving parts (legs, doors, panels, hinges) | Real bodies on joints, not animations | C2 |
 | Landing legs | Legs with spring suspension | D1 |
 | Wheels and rovers | Wheels driving along the terrain | F8 |
-| Splashdown, floating | Splashdown now; buoyancy in C3 | **P** / C3 |
+| Splashdown, floating | Splashdown now; buoyancy in C4 | **P** / C4 |
 | Action groups (Gear, Lights, Brakes, Abort, 1–9) | Same | D2 |
-| Time warp, physics warp, warp limits by altitude | Same; thrust during warp option for low-thrust engines | **P** / C4 |
+| Time warp, physics warp, warp limits by altitude | Same; thrust during warp option for low-thrust engines | **P** / C5 |
 | Debris and multiple vessels; switching vessels | Vessel list; `[` `]` to switch | **P** (debris) / D3 |
 | Tracking Station | Vessel list plus map | D3 |
 | Rendezvous: target, closest approach markers | Same | D4 |
@@ -252,9 +267,9 @@ Legend: **P** = in the prototype now · **A0–G8** = the roadmap step that deli
 
 | KSP feature | 2D version | Step |
 |---|---|---|
-| Patched conics with SOI changes | Same | **P** / C4 (better predictor) |
+| Patched conics with SOI changes | Same | **P** / C5 (better predictor) |
 | Ap/Pe, time to Ap/Pe, period | Same | **P** |
-| Encounters and multi-patch prediction | 3 patches now; more in C4 | **P** / C4 |
+| Encounters and multi-patch prediction | 3 patches now; more in C5 | **P** / C5 |
 | Maneuver nodes | Prograde + radial only, since a 2D orbit has no plane to change | **P** / A0 (nodes survive SOI changes) |
 | Maneuver Mode (exact node inputs) | Node panel with ±1/10/100 buttons and time shifting | **P** / D4 (drag handles on the map) |
 | Maneuver Tool (Hohmann, circularize, change Ap/Pe) | One-click node generators | D4 |
@@ -334,8 +349,8 @@ The community's most-recommended mods (from KSP forum and Reddit mod surveys, PC
 | **RealPlume / Waterfall** | Exhaust that widens in vacuum | Animated pixel plumes, Mach diamonds in air | **P** (basic) / B4 |
 | **Collision FX** | Sparks and debris on impact | Pixel sparks, debris and scorch marks | B4 |
 | **Kerbal Joint Reinforcement** | Stiffer joints | Joint strengths in C2; optional flex model in G4 | C2 / G4 |
-| **Ferram Aerospace Research (FAR)** | Realistic aerodynamics | Shielding, Mach drag rise and lift (C3); extra "advanced aero" detail with spaceplanes (F6) | C3 / F6 |
-| **Persistent Thrust** | Low-thrust engines keep burning during time warp | Thrust-during-warp option | C4 |
+| **Ferram Aerospace Research (FAR)** | Realistic aerodynamics | Shielding, Mach drag rise and lift (C4); extra "advanced aero" detail with spaceplanes (F6) | C4 / F6 |
+| **Persistent Thrust** | Low-thrust engines keep burning during time warp | Thrust-during-warp option | C5 |
 | **Kerbal Alarm Clock** | Alarms that stop warp | Alarm list with auto-stop | D4 |
 | **MechJeb 2** | Autopilots and maneuver planner | Node auto-execution (D4); autopilot panel: ascent, circularize, landing (E8) | D4 / E8 |
 | **Trajectories** | Predicted path including drag; landing spot | Drag-aware impact prediction | E8 |
@@ -348,7 +363,8 @@ The community's most-recommended mods (from KSP forum and Reddit mod surveys, PC
 | **Kerbal Construction Time / RP-1 build times** | Building and research take time | Career option | F10 |
 | **CKAN** | Mod manager | Built-in Packs menu | G1 |
 | **Outer Planets Mod / Galaxies Unbound** | More planets and stars | Planet packs (an example planet pack ships with G1) | G1 |
-| **KIS / KAS** | Carry parts on EVA, winches, pipes | Inventory, tethers, construction on EVA | G3 |
+| **RealChute** | Realistic parachutes: staged deployment, sizing, opening shock | Physical canopies with staged opening and shock (C3); deploy settings and canopy sizing (D1) | C3 / D1 |
+| **KIS / KAS** | Carry parts on EVA, winches, pipes | Inventory, tethers, winches and towing on C3 ropes; construction on EVA | G3 |
 | **Principia** | N-body gravity, Lagrange points | "N-body" option with a numerical integrator | G4 |
 | **Real Solar System + Realism Overhaul + RP-1** | Earth-scale system, realistic engines | Realism preset: 10× scale, limited ignitions, ullage | G4 |
 | **Dang It! / Kerbalism failures** | Random part failures | Reliability option | G4 |
@@ -388,7 +404,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 1. **Prepare the prototype (A0).** Separate the simulation from the drawing and set up tests, so the renderer, the physics and the editor can each be replaced later without tangling.
 2. **Building (A1–A4).** The part tree changes the data every later system reads (mass, drag, contact points, staging), so it comes next.
 3. **Art (B1–B5).** Before any new parts are added, so every part from then on is drawn once, in pixel art.
-4. **Physics (C1–C4).** Before legs, wheels, docking, wings and robotics, which all need contacts, joints and lift.
+4. **Physics (C1–C5).** Before legs, parachutes, wheels, docking, wings and robotics, which all need contacts, joints, ropes and lift.
 5. **Content (D–G).** The parts catalogue is built alongside the features that use it, with dedicated parts steps (D5, D6, D7, F7) for the big families. Mod packs come last, on top of the pack loader.
 
 ### 4.4 Status
@@ -410,9 +426,10 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 | B5 | Interface reskin and title screen | ☐ |
 | **C** | **Physics upgrade** | |
 | C1 | Rigid bodies, collisions, floating origin | ☐ |
-| C2 | Joints, loads and breaking | ☐ |
-| C3 | Atmosphere, aerodynamics and water | ☐ |
-| C4 | Orbit precision and prediction | ☐ |
+| C2 | Joints, articulated parts and breaking | ☐ |
+| C3 | Ropes, cables and parachutes | ☐ |
+| C4 | Atmosphere, aerodynamics and water | ☐ |
+| C5 | Orbit precision and prediction | ☐ |
 | **D** | **Complete sandbox** | |
 | D1 | Landing legs and parachutes | ☐ |
 | D2 | RCS, control parts, action groups, fuel control | ☐ |
@@ -452,7 +469,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 | G7 | Bases, stations and colonies pack | ☐ |
 | G8 | Classic rockets pack and final parts audit | ☐ |
 
-48 steps after the prototype.
+49 steps after the prototype.
 
 ### Prototype (done)
 
@@ -651,7 +668,7 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 - **Launch steam:** a ground steam cloud rolling out of the flame trench.
 - **Explosions:** frame sequences, debris pixels, scorch marks, light screen shake.
 - **Reentry:** plasma glow and streaks shaped by speed, plus heat tint on parts.
-- **Parachutes:** canopy opening animation and sway.
+- **Parachutes:** canopy art built from segments, so the physics in C3 can bend, inflate and swing it.
 - **Staging:** separation puffs and sparks.
 
 **Stretch:** heat shimmer above engines.
@@ -695,21 +712,54 @@ See the table in section 1.3 for what changes.
 
 **Done when:** existing ascent and reentry tests still pass within 1%; a rocket on a slope tips over; debris collides with the craft that dropped it; a craft orbiting at 2 km/s stays stable through 10 minutes of physics time.
 
-#### C2 · Joints, loads and breaking
-**Goal:** craft that bend the rules break, and mechanisms become possible.
+#### C2 · Joints, articulated parts and breaking
+**Goal:** craft that bend the rules break, and moving parts become real physics objects.
 
 **Must:**
 - **Joint loads:** the force and torque at every joint in the part tree, from thrust, drag and acceleration.
 - **Joint strength:** set by part size, so overloaded joints break and the craft splits.
 - **Impacts:** break parts by impact speed; the craft survives if its command part does.
 - **Explosions:** damage neighbouring parts.
-- **Joint toolkit:** springs, hinges, sliders, wheel joints and welds, ready for legs (D1), docking (E6), gear (F6), wheels (F8) and robotics (G3).
+- **Joint toolkit:** springs, hinges, sliders, wheel joints and welds, each with limits, motors, stiffness and damping, ready for legs (D1), docking (E6), gear (F6), wheels (F8) and robotics (G3).
+- **Articulated vessels:** parts with a hinge, slider, spring or wheel become separate bodies joined to the rest of the craft. Parts that never move stay welded into one body, for speed. Mass, Δv and staging still treat the craft as one vessel.
+- **Separation:** decouplers push the two halves apart with an ejection force; separated parts keep their own momentum and spin.
+- **Test parts:** a hinged test panel and a sprung test leg, to prove the toolkit before real parts use it.
 
 **Stretch:** a "structural stress" overlay in the editor.
 
-**Done when:** a tall, unstable rocket flipped at maximum dynamic pressure breaks at its weakest joint; a test spring leg bounces and settles.
+**Done when:**
+- a tall, unstable rocket flipped at maximum dynamic pressure breaks at its weakest joint;
+- the test leg compresses, bounces and settles under the craft's weight;
+- the test panel, left open at high speed in the atmosphere, swings back and snaps off.
 
-#### C3 · Atmosphere, aerodynamics and water
+#### C3 · Ropes, cables and parachutes
+**Goal:** parachutes and ropes that behave like fabric and line, not like a drag number.
+
+**Must:**
+- **Rope solver:** ropes made of linked segments (a position-based solver, stable at the game's step size), with:
+  - slack, tension, stretch and damping;
+  - a breaking strength;
+  - collision with the ground;
+  - two-way pull: a rope between two craft tugs on both.
+- **Attachment:** ropes tie to attach points on parts; either end can be released or cut.
+- **Physical parachutes:**
+  - **Canopy:** a body of its own, shaped by a short chain of points so it can bend and billow, tied to the parachute part by rigging lines (ropes).
+  - **Drag:** acts on the canopy, so the craft hangs beneath it and swings like a pendulum before settling.
+  - **Staged opening:** packed → streaming → partly open → fully open, inflating over a few seconds. The opening shock shows on the G-force readout and can break weak joints (C2).
+  - **After opening:** canopies drift with the air, collapse and drape over the ground after landing, and can be cut away to fall as debris.
+  - **Several chutes:** they share the load, and a drogue-then-main sequence works.
+- **Time warp:** ropes and canopies freeze in their current shape when the craft goes on rails, and carry on from there.
+- **Performance:** a budget for active rope segments, shown in the F3 overlay.
+
+**Stretch:** a sky-crane test: a hovering craft lowers a payload on cables and cuts it free.
+
+**Done when:**
+- a capsule under its main chute swings, then settles to a steady descent within 10% of the old drag model's landing speed;
+- the opening shock shows on the G-force readout;
+- a cut canopy drifts away as debris;
+- a payload on a 20 m rope hangs, swings and lands without the rope stretching unrealistically.
+
+#### C4 · Atmosphere, aerodynamics and water
 **Goal:** flight that rewards good design.
 
 **Must:**
@@ -722,7 +772,7 @@ See the table in section 1.3 for what changes.
 
 **Done when:** a rocket without fins flips in the lower atmosphere and the same rocket with fins flies straight; drag peaks near Mach 1; a capsule floats after splashdown.
 
-#### C4 · Orbit precision and prediction
+#### C5 · Orbit precision and prediction
 **Goal:** orbits that stay exactly where they should.
 
 **Must:**
@@ -744,8 +794,8 @@ See the table in section 1.3 for what changes.
 **Goal:** landers and safe recovery.
 
 **Must:**
-- **Landing legs:** all stock landing legs (`PARTS.md`: Ground), with spring suspension from C2, deploy animation and a gear toggle (G).
-- **Parachutes:** all stock parachutes, stack and radial, including drogues; cut and repack.
+- **Landing legs:** all stock landing legs (`PARTS.md`: Ground) as real hinged struts with spring-damper suspension (C2), folding out under physics, with a gear toggle (G).
+- **Parachutes:** all stock parachutes, stack and radial, including drogues, built on the physical canopies from C3; deploy settings (pressure, altitude, opening speed) and canopy sizing (RealChute idea); cut and repack.
 
 **Stretch:** landing guidance marker (vertical speed versus height above ground).
 
@@ -907,7 +957,7 @@ See the table in section 1.3 for what changes.
 **Goal:** electricity and reentry danger.
 
 **Must:**
-- **Power:** electric charge; all batteries, solar panels (sun angle, shadow, deploy/retract, snap off at speed in air), RTG and fuel cells.
+- **Power:** electric charge; all batteries, solar panels as hinged bodies (sun angle, shadow, deploy/retract under physics, bending and snapping off at speed in air), RTG and fuel cells.
 - **Probes:** probe cores use power and lose control without it.
 - **Ion propulsion:** xenon tanks and the ion engine.
 - **Heat:** per-part temperature with conduction; all heat shields with ablator, including the inflatable one; all radiators; overheated parts explode.
@@ -1020,15 +1070,15 @@ See the table in section 1.3 for what changes.
 - **Jets:** all jet engines and the combined jet/rocket engine, with all air intakes and intake air.
 - **Landing gear:** all of it, with brakes and steering.
 - **Starter wings:** one main wing, one elevon and one tail, to test.
-- **Advanced aero option (FAR idea):** extra transonic and stall detail on top of C3.
+- **Advanced aero option (FAR idea):** extra transonic and stall detail on top of C4.
 
 **Done when:** a simple spaceplane takes off, reaches orbit and lands on the runway.
 
 #### F7 · Parts: spaceplanes, fairings and bays
 **Must:**
 - **Plane parts:** every remaining wing, control surface, airbrake and canard; all plane cockpits, fuselages, tanks, adapters, cabins, the drone core, nacelle and pre-cooler.
-- **Bays and fairings:** all cargo bays and the cargo ramp; all service bays; procedural fairings in every size.
-- **Shielding:** parts inside bays and fairings are shielded (C3).
+- **Bays and fairings:** all cargo bays and the cargo ramp, with hinged doors (C2); all service bays; procedural fairings in every size, whose halves separate and tumble away as bodies.
+- **Shielding:** parts inside bays and fairings are shielded (C4).
 
 **Done when:** every F7 row is ticked; a shuttle-style craft delivers a satellite from its cargo bay.
 
@@ -1082,9 +1132,10 @@ See the table in section 1.3 for what changes.
 #### G3 · Robotics and construction
 **Must:**
 - **Robotics:** all stock robotics parts (hinges, servos, pistons, rotors, turboshafts, blades, propellers), built on C2 joints, with the keyframe controller.
-- **Construction:** EVA engineers attach and detach parts (KIS/KAS ideas): winches, tethers, fuel pipes.
+- **Construction:** EVA engineers attach and detach parts (KIS/KAS ideas).
+- **Rope parts:** winches, tethers, tow hooks and fuel pipes on C3 ropes.
 
-**Done when:** a folding-arm rover and a propeller aircraft work.
+**Done when:** a folding-arm rover and a propeller aircraft work, and a rover can tow a cart on a winch cable.
 
 #### G4 · Realism options
 **Must:**
@@ -1185,4 +1236,5 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
   - added step A0 to prepare the prototype;
   - 48 steps in total.
 - **Plan revision 4**: added auto-execution of maneuver nodes to step D4.
+- **Plan revision 5**: "moving parts are simulated, not animated" added to the physics model; new step C3 for ropes, cables and physical parachutes; articulated parts and ejection forces added to C2; aerodynamics is now C4 and orbit precision C5; RealChute added to the mods; 49 steps in total.
 - **v0.1.1 (A0, first half)**: tests (`node tests/run.js`), part and body data moved to `data/`, versioned saves (`js/save.js`), version number, F3 developer overlay, original part names (Rumbler booster; plain tank and engine names).
