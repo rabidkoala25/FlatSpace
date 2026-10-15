@@ -13,7 +13,7 @@
     game = g;
     cv = $('edCanvas');
     ctx = cv.getContext('2d');
-    const saved = FS.store.get('flatspace.current', null);
+    const saved = FS.store.load('flatspace.current', null);
     if (saved && Array.isArray(saved.parts)) E.craft = { name: saved.name || 'Untitled', parts: saved.parts.filter((id) => FS.PART[id]) };
     buildPalette();
     refreshLoadList();
@@ -23,9 +23,9 @@
     $('btnLaunch').addEventListener('click', () => E.launch());
     $('btnNew').addEventListener('click', () => { E.craft = { name: 'Untitled', parts: ['lark'] }; E.sel = 0; $('craftName').value = 'Untitled'; E.changed(); });
     $('btnSave').addEventListener('click', () => {
-      const all = FS.store.get('flatspace.crafts', {});
+      const all = FS.store.load('flatspace.crafts', {});
       all[E.craft.name] = E.craft.parts.slice();
-      const ok = FS.store.set('flatspace.crafts', all);
+      const ok = FS.store.save('flatspace.crafts', all);
       refreshLoadList();
       $('partInfo').textContent = ok ? `Saved “${E.craft.name}”.` : 'Could not save: browser storage is unavailable.';
     });
@@ -35,7 +35,7 @@
       const [kind, name] = v.split('::');
       let parts = null;
       if (kind === 'sample') parts = FS.SAMPLE_CRAFT.find((c) => c.name === name).parts;
-      else parts = FS.store.get('flatspace.crafts', {})[name];
+      else parts = FS.store.load('flatspace.crafts', {})[name];
       if (parts) {
         E.craft = { name, parts: parts.slice() };
         $('craftName').value = name;
@@ -57,11 +57,11 @@
     E.changed();
   };
 
-  function persist() { FS.store.set('flatspace.current', E.craft); }
+  function persist() { FS.store.save('flatspace.current', E.craft); }
 
   function refreshLoadList() {
     const sel = $('craftLoad');
-    const saved = FS.store.get('flatspace.crafts', {});
+    const saved = FS.store.load('flatspace.crafts', {});
     let html = '<option value="">Load craft…</option><optgroup label="Sample craft">';
     for (const c of FS.SAMPLE_CRAFT) html += `<option value="sample::${c.name}">${c.name}</option>`;
     html += '</optgroup>';

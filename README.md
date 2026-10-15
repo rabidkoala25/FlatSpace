@@ -41,6 +41,10 @@ Open `index.html` in a browser. (If your browser blocks local files, run `python
 | H | Controls panel |
 | Esc | Menu (revert, back to hangar) |
 
+## Tests
+
+Run `node tests/run.js` (or `npm test`). The physics, orbit and save tests need only Node. The page test also needs jsdom: run `npm install` once to get it; without it, that test is skipped.
+
 ## Files
 
 See `PLAN.md` for the full design: architecture, physics model, building system, art direction, the complete KSP feature map, the mods whose ideas are planned in, and the step-by-step roadmap. `PARTS.md` lists every stock KSP part and its planned Flatspace equivalent.

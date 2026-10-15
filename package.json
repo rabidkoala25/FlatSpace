@@ -1,0 +1,11 @@
+{
+  "name": "flatspace-program",
+  "private": true,
+  "description": "2D spaceflight sandbox. No build step: open index.html. npm is only used for tests.",
+  "scripts": {
+    "test": "node tests/run.js"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}

@@ -11,7 +11,7 @@ Every stock KSP part (base game 1.12, Making History and Breaking Ground) mapped
 
 **Accuracy note.** The official KSP wiki blocked automated reading, so this list was compiled from secondary sources and prior knowledge. Some names may be spelled differently in the game, and a few expansion parts may be missing or marked with the wrong expansion. The first task of step D5 is to check this list against the in-game part list (or the wiki in a browser) and add anything missing. Tags: (MH) = Making History, (BG) = Breaking Ground; untagged = base game.
 
-**Prototype parts that need renaming.** The prototype's solid booster is called "Thumper", which is KSP's own nickname for the BACC booster. It gets an original name in step A0.
+**Prototype part names.** In step A0 the prototype's solid booster, which shared KSP's nickname "Thumper", was renamed "Rumbler" (old saves convert automatically). Tank and engine names that borrowed KSP model numbers became plain names (Ferro Short/Medium/Long/Heavy Tank, Kestrel, Hornet, Wren Engine).
 
 ---
 
@@ -90,7 +90,7 @@ Every stock KSP part (base game 1.12, Making History and Breaking Ground) mapped
 | ☐ | LV-T91 "Cheetah", LV-TX87 "Bobcat", RE-I12 "Skiff", RE-J10 "Wolfhound", RK-7 "Kodiak", KE-1 "Mastodon" | 1.875 m and later-generation engines (6) | D6 |
 | ☐ | O-10 "Puff" | Monopropellant engine | D2 |
 | ☐ | IX-6315 "Dawn" | Ion engine | E5 |
-| ☐ | RT-5 "Flea", RT-10 "Hammer", BACC "Thumper", S1 SRB-KD25k "Kickback" | Solid boosters (prototype has one) | P / D6 |
+| ☐ | RT-5 "Flea", RT-10 "Hammer", BACC "Thumper", S1 SRB-KD25k "Kickback" | Solid boosters (prototype has one, "Rumbler") | P / D6 |
 | ☐ | F3S0 "Shrimp", FM1 "Mite", S2-17 "Thoroughbred", S2-33 "Clydesdale", "Pollux" | Solid boosters (5) | D6 |
 | ☐ | Sepratron I | Separation motor | D6 |
 | ☐ | Launch Escape System | Launch escape tower | D6 |

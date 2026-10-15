@@ -17,7 +17,7 @@
   <!-- ============ VEHICLE ASSEMBLY ============ -->
   <section id="editor" class="scene">
     <header class="ed-top">
-      <div class="brand"><span class="brand-mark"></span>Flatspace Program <small>Vehicle Assembly</small></div>
+      <div class="brand"><span class="brand-mark"></span>Flatspace Program <small>Vehicle Assembly</small> <span id="version" class="version"></span></div>
       <label class="craft-name">
         <span>Craft</span>
         <input id="craftName" type="text" maxlength="32" value="Untitled" spellcheck="false">
@@ -66,6 +66,7 @@
     </div>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>
+    <div id="devOverlay" class="dev-overlay" hidden></div>
 
     <aside class="panel stages-panel">
       <h3>Stages</h3>
@@ -173,11 +174,15 @@
       <dt>P</dt><dd>Deploy parachutes</dd>
       <dt>Wheel</dt><dd>Zoom</dd>
       <dt>H</dt><dd>Show or hide this panel</dd>
+      <dt>F3</dt><dd>Developer overlay</dd>
     </dl>
   </div>
 </div>
 
 <script src="js/util.js"></script>
+<script src="data/parts.js"></script>
+<script src="data/bodies.js"></script>
+<script src="js/save.js"></script>
 <script src="js/bodies.js"></script>
 <script src="js/orbit.js"></script>
 <script src="js/parts.js"></script>

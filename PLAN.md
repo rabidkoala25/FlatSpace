@@ -52,10 +52,11 @@ js/main.js          game loop, input, time warp, maneuver nodes, scenes
 Added by the roadmap:
 
 ```
-data/parts.js, data/bodies.js   A0  part and body stats as plain data
+data/parts.js, data/bodies.js   A0  part and body stats as plain data  (done)
+js/save.js                      A0  versioned saves and migrations      (done)
+tests/, package.json            A0  headless checks; npm only installs jsdom for the page test  (done)
 js/sim.js, js/input.js,         A0  main.js split into simulation, input,
 js/warp.js, js/nodes.js             time warp and maneuver nodes
-tests/                          A0  headless checks
 js/partgraph.js                 A1  the part tree: attach nodes, positions, mass, fuel flow
 js/gl/                          B1  WebGL2 renderer: sprite batch, meshes, shaders
 art/palette.js                  B1  the master palette
@@ -396,7 +397,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 |---|---|---|
 | P | Prototype | ✅ done |
 | **A** | **Prepare and rebuild the builder** | |
-| A0 | Prepare the prototype | ☐ |
+| A0 | Prepare the prototype | ◐ first half done (v0.1.1) |
 | A1 | Part tree and vessel physics | ☐ |
 | A2 | Drag-and-drop editor | ☐ |
 | A3 | Editor tools | ☐ |
@@ -502,6 +503,25 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 **Stretch:** a `?debug` address flag that starts a flight already in orbit, to speed up testing.
 
 **Done when:** the game plays as before; `node tests/run.js` passes; the file layout matches section 1.2; the game is live on GitHub Pages.
+
+**Progress (first half, v0.1.1):**
+- **Done:**
+  - tests;
+  - data files;
+  - versioned saves with a migration hook;
+  - version number in the hangar and menu;
+  - F3 developer overlay;
+  - part renames.
+- **Repository:** you created it in GitHub Desktop. Turning on Pages is still to do: Settings → Pages.
+- **Part renames:**
+  - "Thumper" became "Rumbler", and old saves convert automatically;
+  - tank and engine names that copied KSP's model numbers (T-100, LV-909 and others) became plain names.
+- **Left for the second half:**
+  - simulation separate from drawing (events);
+  - splitting `main.js`;
+  - the renderer interface;
+  - the prototype-limit fixes;
+  - the `?debug` stretch.
 
 #### A1 · Part tree and vessel physics
 **Goal:** replace the single vertical stack with a tree of parts that can sit anywhere, so side boosters and asymmetric craft fly correctly.
@@ -1165,3 +1185,4 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
   - added step A0 to prepare the prototype;
   - 48 steps in total.
 - **Plan revision 4**: added auto-execution of maneuver nodes to step D4.
+- **v0.1.1 (A0, first half)**: tests (`node tests/run.js`), part and body data moved to `data/`, versioned saves (`js/save.js`), version number, F3 developer overlay, original part names (Rumbler booster; plain tank and engine names).

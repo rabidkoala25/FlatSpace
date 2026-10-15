@@ -27,7 +27,7 @@
     patchTimer: 0,
     keys: {},
     touch: {},
-    milestones: new Set(FS.store.get('flatspace.milestones', [])),
+    milestones: new Set(FS.store.load('flatspace.milestones', [])),
   });
 
   // ---------- Scenes ----------
@@ -232,7 +232,7 @@
   function milestone(key, text) {
     if (G.milestones.has(key)) return;
     G.milestones.add(key);
-    FS.store.set('flatspace.milestones', [...G.milestones]);
+    FS.store.save('flatspace.milestones', [...G.milestones]);
     toast('Milestone: ' + text, 'milestone', 5000);
   }
 
@@ -297,7 +297,7 @@
   }
 
   function menu() {
-    showDialog('Flight menu', '<p>Time is paused.</p>', [
+    showDialog('Flight menu', '<p>Time is paused. Flatspace Program v' + FS.VERSION + '</p>', [
       ['Resume', () => {}, 'primary'],
       ['Revert to launch', G.revert, 'ghost'],
       ['Back to hangar', G.toHangar, 'ghost'],
@@ -357,6 +357,25 @@
   }
 
   // ---------- Main loop ----------
+  // ---------- Developer overlay (F3) ----------
+  // Shows frame time, physics steps per frame and particle count, to watch performance.
+  let devTimer = 0, devFrames = 0, devTime = 0;
+  function updateDevOverlay(dt) {
+    const el = $('devOverlay');
+    devFrames++; devTime += dt;
+    devTimer -= dt;
+    if (el.hidden || devTimer > 0) return;
+    devTimer = 0.25;
+    const ms = (devTime / Math.max(1, devFrames)) * 1000;
+    devFrames = 0; devTime = 0;
+    el.textContent =
+      'v' + FS.VERSION + '\n' +
+      'frame      ' + ms.toFixed(1) + ' ms (' + (1000 / ms).toFixed(0) + ' fps)\n' +
+      'physics    ' + (G.devSteps ?? '-') + (typeof G.devSteps === 'number' ? ' steps/frame' : '') + '\n' +
+      'particles  ' + FS.Render.particles.length + '\n' +
+      'debris     ' + G.debris.length;
+  }
+
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -366,6 +385,7 @@
       updateCamera(dt);
       if (G.mapMode) FS.Render.drawMap(G); else FS.Render.drawFlight(G);
       FS.HUD.update(G, dt);
+      updateDevOverlay(dt);
     }
     requestAnimationFrame(frame);
   }
@@ -401,6 +421,7 @@
       // Sub-step so SOI changes are not skipped
       const vmax = V.len(ves.v) + 2000;
       const maxStep = Math.max(1, (0.08 * 2.2e6) / vmax);
+      G.devSteps = 'on rails';
       while (G.t < tNew) {
         G.t = Math.min(tNew, G.t + maxStep);
         ves.railsTo(G.t, G);
@@ -421,6 +442,7 @@
       const rate = G.warpIdx === 0 ? 1 : PHYS_WARP[Math.min(G.warpIdx, 3)];
       const sim = dt * rate;
       const n = Math.max(1, Math.ceil(sim / STEP));
+      G.devSteps = n;
       const h = sim / n;
       for (let i = 0; i < n; i++) {
         ves.step(h, G.t, G);
@@ -524,6 +546,7 @@
       case 'h': $('help').hidden = !$('help').hidden; break;
       case 'Tab': e.preventDefault(); if (G.mapMode) cycleFocus(); break;
       case 'Escape': menu(); break;
+      case 'F3': e.preventDefault(); $('devOverlay').hidden = !$('devOverlay').hidden; break;
     }
   }
 
@@ -600,6 +623,7 @@
       if (b) b.blur();
     });
 
+    $('version').textContent = 'v' + FS.VERSION;
     G.showScene('editor');
     requestAnimationFrame(frame);
   }
