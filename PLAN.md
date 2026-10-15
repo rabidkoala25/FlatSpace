@@ -257,6 +257,7 @@ Legend: **P** = in the prototype now · **A0–G8** = the roadmap step that deli
 | Maneuver nodes | Prograde + radial only, since a 2D orbit has no plane to change | **P** / A0 (nodes survive SOI changes) |
 | Maneuver Mode (exact node inputs) | Node panel with ±1/10/100 buttons and time shifting | **P** / D4 (drag handles on the map) |
 | Maneuver Tool (Hohmann, circularize, change Ap/Pe) | One-click node generators | D4 |
+| Auto-execute maneuver nodes (MechJeb's node executor idea) | One button: point at the burn, warp to it, start on time, throttle down near the end, cut at zero | D4 |
 | Alarm Clock | Alarms for nodes, SOI changes, Ap/Pe | D4 |
 | Inclination, ascending/descending nodes | An orbit can only be clockwise or counter-clockwise | ✗ |
 | Gravity assists | Work naturally with patched conics | **P** (moons) / E1 (planets) |
@@ -335,7 +336,7 @@ The community's most-recommended mods (from KSP forum and Reddit mod surveys, PC
 | **Ferram Aerospace Research (FAR)** | Realistic aerodynamics | Shielding, Mach drag rise and lift (C3); extra "advanced aero" detail with spaceplanes (F6) | C3 / F6 |
 | **Persistent Thrust** | Low-thrust engines keep burning during time warp | Thrust-during-warp option | C4 |
 | **Kerbal Alarm Clock** | Alarms that stop warp | Alarm list with auto-stop | D4 |
-| **MechJeb 2** | Autopilots and maneuver planner | Autopilot panel: ascent, circularize, node executor, landing | E8 |
+| **MechJeb 2** | Autopilots and maneuver planner | Node auto-execution (D4); autopilot panel: ascent, circularize, landing (E8) | D4 / E8 |
 | **Trajectories** | Predicted path including drag; landing spot | Drag-aware impact prediction | E8 |
 | **DMagic Orbital Science** | More science experiments | Extra experiments | E3 (stretch) / G8 |
 | **Chatterer** | Radio chatter and ambient sound | Sound design | E9 |
@@ -767,10 +768,21 @@ See the table in section 1.3 for what changes.
 - **Maneuver Tool:** circularize, change Ap/Pe, Hohmann transfer to a moon, return from a moon.
 - **Alarm Clock:** alarms for nodes, Ap/Pe, SOI changes and manual times; each one stops warp.
 - **Map handles:** drag handles on nodes in the map.
+- **Auto-execute nodes:** an "Execute" button on each node. The craft then, without further input:
+  1. turns to the burn direction;
+  2. time-warps to the burn and drops out of warp in time;
+  3. starts at the right moment, half the burn time before the node;
+  4. keeps pointing along the remaining Δv as it changes;
+  5. throttles down for the last few m/s;
+  6. cuts the engine at zero, then moves on to the next node if there is one.
+- **Execution details:**
+  - it stages automatically if the current stage runs dry mid-burn;
+  - it stops with a message if there isn't enough Δv;
+  - pressing any flight control hands control back to the player at once.
 
 **Stretch:** an "intercept" node generator.
 
-**Done when:** a round trip Aster → Mira orbit → Aster is flown using only generated nodes and alarms.
+**Done when:** a round trip Aster → Mira orbit → Aster is flown using only generated nodes, alarms and Execute; each executed burn ends within 0.5 m/s of the planned Δv.
 
 #### D5 · Parts: sizes, coupling and structure
 **Goal:** the structural backbone of the catalogue.
@@ -915,7 +927,7 @@ See the table in section 1.3 for what changes.
 **Goal:** MechJeb and Trajectories ideas.
 
 **Must:**
-- **Autopilot panel:** unlocked by the avionics hub part, with node executor, ascent guidance (target altitude, turn shape), circularize, and a landing autopilot (suicide burn to a target point).
+- **Autopilot panel:** unlocked by the avionics hub part, with ascent guidance (target altitude, turn shape), circularize, and a landing autopilot (suicide burn to a target point). The node auto-execution from D4 moves into this panel. In Science and Career modes it becomes an early tech-tree unlock, while staying free in Sandbox.
 - **Impact prediction:** drag-aware prediction in the atmosphere.
 
 **Stretch:** a rendezvous autopilot.
@@ -1152,3 +1164,4 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
   - added `PARTS.md`, covering every stock part and the popular mod part families;
   - added step A0 to prepare the prototype;
   - 48 steps in total.
+- **Plan revision 4**: added auto-execution of maneuver nodes to step D4.
