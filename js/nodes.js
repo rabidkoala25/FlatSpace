@@ -8,10 +8,8 @@
   G.burnTime = (dv) => {
     const ves = G.vessel;
     if (!ves) return Infinity;
-    const seg = FS.segmentsOf(ves.parts)[0] || [];
     let F = 0, mdot = 0;
-    for (const q of seg) {
-      if (!q.def.engine) continue;
+    for (const q of ves.activeEngines()) {
       const th = FS.engineThrust(q.def.engine, FS.pressure(ves.body, ves.altitude), 1);
       F += th.F; mdot += th.mdot;
     }

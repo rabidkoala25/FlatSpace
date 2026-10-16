@@ -43,15 +43,14 @@
     $('gThrottle').style.height = (ves.throttle * 100).toFixed(0) + '%';
 
     // Stage stats (live)
-    const segs = FS.segmentsOf(ves.parts);
     const p = FS.pressure(b, alt);
     const gHere = b.mu / V.dot(ves.r, ves.r);
-    const live = FS.segmentStats(segs, p, gHere);
-    const liveVac = FS.segmentStats(segs, 0, gHere);
-    const seg0 = segs[0] || [];
-    const fuelNow = seg0.reduce((s, q) => s + q.fuel + q.solid, 0);
-    const fuelMax = seg0.reduce((s, q) => s + (q.def.fuel || 0) + (q.def.solid || 0), 0);
-    $('gFuel').style.height = (fuelMax > 0 ? (fuelNow / fuelMax) * 100 : 0).toFixed(0) + '%';
+    // What's burning now (current) and each stage still to fire (events), here and in vacuum
+    const live = FS.stageStats(ves.parts, ves.stages, ves.stageIdx, p, gHere);
+    const liveVac = FS.stageStats(ves.parts, ves.stages, ves.stageIdx, 0, gHere);
+    const nowStats = live.current.dv > 0 ? live.current : live.events.find((e) => e.dv > 0) || live.current;
+    const fuel = ves.stageFuel();
+    $('gFuel').style.height = (fuel.max > 0 ? (fuel.now / fuel.max) * 100 : 0).toFixed(0) + '%';
 
     // Flight data
     const o = FS.orbitFromState(ves.r, ves.v, b.mu, t);
@@ -69,9 +68,9 @@
     rows.push(['Horizontal speed', FS.fmtSpeed(Math.abs(V.cross(rhat, vSurf)))]);
     const lon = FS.lonAt(b, V.angle(ves.r), t);
     rows.push(['Above terrain', FS.fmtDist(Math.max(0, alt - FS.surfaceHeight(b, lon) - ves.bottomDist))]);
-    rows.push(['Stage Δv', (live[0] ? live[0].dv : 0).toFixed(0) + ' m/s']);
-    rows.push(['Total Δv (vac)', liveVac.reduce((s, x) => s + x.dv, 0).toFixed(0) + ' m/s']);
-    rows.push(['TWR', (ves.thrustNow / (ves.mass * gHere)).toFixed(2) + ' / ' + (live[0] ? live[0].twr.toFixed(2) : '0.00')]);
+    rows.push(['Stage Δv', nowStats.dv.toFixed(0) + ' m/s']);
+    rows.push(['Total Δv (vac)', liveVac.total.toFixed(0) + ' m/s']);
+    rows.push(['TWR', (ves.thrustNow / (ves.mass * gHere)).toFixed(2) + ' / ' + nowStats.twr.toFixed(2)]);
     rows.push(['Mass', (ves.mass / 1000).toFixed(2) + ' t']);
     if (b.atmo) {
       rows.push(['Pressure', p.toFixed(3) + ' atm']);
@@ -82,21 +81,20 @@
     $('fData').innerHTML = rows.map(([k, v, c]) => `<dt>${k}</dt><dd${c ? ` class="${c}"` : ''}>${v}</dd>`).join('');
 
     // Stage list
-    const offset = (ves.initialSegs || segs.length) - segs.length;
     const ul = $('fStages');
     let html = '';
     ves.stages.forEach((ev, k) => {
       const fired = k < ves.stageIdx;
-      const li = ev.seg - offset;
-      const burning = fired && ev.ignite && li === 0;
+      // the last stage fired is still burning while the current burn has Δv left
+      const burning = fired && k === ves.stageIdx - 1 && liveVac.current.dv > 0.5;
       const cls = burning ? 'burning' : fired ? 'done' : k === ves.stageIdx ? 'next' : '';
-      const nEng = ev.ignite ? ev.parts.filter((q) => q.def.engine).length : 0;
+      const nEng = ev.engines.length;
       const what = [];
-      if (ev.decouple) what.push('Decouple');
+      if (ev.decouple) what.push('Decouple' + (ev.decouplers.length > 1 ? ' ×' + ev.decouplers.length : ''));
       if (ev.ignite) what.push('Ignite ' + nEng + ' engine' + (nEng > 1 ? 's' : ''));
       if (ev.chutes) what.push('Parachutes');
-      let dv = '';
-      if (ev.ignite && li >= 0 && liveVac[li] && (!fired || burning)) dv = liveVac[li].dv.toFixed(0) + ' m/s';
+      const st = burning ? liveVac.current : !fired ? liveVac.events[k - ves.stageIdx] : null;
+      const dv = st && st.dv > 0.5 ? st.dv.toFixed(0) + ' m/s' : '';
       html += `<li class="${cls}"><div class="sn"><span>Stage ${k + 1}</span><span>${dv}</span></div><div class="what">${what.join(' · ')}</div></li>`;
     });
     ul.innerHTML = html || '<li class="done"><div class="what">No stages</div></li>';

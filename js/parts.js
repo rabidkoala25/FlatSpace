@@ -1,5 +1,5 @@
-// parts.js — part lookup, how parts are drawn, staging and Δv maths.
-// The part stats themselves live in data/parts.js.
+// parts.js — part lookup, engine maths and how parts are drawn.
+// The part stats live in data/parts.js; the part tree, staging and Δv are in partgraph.js.
 (function () {
   const G0 = FS.G0;
 
@@ -10,53 +10,7 @@
   FS.PART = BY_ID;
   FS.PART_CATS = ['Command', 'Fuel', 'Engines', 'Structural', 'Utility'];
 
-  // Make live part instances from a list of ids (top → bottom).
-  FS.makeParts = (ids) => ids.filter((id) => BY_ID[id]).map((id) => {
-    const d = BY_ID[id];
-    return { def: d, fuel: d.fuel || 0, solid: d.solid || 0, lit: false, chute: d.chute ? 'stowed' : null };
-  });
-
-  FS.partWidth = (parts, i) => {
-    const d = parts[i].def;
-    if (d.w !== 'auto') return d.w;
-    const below = parts[i + 1] ? FS.partWidth(parts, i + 1) : 0;
-    const above = parts[i - 1] ? (parts[i - 1].def.w === 'auto' ? 1.25 : parts[i - 1].def.w) : 0;
-    return Math.max(below, above, 0.625);
-  };
-  FS.partTopWidth = (parts, i) => {
-    const d = parts[i].def;
-    return d.topW || FS.partWidth(parts, i);
-  };
-
   FS.partMass = (p) => p.def.mass + p.fuel + p.solid;
-
-  // Split a part list into segments at decouplers. Segment 0 is the bottom one;
-  // a decoupler goes with the segment below it (it falls away with it).
-  FS.segmentsOf = (parts) => {
-    const segs = [];
-    let cur = [];
-    for (let i = parts.length - 1; i >= 0; i--) {
-      cur.unshift(parts[i]);
-      if (parts[i].def.decoupler && i > 0) { segs.push(cur); cur = []; }
-    }
-    if (cur.length) segs.push(cur);
-    return segs;
-  };
-
-  // The staging sequence for a part list: an ordered list of events.
-  FS.stagesOf = (parts) => {
-    const segs = FS.segmentsOf(parts);
-    const ev = [];
-    segs.forEach((seg, i) => {
-      const engines = seg.filter((p) => p.def.engine);
-      const e = { seg: i, decouple: i > 0, ignite: engines.length > 0, parts: [] };
-      if (i > 0) e.parts.push(...segs[i - 1].filter((p) => p.def.decoupler));
-      e.parts.push(...engines);
-      if (e.decouple || e.ignite) ev.push(e);
-    });
-    if (parts.some((p) => p.def.chute)) ev.push({ chutes: true, parts: parts.filter((p) => p.def.chute) });
-    return ev;
-  };
 
   // Engine thrust and mass flow at a given pressure (atm).
   FS.engineThrust = (eng, p, throttle = 1) => {
@@ -65,60 +19,19 @@
     return { F: mdot * isp * G0, mdot, isp };
   };
 
-  // Δv, TWR and burn time for each segment, firing from the bottom.
-  // segs: from FS.segmentsOf; p: pressure (atm); g: surface gravity for TWR.
-  FS.segmentStats = (segs, p, g) => {
-    const out = [];
-    for (let i = 0; i < segs.length; i++) {
-      let mass = 0;
-      for (let j = i; j < segs.length; j++) for (const q of segs[j]) mass += FS.partMass(q);
-      const seg = segs[i];
-      const groups = [];
-      const liquid = seg.filter((q) => q.def.engine && !q.def.engine.solid);
-      const liquidFuel = seg.reduce((s, q) => s + q.fuel, 0);
-      if (liquid.length && liquidFuel > 0) {
-        let mdot = 0, F = 0;
-        for (const q of liquid) { const t = FS.engineThrust(q.def.engine, p); mdot += t.mdot; F += t.F; }
-        groups.push({ mdot, F, fuel: liquidFuel });
-      }
-      for (const q of seg) {
-        if (q.def.engine && q.def.engine.solid && q.solid > 0) {
-          const t = FS.engineThrust(q.def.engine, p);
-          groups.push({ mdot: t.mdot, F: t.F, fuel: q.solid });
-        }
-      }
-      const F0 = groups.reduce((s, gq) => s + gq.F, 0);
-      let m = mass, dv = 0, time = 0;
-      for (let guard = 0; guard < 10; guard++) {
-        const act = groups.filter((gq) => gq.fuel > 1e-6);
-        if (!act.length) break;
-        const tmin = Math.min(...act.map((gq) => gq.fuel / gq.mdot));
-        const md = act.reduce((s, gq) => s + gq.mdot, 0);
-        const F = act.reduce((s, gq) => s + gq.F, 0);
-        const m1 = m - md * tmin;
-        if (F > 0) dv += (F / md) * Math.log(m / m1);
-        act.forEach((gq) => (gq.fuel -= gq.mdot * tmin));
-        m = m1; time += tmin;
-      }
-      out.push({ dv, time, twr: F0 / (mass * g), mass, thrust: F0 });
-    }
-    return out;
-  };
-
   // ---- Drawing ----
-  // Draw one part in a context whose units are metres, x centred, y pointing
-  // down the rocket. px = size of one screen pixel in metres.
   function cyl(ctx, x0, x1, base, light, dark) {
     const g = ctx.createLinearGradient(x0, 0, x1, 0);
     g.addColorStop(0, dark); g.addColorStop(0.35, light); g.addColorStop(0.55, base); g.addColorStop(1, dark);
     return g;
   }
 
-  FS.drawPart = (ctx, parts, i, y, px, opts = {}) => {
-    const p = parts[i];
+  // Draw part p with its top at y, its axis along +y pointing down the rocket, centred on x = 0.
+  // Widths come from FS.relayout (p.w, p.tw). px = size of one screen pixel in metres.
+  FS.drawPart = (ctx, p, y, px, opts = {}) => {
     const d = p.def;
-    const w = FS.partWidth(parts, i);
-    const tw = FS.partTopWidth(parts, i);
+    const w = p.w || (d.w === 'auto' ? 1.25 : d.w);
+    const tw = p.tw || d.topW || w;
     const h = d.len;
     const hw = w / 2, thw = tw / 2;
     ctx.lineWidth = px * 1.2;
@@ -221,29 +134,6 @@
       ctx.strokeRect(-Math.max(hw, thw) - px * 4, y - px * 3, Math.max(w, tw) + px * 8, h + px * 6);
       ctx.setLineDash([]);
     }
-  };
-
-  // Layout: y offset of each part's top, measured from the top of the stack.
-  FS.stackLayout = (parts) => {
-    let y = 0;
-    const tops = [];
-    let massSum = 0, momentSum = 0;
-    for (const p of parts) {
-      tops.push(y);
-      const m = FS.partMass(p);
-      massSum += m;
-      momentSum += m * (y + p.def.len / 2);
-      y += p.def.len;
-    }
-    const com = massSum > 0 ? momentSum / massSum : y / 2;
-    // moment of inertia about the centre of mass
-    let I = 0;
-    parts.forEach((p, i) => {
-      const m = FS.partMass(p);
-      const d = tops[i] + p.def.len / 2 - com;
-      I += m * (d * d + (p.def.len * p.def.len) / 12);
-    });
-    return { tops, height: y, com, mass: massSum, I: Math.max(I, 1) };
   };
 
   // Sample craft

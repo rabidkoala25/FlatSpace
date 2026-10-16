@@ -10,7 +10,7 @@ FS.DATA.parts = [
     desc: 'One-seat capsule with a built-in reaction wheel.' },
   { id: 'sparrow', name: 'Sparrow Probe Core', cat: 'Command', mass: 100, len: 0.45, w: 0.625, cda: 0.15, torque: 2000, crash: 12, command: true,
     desc: 'Uncrewed guidance unit. Light, weak reaction wheel.' },
-  { id: 'canopy', name: 'Canopy Parachute', cat: 'Utility', mass: 100, len: 0.45, w: 0.6, cda: 0.15, crash: 12, chute: { semi: 25, full: 750 },
+  { id: 'canopy', name: 'Canopy Parachute', cat: 'Utility', mass: 100, len: 0.45, w: 0.6, cda: 0.15, crash: 12, chute: { semi: 25, full: 1100 },
     desc: 'Arms on staging. Semi-deploys in thick air, opens fully below 1 km.' },
   { id: 't100', name: 'Ferro Short Tank', cat: 'Fuel', mass: 62.5, fuel: 500, len: 0.75, w: 1.25, cda: 0.25, crash: 8,
     desc: 'Small liquid fuel tank.' },
@@ -34,15 +34,34 @@ FS.DATA.parts = [
     engine: { vac: 227000, asl: 197900, ispVac: 195, ispAsl: 170, gimbal: 0, solid: true }, desc: 'Burns to empty once lit. Cannot throttle.' },
   { id: 'decoupler', name: 'Stack Decoupler', cat: 'Structural', mass: 40, len: 0.25, w: 'auto', cda: 0.05, crash: 9, decoupler: true,
     desc: 'Splits the rocket into stages.' },
+  { id: 'radec', name: 'Side Decoupler', cat: 'Structural', mass: 50, len: 0.6, w: 0.3, cda: 0.05, crash: 9, decoupler: true, radial: true,
+    desc: 'Holds a side booster and lets it go on staging.' },
   { id: 'adapter', name: 'Taper Adapter', cat: 'Structural', mass: 120, len: 1.0, w: 2.5, topW: 1.25, cda: 0.2, crash: 8,
     desc: 'Joins 1.25 m parts on top of 2.5 m parts.' },
   { id: 'fins', name: 'Tail Fin Collar', cat: 'Structural', mass: 80, len: 0.7, w: 1.25, cda: 0.15, crash: 8, fin: 1.6,
     desc: 'Keeps the rocket pointed into the airflow.' },
 ];
 
-// Sample craft shown in the hangar's Load menu (part ids, top to bottom).
+// Sample craft shown in the hangar's Load menu: 'parts' is a stack of part ids (top to
+// bottom); 'tree' is a full part tree for craft with side-mounted parts.
 FS.DATA.sampleCraft = [
   { name: 'Hopper', parts: ['canopy', 'lark', 't400', 'fins', 'hornet'] },
   { name: 'Orbiter I', parts: ['canopy', 'lark', 'decoupler', 't400', 't100', 'wren', 'decoupler', 't800', 't800', 'fins', 'kestrel'] },
   { name: 'Mira Voyager', parts: ['canopy', 'lark', 'decoupler', 't800', 't400', 'wren', 'decoupler', 't800', 't800', 'kestrel', 'decoupler', 'adapter', 'x160', 'x160', 'bulwark'] },
+  // Built with side boosters on Side Decouplers. 'tree' is a saved part tree (see js/partgraph.js).
+  { name: 'Twin Boosters', tree: [
+    {"id": "canopy", "parent": -1, "node": "bottom", "x": 0, "y": 0},
+    {"id": "lark", "parent": 0, "node": "bottom", "x": 0, "y": -0.875},
+    {"id": "decoupler", "parent": 1, "node": "bottom", "x": 0, "y": -1.65},
+    {"id": "t400", "parent": 2, "node": "bottom", "x": 0, "y": -2.725},
+    {"id": "wren", "parent": 3, "node": "bottom", "x": 0, "y": -4.225},
+    {"id": "decoupler", "parent": 4, "node": "bottom", "x": 0, "y": -4.9},
+    {"id": "t800", "parent": 5, "node": "bottom", "x": 0, "y": -6.9},
+    {"id": "t800", "parent": 6, "node": "bottom", "x": 0, "y": -10.65},
+    {"id": "kestrel", "parent": 7, "node": "bottom", "x": 0, "y": -13.325},
+    {"id": "radec", "parent": 7, "node": "srf", "x": 0.775, "y": -10.65},
+    {"id": "rumbler", "parent": 9, "node": "srf", "x": 1.55, "y": -10.65},
+    {"id": "radec", "parent": 7, "node": "srf", "x": -0.775, "y": -10.65},
+    {"id": "rumbler", "parent": 11, "node": "srf", "x": -1.55, "y": -10.65}
+  ] },
 ];

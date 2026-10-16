@@ -4,6 +4,12 @@ A 2D rocket-building and spaceflight sandbox in the browser, inspired by Kerbal 
 
 No build step, no dependencies: plain HTML, CSS and JavaScript.
 
+## Roadmap
+
+![Flatspace Program roadmap: steps done, next and planned](docs/roadmap.svg)
+
+The game is built in 49 steps after the prototype, each one work session. `PLAN.md` describes every step; `PARTS.md` tracks every part. The graphic is redrawn from the status table in `PLAN.md` with `node tools/roadmap.js`.
+
 ## Play locally
 
 Open `index.html` in a browser. (If your browser blocks local files, run `python3 -m http.server` in this folder and open `http://localhost:8000`.)

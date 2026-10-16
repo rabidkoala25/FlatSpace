@@ -78,4 +78,40 @@ const V = FS.vec;
   check(!v.dead && !!v.landed, 'capsule survives reentry and lands');
 }
 
+// --- Twin Boosters: side boosters through the atmosphere, then to orbit ---
+{
+  const game = fakeGame();
+  const v = new FS.Vessel('Twin Boosters', FS.SAMPLE_CRAFT.find((c) => c.name === 'Twin Boosters').tree, FS.root, { throttle: 1 });
+  let t = 0;
+  v.placeOnPad(t);
+  v.stage(game);
+  let coasting = false, circularizing = false, reached = false;
+  const dropAlt = [];
+  for (let i = 0; i < 700 / 0.02 && !v.dead; i++) {
+    const alt = v.altitude;
+    const pitch = alt < 1000 ? 0 : Math.min((Math.PI / 2) * 0.95, ((alt - 1000) / 45000) * (Math.PI / 2));
+    v.sasMode = 'stability';
+    v.sasTarget = V.angle(v.r) - pitch;
+    const o = FS.orbitFromState(v.r, v.v, v.body.mu, t);
+    if (!coasting && o.ap - FS.root.R > 85000) { v.throttle = 0; coasting = true; }
+    if (coasting && !circularizing) {
+      v.sasTarget = V.angle(v.v);
+      if (FS.timeToNu(o, Math.PI, t) < 25 && alt > 70000) { v.throttle = 1; circularizing = true; }
+    }
+    if (circularizing && o.pe - FS.root.R > 75000) { v.throttle = 0; reached = true; break; }
+    // stage once whatever the next stage drops has run dry
+    const next = v.stages[v.stageIdx];
+    if (t > 1 && v.throttle > 0 && next && next.decouple &&
+        next.decouplers.every((d) => FS.subtree(v.parts, d).every((q) => q.fuel + q.solid < 1e-6))) {
+      dropAlt.push(alt);
+      v.stage(game);
+    }
+    v.step(0.02, t, game);
+    for (const d of game.debris) d.step(0.02, t, game);
+    t += 0.02;
+  }
+  check(dropAlt.length >= 2 && dropAlt[0] < 15000, `boosters drop low in the atmosphere (${(dropAlt[0] / 1000).toFixed(1)} km), then the core`);
+  check(reached && !v.dead && v.situation() === 'Orbiting Aster', 'Twin Boosters flies through the atmosphere and reaches orbit');
+}
+
 done();

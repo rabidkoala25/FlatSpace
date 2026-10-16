@@ -44,7 +44,8 @@ js/util.js          version number, vectors, formatting, storage helpers
 js/save.js          versioned saves and migrations
 js/bodies.js        planets & moons: orbits, rotation, terrain, atmosphere
 js/orbit.js         Kepler orbits, propagation, patched conics, encounters
-js/parts.js         part lookup, part drawing, staging and Δv maths
+js/parts.js         part lookup, engine maths and part drawing
+js/partgraph.js     the part tree: attach nodes, positions, mass, fuel flow, staging, Δv per stage
 js/vessel.js        a flying craft: forces, fuel, staging, landing, crashing; reports events
 js/sim.js           game state, the event bus, stepping craft and debris (physics or on rails)
 js/warp.js          time warp rates and limits, warping to a time
@@ -55,6 +56,7 @@ js/editor.js        the Vehicle Assembly hangar
 js/input.js         keyboard, mouse and touch (including pinch zoom)
 js/main.js          scenes, messages and dialogs, milestones, camera, frame loop
 tests/              headless checks: node tests/run.js (npm install once for the page test)
+tools/roadmap.js    redraws docs/roadmap.svg (the README's roadmap) from the status table below
 ```
 
 Simulation code (`data/`, `save.js` to `nodes.js`) never touches the page. It reports what happens through events (`staged`, `touchdown`, `exploded`, `soi`, `message`), which the renderer and `main.js` listen to. The tests load exactly these files in Node.
@@ -62,7 +64,6 @@ Simulation code (`data/`, `save.js` to `nodes.js`) never touches the page. It re
 Added by the roadmap:
 
 ```
-js/partgraph.js                 A1  the part tree: attach nodes, positions, mass, fuel flow
 js/gl/                          B1  WebGL2 renderer: sprite batch, meshes, shaders
 art/palette.js                  B1  the master palette
 art/sprites/*.js                B2  palette-indexed sprites written as text grids
@@ -401,6 +402,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 3. Before finishing, it:
    - runs `node tests/run.js` and takes screenshots;
    - ticks the step in the status table below, ticks any finished rows in `PARTS.md`, and adds a line to the changelog at the end of this file;
+   - runs `node tools/roadmap.js` to redraw the roadmap graphic in the README;
    - republishes the playable page and hands back the updated project.
 4. If a session runs short, unfinished Must items move to the top of the next step. The game must run at the end of every session, so nothing is left half-built.
 
@@ -419,7 +421,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 | P | Prototype | ✅ done |
 | **A** | **Prepare and rebuild the builder** | |
 | A0 | Prepare the prototype | ✅ done (v0.2.0) |
-| A1 | Part tree and vessel physics | ☐ |
+| A1 | Part tree and vessel physics | ✅ done (v0.3.0) |
 | A2 | Drag-and-drop editor | ☐ |
 | A3 | Editor tools | ☐ |
 | A4 | Staging, tweakables, stretchable tanks, craft files | ☐ |
@@ -560,6 +562,20 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 **Stretch:** radial decoupler parts, to fly a pair of side boosters.
 
 **Done when:** the three sample craft fly as before; a hand-written craft file with off-centre parts flies and stages correctly; tests pass.
+
+**Result (v0.3.0):** done, including the stretch.
+- **Part tree:** `js/partgraph.js` holds the tree, the default staging and a stage-by-stage Δv calculator.
+  - Side boosters light with their core and drop first (stages "I D DI D C").
+  - The calculator handles parallel burns.
+- **Vessel physics:**
+  - each engine pushes along its own line;
+  - drag is worked out part by part from the angle of the airflow, so fins stabilise by having side area rather than by a fixed rule;
+  - every part's outline is checked for ground contact;
+  - a decoupler anywhere splits the craft, keeping its motion and spin.
+- **Saves:** format 3 (part trees); old stacks convert automatically.
+- **New part and sample:** the Side Decoupler, and a "Twin Boosters" sample that reaches orbit.
+- **Tuning:** fins no longer add head-on drag (they wrongly added 1.6 m² before). Rockets now fly higher, so the main parachute was enlarged to keep landings under crash speed.
+- **Tests:** 7 test files, including off-centre thrust, booster separation and a Twin Boosters flight to orbit.
 
 #### A2 · Drag-and-drop editor
 **Goal:** build rockets by dragging parts, as in KSP and Spaceflight Simulator (section 1.4).
@@ -1242,4 +1258,5 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
 - **Plan revision 4**: added auto-execution of maneuver nodes to step D4.
 - **Plan revision 5**: "moving parts are simulated, not animated" added to the physics model; new step C3 for ropes, cables and physical parachutes; articulated parts and ejection forces added to C2; aerodynamics is now C4 and orbit precision C5; RealChute added to the mods; 49 steps in total.
 - **v0.1.1 (A0, first half)**: tests (`node tests/run.js`), part and body data moved to `data/`, versioned saves (`js/save.js`), version number, F3 developer overlay, original part names (Rumbler booster; plain tank and engine names).
+- **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
 - **v0.2.0 (A0 complete)**: simulation split from the page (`sim.js`, `warp.js`, `nodes.js`, `input.js`) with events; renderer interface (`FS.Renderer`); maneuver nodes survive SOI changes and can go on any patch; debris kept on rails; pinch zoom; `?debug` start in orbit.

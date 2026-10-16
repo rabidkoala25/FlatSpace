@@ -385,10 +385,15 @@
     ctx.scale(cam.s, cam.s);
     const px = 1 / cam.s;
     // parachute canopy
+    // Drawing frame: x = the craft's x, y = minus the craft's y (down the rocket).
     const chutes = ves.parts.filter((p) => p.chute === 'semi' || p.chute === 'full');
     if (chutes.length) {
       const full = chutes.some((p) => p.chute === 'full');
-      const top = -ves.layout.com;
+      const cp = chutes[0];
+      const tip = V.add(cp.c, V.scale(cp.axis, cp.def.len / 2));
+      ctx.save();
+      ctx.translate(tip.x, -tip.y);
+      const top = 0;
       const dist = full ? 11 : 6;
       const cw = full ? 7.5 : 1.6;
       ctx.strokeStyle = 'rgba(230,230,230,0.8)';
@@ -410,12 +415,18 @@
       ctx.quadraticCurveTo(-cw * 0.3, top - dist - cw * 0.85, 0, top - dist - cw * 0.88);
       ctx.quadraticCurveTo(cw * 0.3, top - dist - cw * 0.85, cw * 0.35, top - dist - cw * 0.12);
       ctx.closePath(); ctx.fill();
+      ctx.restore();
     }
     const glowMap = new Map();
     if (ves.nozzles) ves.nozzles.forEach((n) => glowMap.set(n.part, n.power));
-    ves.parts.forEach((p, i) => {
-      FS.drawPart(ctx, ves.parts, i, ves.layout.tops[i] - ves.layout.com, px, { glow: glowMap.get(p) || 0, showFuel: false });
-    });
+    for (const p of ves.parts) {
+      ctx.save();
+      ctx.translate(p.c.x, -p.c.y);
+      ctx.rotate(-p.rot);
+      if (p.flip) ctx.scale(-1, 1);
+      FS.drawPart(ctx, p, -p.def.len / 2, px, { glow: glowMap.get(p) || 0 });
+      ctx.restore();
+    }
     ctx.restore();
   };
 
@@ -481,14 +492,14 @@
     if (!ves.nozzles || !ves.nozzles.length) return;
     const b = ves.body;
     const p = FS.pressure(b, ves.altitude);
-    const n = ves.nose;
-    const side = V.perp(n);
     for (const nz of ves.nozzles) {
-      const i = ves.parts.indexOf(nz.part);
-      if (i < 0) continue;
-      const d = nz.part.def;
-      const along = ves.layout.tops[i] + d.len - ves.layout.com;
-      const pos = V.sub(ves.r, V.scale(n, along));
+      const q = nz.part;
+      if (!ves.parts.includes(q)) continue;
+      const d = q.def;
+      // each engine pushes along its own axis; exhaust leaves from the bottom of its nozzle
+      const n = ves.toWorld(q.axis);
+      const side = V.perp(n);
+      const pos = V.add(ves.r, ves.toWorld(V.sub(q.c, V.scale(q.axis, d.len / 2))));
       const power = nz.power;
       const count = Math.ceil(dt * 120 * power * (d.w > 2 ? 2 : 1));
       const spread = (1 - p) * 0.9 + 0.12;

@@ -16,6 +16,7 @@ const SIM_FILES = [
   'js/bodies.js',
   'js/orbit.js',
   'js/parts.js',
+  'js/partgraph.js',
   'js/vessel.js',
   'js/sim.js',
   'js/warp.js',
@@ -56,7 +57,7 @@ function fakeGame() {
         water: data.water,
         debris: data.vessel && data.vessel.isDebris,
       });
-      if (type === 'staged' && data.dropped) g.debris.push(data.dropped);
+      if (type === 'staged') g.debris.push(...data.dropped);
     },
   };
   return g;

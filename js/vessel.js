@@ -1,13 +1,25 @@
 // vessel.js — a craft in flight: forces, torques, fuel, staging, landing, crashing.
+// A vessel is a tree of parts (partgraph.js) moving as one rigid body. Its position r
+// is its centre of mass; angle is the direction of its nose (+y of the craft frame).
 // Methods that change the world take 'sim' (FS.game) and report what happened through
 // sim.emit(): 'staged', 'touchdown', 'exploded' and 'soi'. They never draw anything.
 (function () {
   const V = FS.vec;
 
+  // Extra drag area from an open parachute (m²).
+  function chuteArea(p) {
+    if (p.chute === 'semi') return p.def.chute.semi * (p.deploy || 0);
+    if (p.chute === 'full') return p.def.chute.semi + (p.def.chute.full - p.def.chute.semi) * Math.pow(p.deploy || 0, 2);
+    return 0;
+  }
+  // Drag area when the air flows across the part instead of along it (m²). Fins add a lot.
+  const sideArea = (p) => 0.3 * p.def.len * p.w + (p.def.fin || 0);
+
   class Vessel {
-    constructor(name, partIds, body, opts = {}) {
+    // source: part ids (a stack, top first), saved parts, or live parts (for debris).
+    constructor(name, source, body, opts = {}) {
       this.name = name;
-      this.parts = Array.isArray(partIds[0]) || typeof partIds[0] === 'string' ? FS.makeParts(partIds) : partIds;
+      this.parts = FS.toParts(source);
       this.body = body;
       this.r = { x: body.R, y: 0 };
       this.v = { x: 0, y: 0 };
@@ -25,6 +37,9 @@
       this.splashed = false;
       this.dead = false;
       this.thrustNow = 0;
+      this.thrustLocal = { x: 0, y: 0 };
+      this.thrustTorque = 0;
+      this.gimbalAuthority = 0;
       this.thrustAccel = { x: 0, y: 0 };
       this.heat = 0;           // 0..1 reentry glow
       this.q = 0;              // dynamic pressure (Pa)
@@ -34,33 +49,29 @@
     }
 
     relayout() {
-      this.layout = FS.stackLayout(this.parts);
+      this.layout = FS.massLayout(this.parts);
       this.mass = this.layout.mass;
-      // centre of pressure: drag-area weighted position, fins count extra
-      let w = 0, m = 0;
-      this.parts.forEach((p, i) => {
-        let chuteA = 0;
-        if (p.chute === 'semi') chuteA = p.def.chute.semi * (p.deploy || 0);
-        if (p.chute === 'full') chuteA = p.def.chute.semi + (p.def.chute.full - p.def.chute.semi) * Math.pow(p.deploy || 0, 2);
-        const a = p.def.cda + (p.def.fin || 0) + chuteA;
-        w += a; m += a * (this.layout.tops[i] + p.def.len / 2);
-      });
-      this.cda = w;
-      this.cop = w > 0 ? m / w : this.layout.com;
+      this.cda = this.parts.reduce((s, p) => s + p.def.cda + chuteArea(p), 0);
       this.torqueWheel = this.parts.reduce((s, p) => s + (p.def.torque || 0), 0);
       this.hasCommand = this.parts.some((p) => p.def.command);
     }
 
-    get nose() { return FS.vec.fromAngle(this.angle); }
+    get nose() { return V.fromAngle(this.angle); }
+    // the craft's +x direction (to the right of the nose)
+    get side() { const n = this.nose; return { x: n.y, y: -n.x }; }
     get altitude() { return V.len(this.r) - this.body.R; }
-    // distance from centre of mass to the bottom / top along the rocket axis
-    get bottomDist() { return this.layout.height - this.layout.com; }
-    get topDist() { return this.layout.com; }
+    // distance from the centre of mass to the lowest / highest point along the rocket axis
+    get bottomDist() { return -this.layout.minY; }
+    get topDist() { return this.layout.maxY; }
+
+    // A craft-frame vector (relative to the centre of mass) in world coordinates.
+    toWorld(v) {
+      const n = this.nose;
+      return { x: n.y * v.x + n.x * v.y, y: -n.x * v.x + n.y * v.y };
+    }
 
     placeOnPad(t) {
-      const b = this.body;
-      const lon = b.pad.lon;
-      this.landed = { lon, rel: 0 };
+      this.landed = { lon: this.body.pad.lon, rel: 0 };
       this.syncLanded(t);
     }
 
@@ -69,8 +80,8 @@
       const L = this.landed;
       const radAng = L.lon + FS.bodyRot(b, t);
       const ground = FS.surfaceHeight(b, L.lon);
-      const rad = b.R + ground + this.bottomDist * Math.cos(L.rel) + 0.02;
-      this.r = V.fromAngle(radAng, rad);
+      const rest = L.rel === 0 ? this.bottomDist : this.topDist;
+      this.r = V.fromAngle(radAng, b.R + ground + rest + 0.02);
       this.v = FS.airVel(b, this.r);
       this.angle = radAng + L.rel;
       this.omega = b.omega;
@@ -80,38 +91,53 @@
     stage(sim) {
       if (this.stageIdx >= this.stages.length) return null;
       const ev = this.stages[this.stageIdx++];
-      let dropped = null;
-      if (ev.decouple) {
-        const segs = FS.segmentsOf(this.parts);
-        if (segs.length > 1) {
-          const drop = segs[0];
-          this.parts = this.parts.filter((p) => !drop.includes(p));
-          const oldCom = this.layout.com;
-          const oldTopPos = V.add(this.r, V.scale(this.nose, oldCom));
-          this.relayout();
-          // keep the upper part where it was
-          const newR = V.sub(oldTopPos, V.scale(this.nose, this.layout.com));
-          const deb = new Vessel('Debris', drop, this.body, { debris: true });
-          const dropLayout = deb.layout;
-          // debris CoM: its top starts where our stack ends
-          const debTop = V.sub(newR, V.scale(this.nose, this.layout.height - this.layout.com));
-          deb.r = V.sub(debTop, V.scale(this.nose, dropLayout.com + 0.05));
-          deb.v = V.add(this.v, V.scale(this.nose, -1.5));
-          deb.angle = this.angle;
-          deb.omega = this.omega + (Math.random() - 0.5) * 0.05;
-          deb.landed = null;
-          this.r = newR;
-          this.v = V.add(this.v, V.scale(this.nose, 0.6));
-          dropped = deb;
-          if (this.landed) this.landed = null;
-        }
-      }
-      if (ev.ignite) for (const p of ev.parts) if (p.def.engine && this.parts.includes(p)) p.lit = true;
+      const dropped = [];
+      if (ev.decouple) for (const dec of ev.decouplers) { const d = this.separate(dec); if (d) dropped.push(d); }
+      if (ev.ignite) for (const e of ev.engines) if (this.parts.includes(e)) e.lit = true;
       if (ev.chutes) for (const p of this.parts) if (p.chute === 'stowed') p.chute = 'armed';
       this.stats.launched = true;
-      // The simulation adds the dropped stage as debris when it hears this event.
+      // The simulation adds the dropped parts as debris when it hears this event.
       if (sim) sim.emit('staged', { vessel: this, event: ev, dropped });
       return ev;
+    }
+
+    // Fire one decoupler: split the tree there. The side with the command part stays this
+    // vessel; the other side is returned as a new debris vessel. Both keep their motion,
+    // including the extra speed from the craft's spin, and get a small push apart.
+    separate(dec) {
+      if (!this.parts.includes(dec)) return null;
+      const sub = new Set(FS.subtree(this.parts, dec));
+      let keep = this.parts.filter((p) => !sub.has(p));
+      let drop = [...sub];
+      const hasCmd = (list) => list.some((p) => p.def.command);
+      if (!hasCmd(keep) && hasCmd(drop)) [keep, drop] = [drop, keep];
+      if (!keep.length || !drop.length) return null;
+
+      const oldCom = this.layout.com, w = this.omega, r0 = this.r, v0 = this.v;
+      const spin = (d) => ({ x: -w * d.y, y: w * d.x });
+      const cut = (list) => { const set = new Set(list); for (const p of list) if (p.parent && !set.has(p.parent)) p.parent = null; };
+      cut(keep); cut(drop);
+
+      this.parts = keep;
+      this.relayout();
+      const dk = this.toWorld(V.sub(this.layout.com, oldCom));
+      this.r = V.add(r0, dk);
+      this.v = V.add(v0, spin(dk));
+
+      const deb = new Vessel('Debris', drop, this.body, { debris: true });
+      const dd = this.toWorld(V.sub(deb.layout.com, oldCom));
+      deb.r = V.add(r0, dd);
+      deb.v = V.add(v0, spin(dd));
+      deb.angle = this.angle;
+      deb.omega = w;
+      deb.landed = null;
+
+      let apart = V.sub(dd, dk);
+      apart = V.len(apart) > 1e-6 ? V.norm(apart) : V.scale(this.nose, -1);
+      deb.v = V.add(deb.v, V.scale(apart, 1.0));
+      this.v = V.sub(this.v, V.scale(apart, 0.4));
+      if (this.landed) this.landed = null;
+      return deb;
     }
 
     deployChutes() {
@@ -121,20 +147,30 @@
     }
 
     // ---- Engines ----
-    // Returns {F, mdot} totals and burns fuel if dt > 0.
+    // Burns fuel for dt seconds and works out thrust: its total size, its direction and
+    // turning effect in the craft frame, and how much the gimbals can steer.
     runEngines(dt, p) {
-      const segs = FS.segmentsOf(this.parts);
-      let F = 0;
+      let total = 0, torque = 0, gimbal = 0;
+      let thrust = { x: 0, y: 0 };
       let anyLit = false, flame = false;
       this.nozzles = [];
-      for (const seg of segs) {
-        const liq = seg.filter((q) => q.lit && q.def.engine && !q.def.engine.solid);
-        const tanks = seg.filter((q) => q.def.fuel);
+      const push = (q, f, power, solid) => {
+        const F = V.scale(q.axis, f);
+        thrust = V.add(thrust, F);
+        torque += V.cross(q.c, F);
+        total += f;
+        if (q.def.engine.gimbal) gimbal += f * Math.sin((q.def.engine.gimbal * Math.PI) / 180) * Math.abs(V.dot(q.c, q.axis));
+        this.nozzles.push({ part: q, power, solid });
+        flame = true;
+      };
+      for (const g of FS.flowGroups(this.parts)) {
+        const liq = g.filter((q) => q.lit && q.def.engine && !q.def.engine.solid);
+        const tanks = g.filter((q) => q.def.fuel);
         const fuel = tanks.reduce((s, q) => s + q.fuel, 0);
         if (liq.length) anyLit = true;
         if (liq.length && fuel > 0 && this.throttle > 0) {
-          let mdot = 0, f = 0;
-          for (const q of liq) { const t = FS.engineThrust(q.def.engine, p, this.throttle); mdot += t.mdot; f += t.F; }
+          let mdot = 0;
+          const each = liq.map((q) => { const t = FS.engineThrust(q.def.engine, p, this.throttle); mdot += t.mdot; return t.F; });
           let frac = 1;
           if (dt > 0) {
             const want = mdot * dt;
@@ -142,36 +178,48 @@
             const used = want * frac;
             for (const tk of tanks) tk.fuel = Math.max(0, tk.fuel - used * (tk.fuel / fuel));
           }
-          F += f * frac;
-          for (const q of liq) this.nozzles.push({ part: q, power: this.throttle * frac });
-          flame = true;
+          liq.forEach((q, i) => push(q, each[i] * frac, this.throttle * frac, false));
         }
-        for (const q of seg) {
+        for (const q of g) {
           if (q.lit && q.def.engine && q.def.engine.solid && q.solid > 0) {
             const t = FS.engineThrust(q.def.engine, p, 1);
             let frac = 1;
             if (dt > 0) { frac = Math.min(1, q.solid / (t.mdot * dt)); q.solid = Math.max(0, q.solid - t.mdot * dt * frac); }
-            F += t.F * frac;
-            this.nozzles.push({ part: q, power: frac, solid: true });
-            flame = true;
+            push(q, t.F * frac, frac, true);
           }
         }
       }
+      this.thrustLocal = thrust;
+      this.thrustTorque = torque;
+      this.gimbalAuthority = gimbal;
       this.flameout = anyLit && !flame && this.throttle > 0;
-      return F;
+      return total;
     }
 
-    gimbalTorque(F) {
-      let tq = 0;
-      this.parts.forEach((p, i) => {
-        if (p.lit && p.def.engine && p.def.engine.gimbal) {
-          const share = this.nozzles && this.nozzles.find((n) => n.part === p) ? 1 : 0;
-          const lever = this.layout.tops[i] + p.def.len - this.layout.com;
-          const thrustShare = this.thrustNow * share / Math.max(1, this.nozzles.length);
-          tq += thrustShare * Math.sin((p.def.engine.gimbal * Math.PI) / 180) * lever;
+    // Engines burning now (lit, with fuel), or if none, the engines the next stage lights.
+    activeEngines() {
+      const lit = [];
+      for (const g of FS.flowGroups(this.parts)) {
+        const fuel = g.reduce((s, q) => s + q.fuel, 0);
+        for (const q of g) if (q.lit && q.def.engine && (q.def.engine.solid ? q.solid > 0 : fuel > 0)) lit.push(q);
+      }
+      if (lit.length) return lit;
+      const next = this.stages.slice(this.stageIdx).find((e) => e.ignite);
+      return next ? next.engines.filter((e) => this.parts.includes(e)) : [];
+    }
+
+    // Fuel left and capacity in the groups feeding the active engines.
+    stageFuel() {
+      const engines = new Set(this.activeEngines());
+      let now = 0, max = 0;
+      for (const g of FS.flowGroups(this.parts)) {
+        if (!g.some((q) => engines.has(q))) continue;
+        for (const q of g) {
+          now += q.fuel + (engines.has(q) ? q.solid : 0);
+          max += (q.def.fuel || 0) + (engines.has(q) ? q.def.solid || 0 : 0);
         }
-      });
-      return tq;
+      }
+      return { now, max };
     }
 
     sasTargetAngle(sim) {
@@ -197,6 +245,29 @@
       return this.sasTarget;
     }
 
+    // ---- Aerodynamics ----
+    // Drag on every part, from how the air meets it: along its axis it uses the part's
+    // front drag area, across it the side area. Each force acts at the part's centre,
+    // so a tail with fins (lots of side area) turns the nose into the airflow.
+    // Returns the total force (world) and the turning effect about the centre of mass.
+    aero(vAir, q, angle) {
+      const s = V.len(vAir);
+      if (q <= 0 || s < 1e-6) return { F: { x: 0, y: 0 }, tau: 0 };
+      const u = V.scale(vAir, 1 / s);
+      const n = V.fromAngle(angle);
+      const toW = (v) => ({ x: n.y * v.x + n.x * v.y, y: -n.x * v.x + n.y * v.y });
+      let F = { x: 0, y: 0 }, tau = 0;
+      for (const p of this.parts) {
+        const cos = Math.abs(V.dot(toW(p.axis), u));
+        const sin = Math.sqrt(Math.max(0, 1 - cos * cos));
+        const A = p.def.cda * cos + sideArea(p) * sin + chuteArea(p);
+        const Fp = V.scale(u, -q * A);
+        F = V.add(F, Fp);
+        tau += V.cross(toW(p.c), Fp);
+      }
+      return { F, tau };
+    }
+
     // ---- Physics step ----
     step(dt, t, sim) {
       if (this.dead) return;
@@ -206,27 +277,25 @@
       const rho = FS.density(b, this.altitude);
 
       // Parachute state machine
-      let chuteChange = false;
       const agl = this.altitude - FS.surfaceHeight(b, FS.lonAt(b, V.angle(this.r), t));
       for (const q of this.parts) {
-        if (q.chute === 'armed' && p > 0.04 && V.len(V.sub(this.v, FS.airVel(b, this.r))) < 300) { q.chute = 'semi'; q.deploy = 0; chuteChange = true; }
-        if (q.chute === 'semi' && agl < 1000) { q.chute = 'full'; q.deploy = 0; chuteChange = true; }
+        if (q.chute === 'armed' && p > 0.04 && V.len(V.sub(this.v, FS.airVel(b, this.r))) < 300) { q.chute = 'semi'; q.deploy = 0; }
+        if (q.chute === 'semi' && agl < 1000) { q.chute = 'full'; q.deploy = 0; }
         if ((q.chute === 'semi' || q.chute === 'full') && q.deploy < 1) q.deploy = Math.min(1, q.deploy + dt * 0.4);
       }
-      if (chuteChange) this.relayout();
 
       // Engines
-      const F = this.runEngines(dt, p);
-      this.thrustNow = F;
+      const Fmag = this.runEngines(dt, p);
+      this.thrustNow = Fmag;
       this.relayout();
       const m = this.mass;
-      const n = this.nose;
+      const thrustVec = this.toWorld(this.thrustLocal);
 
       if (this.landed) {
         // Resting on the ground: lift off only if thrust beats weight.
         const up = V.norm(this.r);
         const g = b.mu / V.dot(this.r, this.r);
-        if (F * V.dot(n, up) > m * g * 1.0001) {
+        if (V.dot(thrustVec, up) > m * g * 1.0001) {
           this.landed = null;
           this.splashed = false;
           this.r = V.add(this.r, V.scale(up, 0.05));
@@ -244,11 +313,9 @@
       const sAir = V.len(vAir);
       const q = 0.5 * rho * sAir * sAir;
       this.q = q;
-      const dragF = q * this.cda;
-      const dragVec = sAir > 1e-6 ? V.scale(vAir, -dragF / sAir) : { x: 0, y: 0 };
-      const thrustVec = V.scale(n, F);
+      const drag = this.aero(vAir, q, this.angle);
       this.thrustAccel = V.scale(thrustVec, 1 / m);
-      const acc = V.add(gAcc, V.scale(V.add(thrustVec, dragVec), 1 / m));
+      const acc = V.add(gAcc, V.scale(V.add(thrustVec, drag.F), 1 / m));
       this.v = V.add(this.v, V.scale(acc, dt));
       this.r = V.add(this.r, V.scale(this.v, dt));
       this.gForce = V.len(V.sub(acc, gAcc)) / FS.G0;
@@ -256,17 +323,15 @@
 
       // Torques (sub-stepped for stability with strong aero torques)
       const I = this.layout.I;
-      const maxT = this.hasCommand ? this.torqueWheel + this.gimbalTorque(F) : 0;
-      const copArm = this.layout.com - this.cop; // + toward nose
+      const maxT = this.hasCommand ? this.torqueWheel + this.gimbalAuthority : 0;
+      const len = this.layout.height;
       const sub = 4;
       const h = dt / sub;
       for (let k = 0; k < sub; k++) {
-        const nn = FS.vec.fromAngle(this.angle);
-        let tau = 0;
-        // aerodynamic torque from drag acting at the centre of pressure
-        if (dragF > 0) {
-          tau += V.cross(V.scale(nn, copArm), dragVec);
-          tau -= 0.6 * q * this.cda * this.layout.height * this.layout.height * (this.omega) / Math.max(sAir, 5);
+        let tau = this.thrustTorque; // engines off the centre line turn the craft
+        if (q > 0) {
+          tau += this.aero(vAir, q, this.angle).tau;
+          tau -= 0.6 * q * this.cda * len * len * this.omega / Math.max(sAir, 5); // damping
         }
         if (!this.isDebris && maxT > 0) {
           if (this.rot !== 0) {
@@ -297,36 +362,32 @@
       this.checkSOI(t, sim);
     }
 
+    // Test every corner of every part against the ground.
     checkGround(t, sim) {
       const b = this.body;
-      const n = this.nose;
-      const ends = [
-        { pt: V.sub(this.r, V.scale(n, this.bottomDist)), part: this.parts[this.parts.length - 1], bottom: true },
-        { pt: V.add(this.r, V.scale(n, this.topDist)), part: this.parts[0], bottom: false },
-      ];
-      for (const e of ends) {
-        const lon = FS.lonAt(b, V.angle(e.pt), t);
-        const ground = FS.surfaceHeight(b, lon);
-        const clear = V.len(e.pt) - b.R - ground;
-        if (clear >= 0) continue;
-        const vs = V.sub(this.v, FS.airVel(b, this.r));
-        const speed = V.len(vs);
-        const up = V.norm(this.r);
-        const tilt = Math.acos(FS.clamp(V.dot(n, up), -1, 1));
-        const water = b.ocean && FS.terrainHeight(b, lon) < 0;
-        const tol = e.part ? e.part.def.crash : 8;
-        if (this.isDebris) {
-          if (speed > 12) { this.explode(sim); return; }
+      const reach = Math.max(this.layout.height, this.layout.width);
+      if (this.altitude > b.terrain.amp * 2.5 + reach + 50) return; // far above any ground
+      let hit = null;
+      for (const p of this.parts) {
+        for (const hp of p.hullC) {
+          const pt = V.add(this.r, this.toWorld(hp));
+          const lon = FS.lonAt(b, V.angle(pt), t);
+          const clear = V.len(pt) - b.R - FS.surfaceHeight(b, lon);
+          if (clear < 0 && (!hit || clear < hit.clear)) hit = { clear, part: p, lon, bottom: hp.y < 0 };
         }
-        if (water && speed < 20 && (tilt < 0.6 || tilt > Math.PI - 0.6 || speed < 8)) {
-          this.setLanded(t, true, sim); return;
-        }
-        if (!water && e.bottom && tilt < 0.5 && speed < tol) { this.setLanded(t, false, sim); return; }
-        if (!water && !e.bottom && tilt > Math.PI - 0.5 && speed < tol) { this.setLanded(t, false, sim); return; }
-        if (speed < 3) { this.setLanded(t, water, sim); return; }
-        this.explode(sim);
-        return;
       }
+      if (!hit) return;
+      const speed = V.len(V.sub(this.v, FS.airVel(b, this.r)));
+      const up = V.norm(this.r);
+      const tilt = Math.acos(FS.clamp(V.dot(this.nose, up), -1, 1));
+      const water = b.ocean && FS.terrainHeight(b, hit.lon) < 0;
+      const tol = hit.part.def.crash;
+      if (this.isDebris && speed > 12) { this.explode(sim); return; }
+      if (water && speed < 20 && (tilt < 0.6 || tilt > Math.PI - 0.6 || speed < 8)) { this.setLanded(t, true, sim); return; }
+      if (!water && hit.bottom && tilt < 0.5 && speed < tol) { this.setLanded(t, false, sim); return; }
+      if (!water && !hit.bottom && tilt > Math.PI - 0.5 && speed < tol) { this.setLanded(t, false, sim); return; }
+      if (speed < 3) { this.setLanded(t, water, sim); return; }
+      this.explode(sim);
     }
 
     setLanded(t, water, sim) {
@@ -335,7 +396,7 @@
       const lon = FS.lonAt(b, radAng, t);
       // settle upright or upside-down, whichever is closer
       let rel = FS.wrapAngle(this.angle - radAng);
-      if (Math.abs(rel) > Math.PI / 2) rel = Math.PI; else rel = 0;
+      rel = Math.abs(rel) > Math.PI / 2 ? Math.PI : 0;
       this.landed = { lon, rel };
       this.splashed = water;
       this.omega = 0;
@@ -377,7 +438,6 @@
       if (this.landed) { this.syncLanded(t); return; }
       const s = FS.orbitState(this.rails, t);
       this.r = s.r; this.v = s.v;
-      this.angle += this.omega * 0; // orientation held
       const prevBody = this.body;
       this.checkSOI(t, sim);
       if (this.body !== prevBody) this.goOnRails(t);

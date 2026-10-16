@@ -3,7 +3,8 @@
   "private": true,
   "description": "2D spaceflight sandbox. No build step: open index.html. npm is only used for tests.",
   "scripts": {
-    "test": "node tests/run.js"
+    "test": "node tests/run.js",
+    "roadmap": "node tools/roadmap.js"
   },
   "devDependencies": {
     "jsdom": "^29.1.1"

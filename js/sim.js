@@ -5,7 +5,7 @@
 //
 // Events (G.on(type, fn) to listen, G.emit(type, data) to send):
 //   'flight-start' { vessel }               a new flight began
-//   'staged'       { vessel, event, dropped } a stage fired; dropped is the separated part, or null
+//   'staged'       { vessel, event, dropped } a stage fired; dropped lists the vessels that came off
 //   'touchdown'    { vessel, water }        a craft came to rest on ground or water
 //   'exploded'     { vessel }               a craft (or debris) was destroyed
 //   'soi'          { vessel, from }         a craft moved into another body's sphere of influence
@@ -50,7 +50,7 @@
   G.message = (text, kind = '', ms = 3000) => G.emit('message', { text, kind, ms });
 
   // The simulation's own reactions come first, before any page code listens.
-  G.on('staged', ({ dropped }) => { if (dropped) G.addDebris(dropped); });
+  G.on('staged', ({ dropped }) => dropped.forEach(G.addDebris));
   G.on('exploded', ({ vessel }) => { if (vessel === G.vessel) G.stopWarp(); });
   G.on('touchdown', ({ vessel }) => {
     if (vessel !== G.vessel) return;
@@ -75,7 +75,6 @@
     G.launchT = G.t;
     const v = (G.vessel = new FS.Vessel(craft.name, craft.parts, FS.root, { throttle: 1 }));
     v.placeOnPad(G.t);
-    v.initialSegs = FS.segmentsOf(v.parts).length;
     v.visited = new Set();
     v.landings = [];
     G.debris = [];

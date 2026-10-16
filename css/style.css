@@ -263,3 +263,4 @@ kbd { font: 500 11px var(--f-mono); opacity: 0.65; margin-left: 4px; }
 @media (prefers-reduced-motion: reduce) {
   .toast { animation: none; }
 }
+.fstages li.burning { border-color: var(--cyan); background: rgba(85, 214, 255, 0.08); }

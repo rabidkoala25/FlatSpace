@@ -1,4 +1,8 @@
-// editor.js — the Vehicle Assembly hangar: build a stack, see Δv per stage, launch.
+// editor.js — the Vehicle Assembly hangar: build a craft, see Δv per stage, launch.
+// The craft is a part tree (partgraph.js). This editor edits its main stack: the root
+// and the chain of parts hanging below it. Parts attached to the side (from a craft
+// file or a sample) are kept and move with the part they hang from. Step A2 replaces
+// this with drag-and-drop building.
 (function () {
   const E = (FS.Editor = {});
   const $ = (id) => document.getElementById(id);
@@ -6,40 +10,51 @@
   let game;
   let hitBoxes = [];
 
-  E.craft = { name: 'Orbiter I', parts: FS.SAMPLE_CRAFT[1].parts.slice() };
-  E.sel = -1;
+  const sampleParts = (c) => (c.tree ? FS.partsFromSerial(c.tree) : FS.stackToParts(c.parts));
+
+  E.name = 'Orbiter I';
+  E.parts = [];
+  E.sel = null; // the selected part
 
   E.init = (g) => {
     game = g;
     cv = $('edCanvas');
     ctx = cv.getContext('2d');
     const saved = FS.store.load('flatspace.current', null);
-    if (saved && Array.isArray(saved.parts)) E.craft = { name: saved.name || 'Untitled', parts: saved.parts.filter((id) => FS.PART[id]) };
+    if (saved && Array.isArray(saved.parts)) { E.name = saved.name || 'Untitled'; E.parts = FS.partsFromSerial(saved.parts); }
+    else E.parts = sampleParts(FS.SAMPLE_CRAFT[1]);
     buildPalette();
     refreshLoadList();
 
-    $('craftName').value = E.craft.name;
-    $('craftName').addEventListener('input', (e) => { E.craft.name = e.target.value || 'Untitled'; persist(); });
+    $('craftName').value = E.name;
+    $('craftName').addEventListener('input', (e) => { E.name = e.target.value || 'Untitled'; persist(); });
     $('btnLaunch').addEventListener('click', () => E.launch());
-    $('btnNew').addEventListener('click', () => { E.craft = { name: 'Untitled', parts: ['lark'] }; E.sel = 0; $('craftName').value = 'Untitled'; E.changed(); });
+    $('btnNew').addEventListener('click', () => {
+      E.name = 'Untitled';
+      E.parts = FS.stackToParts(['lark']);
+      E.sel = E.parts[0];
+      $('craftName').value = E.name;
+      E.changed();
+    });
     $('btnSave').addEventListener('click', () => {
       const all = FS.store.load('flatspace.crafts', {});
-      all[E.craft.name] = E.craft.parts.slice();
+      all[E.name] = FS.serialParts(E.parts);
       const ok = FS.store.save('flatspace.crafts', all);
       refreshLoadList();
-      $('partInfo').textContent = ok ? `Saved “${E.craft.name}”.` : 'Could not save: browser storage is unavailable.';
+      $('partInfo').textContent = ok ? `Saved “${E.name}”.` : 'Could not save: browser storage is unavailable.';
     });
     $('craftLoad').addEventListener('change', (e) => {
       const v = e.target.value;
       if (!v) return;
       const [kind, name] = v.split('::');
       let parts = null;
-      if (kind === 'sample') parts = FS.SAMPLE_CRAFT.find((c) => c.name === name).parts;
-      else parts = FS.store.load('flatspace.crafts', {})[name];
+      if (kind === 'sample') parts = sampleParts(FS.SAMPLE_CRAFT.find((c) => c.name === name));
+      else { const s = FS.store.load('flatspace.crafts', {})[name]; if (s) parts = FS.partsFromSerial(s); }
       if (parts) {
-        E.craft = { name, parts: parts.slice() };
+        E.name = name;
+        E.parts = parts;
         $('craftName').value = name;
-        E.sel = -1;
+        E.sel = null;
         E.changed();
       }
       e.target.value = '';
@@ -51,13 +66,22 @@
     window.addEventListener('keydown', (e) => {
       if (game.scene !== 'editor' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
       if (e.key === 'Delete' || e.key === 'Backspace') { remove(); e.preventDefault(); }
-      if (e.key === 'ArrowUp') { if (e.altKey) move(-1); else E.sel = Math.max(0, E.sel - 1); E.render(); e.preventDefault(); }
-      if (e.key === 'ArrowDown') { if (e.altKey) move(1); else E.sel = Math.min(E.craft.parts.length - 1, E.sel + 1); E.render(); e.preventDefault(); }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        const d = e.key === 'ArrowUp' ? -1 : 1;
+        if (e.altKey) move(d);
+        else {
+          const ch = chain();
+          const i = ch.indexOf(E.sel);
+          E.sel = ch[FS.clamp(i < 0 ? 0 : i + d, 0, ch.length - 1)] || null;
+          E.render();
+        }
+        e.preventDefault();
+      }
     });
     E.changed();
   };
 
-  function persist() { FS.store.save('flatspace.current', E.craft); }
+  function persist() { FS.store.save('flatspace.current', { name: E.name, parts: FS.serialParts(E.parts) }); }
 
   function refreshLoadList() {
     const sel = $('craftLoad');
@@ -90,7 +114,7 @@
       grp.innerHTML = `<div class="pal-cat">${cat}</div>`;
       const list = document.createElement('div');
       list.className = 'pal-list';
-      for (const d of FS.PARTS.filter((p) => p.cat === cat)) {
+      for (const d of FS.PARTS.filter((p) => p.cat === cat && !p.radial)) {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'part-btn';
@@ -112,39 +136,81 @@
 
   function drawThumb(c, d) {
     const g = c.getContext('2d');
-    const parts = FS.makeParts([d.id]);
-    const w = d.w === 'auto' ? 1.25 : d.w;
-    const s = Math.min(70 / Math.max(w + (d.fin ? 1.6 : 0), 0.6), 84 / d.len, 60);
+    const p = FS.newPart(d.id);
+    FS.relayout([p]);
+    const s = Math.min(70 / Math.max(p.w + (d.fin ? 1.6 : 0), 0.6), 84 / d.len, 60);
     g.setTransform(s, 0, 0, s, 44, 52 - (d.len * s) / 2);
-    FS.drawPart(g, parts, 0, 0, 1 / s, {});
+    FS.drawPart(g, p, 0, 1 / s, {});
   }
 
+  // ---------- Editing the main stack ----------
+  const below = (p) => E.parts.find((c) => c.parent === p && c.node === 'bottom') || null;
+  function chain() {
+    const out = [];
+    for (let p = FS.rootOf(E.parts); p; p = below(p)) out.push(p);
+    return out;
+  }
+
+  // Add a part below the selected one (or at the bottom of the stack).
   function add(id) {
-    const at = E.sel >= 0 ? E.sel + 1 : E.craft.parts.length;
-    E.craft.parts.splice(at, 0, id);
-    E.sel = at;
+    const p = FS.newPart(id);
+    if (!p) return;
+    const ch = chain();
+    const target = ch.includes(E.sel) ? E.sel : ch[ch.length - 1];
+    if (target) {
+      const old = below(target);
+      p.parent = target;
+      p.node = 'bottom';
+      if (old) old.parent = p;
+    }
+    E.parts.push(p);
+    E.sel = p;
+    FS.relayout(E.parts);
     E.changed();
   }
+
   function remove() {
-    if (E.sel < 0 || E.sel >= E.craft.parts.length) return;
-    E.craft.parts.splice(E.sel, 1);
-    E.sel = Math.min(E.sel, E.craft.parts.length - 1);
+    const sel = E.sel;
+    if (!sel || !E.parts.includes(sel)) return;
+    let gone;
+    if (chain().includes(sel)) {
+      const next = below(sel);
+      if (next) next.parent = sel.parent;
+      if (next && !sel.parent) next.pos = { ...sel.pos };
+      // the part goes, with anything on its sides; the stack below closes up
+      gone = new Set(FS.subtree(E.parts, sel).filter((p) => !next || !FS.subtree(E.parts, next).includes(p)));
+      gone.add(sel);
+      E.sel = next || sel.parent || null;
+    } else {
+      gone = new Set(FS.subtree(E.parts, sel));
+      E.sel = sel.parent || null;
+    }
+    E.parts = E.parts.filter((p) => !gone.has(p));
+    FS.relayout(E.parts);
     E.changed();
   }
+
+  // Move the selected stack part up or down the stack.
   function move(d) {
-    const i = E.sel, j = i + d;
-    if (i < 0 || j < 0 || j >= E.craft.parts.length) return;
-    const p = E.craft.parts;
-    [p[i], p[j]] = [p[j], p[i]];
-    E.sel = j;
+    const ch = chain();
+    const i = ch.indexOf(E.sel), j = i + d;
+    if (i < 0 || j < 0 || j >= ch.length) return;
+    const rootPos = { ...ch[0].pos };
+    [ch[i], ch[j]] = [ch[j], ch[i]];
+    ch.forEach((p, k) => { p.parent = k ? ch[k - 1] : null; p.node = 'bottom'; });
+    ch[0].pos = rootPos;
+    ch[0].rot = 0;
+    FS.relayout(E.parts);
     E.changed();
   }
 
   function onClick(e) {
     const rect = cv.getBoundingClientRect();
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
-    const hit = hitBoxes.find((h) => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1);
-    E.sel = hit ? hit.i : -1;
+    // the smallest box under the pointer wins, so side parts can be picked over the stack
+    const hits = hitBoxes.filter((h) => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1);
+    hits.sort((a, b) => (a.x1 - a.x0) * (a.y1 - a.y0) - (b.x1 - b.x0) * (b.y1 - b.y0));
+    E.sel = hits.length ? hits[0].p : null;
     E.render();
   }
 
@@ -165,12 +231,15 @@
     bg.addColorStop(0, '#0f1a33'); bg.addColorStop(1, '#0a1224');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-    const parts = FS.makeParts(E.craft.parts);
-    const lay = FS.stackLayout(parts);
+    const parts = E.parts;
+    const lay = FS.massLayout(parts);
     const height = Math.max(lay.height, 4);
-    const s = Math.min((H - 120) / height, 70, (W - 160) / 7);
+    const s = Math.min((H - 120) / height, 70, (W - 160) / Math.max(7, lay.width + 2));
     const top = Math.max(40, (H - 60 - height * s) / 2);
-    const cx = W / 2;
+    const cx = W / 2 - ((lay.minX + lay.maxX) / 2) * s;
+    // craft frame (relative to the centre of mass) → screen
+    const sx = (x) => cx + x * s;
+    const sy = (y) => top + (lay.maxY - y) * s;
 
     // grid (1 m)
     ctx.strokeStyle = 'rgba(120,160,230,0.07)';
@@ -180,12 +249,12 @@
     for (let y = top % step; y < H; y += step) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); ctx.stroke(); }
 
     // floor
-    const floorY = top + lay.height * s;
+    const floorY = sy(lay.minY);
     ctx.fillStyle = 'rgba(120,160,230,0.10)';
     ctx.fillRect(0, floorY, W, 3);
 
     // height ruler
-    const rx = Math.max(24, cx - 3.2 * s - 50);
+    const rx = Math.max(24, sx(lay.minX) - 50);
     ctx.strokeStyle = 'rgba(200,215,240,0.45)';
     ctx.fillStyle = 'rgba(200,215,240,0.7)';
     ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
@@ -198,80 +267,73 @@
       ctx.fillText(m + ' m', rx - 8, y + 4);
     }
 
-    // parts
     hitBoxes = [];
     if (!parts.length) {
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(200,215,240,0.6)';
       ctx.font = '500 15px Barlow, system-ui, sans-serif';
-      ctx.fillText('Add a command part to start your rocket.', cx, H / 2);
+      ctx.fillText('Add a command part to start your rocket.', W / 2, H / 2);
       return;
     }
-    ctx.save();
-    ctx.translate(cx, top);
-    ctx.scale(s, s);
-    parts.forEach((p, i) => {
-      FS.drawPart(ctx, parts, i, lay.tops[i], 1 / s, { selected: i === E.sel });
-    });
+    for (const p of parts) {
+      ctx.save();
+      ctx.translate(sx(p.c.x), sy(p.c.y));
+      ctx.scale(s, s);
+      ctx.rotate(-p.rot);
+      if (p.flip) ctx.scale(-1, 1);
+      FS.drawPart(ctx, p, -p.def.len / 2, 1 / s, { selected: p === E.sel });
+      ctx.restore();
+      const xs = p.hullC.map((h) => sx(h.x)), ys = p.hullC.map((h) => sy(h.y));
+      hitBoxes.push({ p, x0: Math.min(...xs) - 4, x1: Math.max(...xs) + 4, y0: Math.min(...ys), y1: Math.max(...ys) });
+    }
+
     // centre of mass marker
-    ctx.restore();
-    const comY = top + lay.com * s;
-    ctx.beginPath(); ctx.arc(cx, comY, 7, 0, FS.TAU);
+    const comX = sx(0), comY = sy(0);
+    ctx.beginPath(); ctx.arc(comX, comY, 7, 0, FS.TAU);
     ctx.fillStyle = '#ffd34d'; ctx.fill();
     ctx.fillStyle = '#1b1405';
-    ctx.beginPath(); ctx.moveTo(cx, comY); ctx.arc(cx, comY, 7, 0, Math.PI / 2); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(cx, comY); ctx.arc(cx, comY, 7, Math.PI, Math.PI * 1.5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(comX, comY); ctx.arc(comX, comY, 7, 0, Math.PI / 2); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(comX, comY); ctx.arc(comX, comY, 7, Math.PI, Math.PI * 1.5); ctx.closePath(); ctx.fill();
 
-    // labels for decouplers (stage boundaries)
+    // one label per stage, next to its first part
     ctx.font = '600 11px "Saira Semi Condensed", sans-serif';
     ctx.textAlign = 'left';
-    const stages = FS.stagesOf(parts);
-    stages.forEach((ev, k) => {
-      // one label per stage, next to its first part
-      for (const p of ev.parts.slice(0, 1)) {
-        const i = parts.indexOf(p);
-        if (i < 0) continue;
-        const y = top + (lay.tops[i] + p.def.len / 2) * s;
-        const x = cx + Math.max(FS.partWidth(parts, i), FS.partTopWidth(parts, i)) * s / 2 + (p.def.fin ? 0.8 * s : 0) + 14;
-        ctx.fillStyle = 'rgba(255,181,71,0.9)';
-        ctx.fillText('STAGE ' + (k + 1), x, y + 4);
-      }
-    });
-
-    parts.forEach((p, i) => {
-      const w = Math.max(FS.partWidth(parts, i), FS.partTopWidth(parts, i)) * s;
-      hitBoxes.push({ i, x0: cx - w / 2 - 6, x1: cx + w / 2 + 6, y0: top + lay.tops[i] * s, y1: top + (lay.tops[i] + p.def.len) * s });
+    FS.stagesOf(parts).forEach((ev, k) => {
+      const p = ev.parts[0];
+      if (!p) return;
+      const x = Math.max(...p.hullC.map((h) => sx(h.x))) + 14;
+      ctx.fillStyle = 'rgba(255,181,71,0.9)';
+      ctx.fillText('STAGE ' + (k + 1), x, sy(p.c.y) + 4);
     });
 
     const info = $('partInfo');
-    if (E.sel >= 0 && parts[E.sel]) {
-      const d = parts[E.sel].def;
+    if (E.sel && parts.includes(E.sel)) {
+      const d = E.sel.def;
       info.textContent = `${d.name}: ${d.desc}`;
     } else info.textContent = 'Click a part on the left to add it below the selected part.';
   };
 
   E.updateStats = () => {
-    const parts = FS.makeParts(E.craft.parts);
-    const segs = FS.segmentsOf(parts);
-    const sv = FS.segmentStats(segs, 0, 9.81);
-    const sa = FS.segmentStats(segs, 1, 9.81);
+    const parts = E.parts;
     const stages = FS.stagesOf(parts);
+    const sv = FS.stageStats(parts, stages, 0, 0, 9.81);
+    const sa = FS.stageStats(parts, stages, 0, 1, 9.81);
     const list = $('stageList');
     list.innerHTML = '';
     stages.forEach((ev, k) => {
       const li = document.createElement('li');
       li.className = 'stage-card';
-      let what = [];
-      if (ev.decouple) what.push('Decouple');
+      const what = [];
+      if (ev.decouple) what.push('Decouple' + (ev.decouplers.length > 1 ? ' ×' + ev.decouplers.length : ''));
       if (ev.ignite) {
         const names = {};
-        ev.parts.filter((p) => p.def.engine).forEach((p) => (names[p.def.name] = (names[p.def.name] || 0) + 1));
+        ev.engines.forEach((p) => (names[p.def.name] = (names[p.def.name] || 0) + 1));
         what.push('Ignite ' + Object.entries(names).map(([n, c]) => (c > 1 ? c + '× ' : '') + n.replace(/ Engine| Solid Booster/, '')).join(', '));
       }
       if (ev.chutes) what.push('Deploy parachutes');
       let dv = '', nums = '';
-      if (ev.ignite) {
-        const v = sv[ev.seg], a = sa[ev.seg];
+      const v = sv.events[k], a = sa.events[k];
+      if (ev.ignite || v.dv > 0.5) {
         dv = `${v.dv.toFixed(0)} m/s`;
         const twrCls = k === 0 && a.twr < 1 ? ' class="bad"' : '';
         nums = `<span${twrCls}>TWR ${a.twr.toFixed(2)}</span><span>ASL ${a.dv.toFixed(0)}</span><span>${v.time.toFixed(0)} s</span>`;
@@ -279,26 +341,26 @@
       li.innerHTML = `<header><span class="sn">Stage ${k + 1}</span><span class="dv">${dv}</span></header><div class="what">${what.join(' · ')}</div>${nums ? `<div class="nums">${nums}</div>` : ''}`;
       list.appendChild(li);
     });
-    const lay = FS.stackLayout(parts);
-    const total = sv.reduce((s, x) => s + x.dv, 0);
-    $('edTotals').innerHTML = `<dt>Total Δv (vacuum)</dt><dd class="dvtot">${total.toFixed(0)} m/s</dd>
+    const lay = FS.massLayout(parts);
+    $('edTotals').innerHTML = `<dt>Total Δv (vacuum)</dt><dd class="dvtot">${sv.total.toFixed(0)} m/s</dd>
       <dt>Mass</dt><dd>${(lay.mass / 1000).toFixed(2)} t</dd>
       <dt>Height</dt><dd>${lay.height.toFixed(1)} m</dd>
       <dt>Parts</dt><dd>${parts.length}</dd>`;
     const warn = [];
     if (!parts.some((p) => p.def.command)) warn.push('Add a capsule or probe core so the craft can be controlled.');
     if (!parts.some((p) => p.def.engine)) warn.push('No engines yet.');
-    const first = stages.find((e) => e.ignite);
-    if (first && sa[first.seg].twr < 1) warn.push('First stage thrust is lower than its weight (TWR under 1). It will not lift off.');
-    if (parts.length && parts[parts.length - 1].def.decoupler) warn.push('There is a decoupler at the very bottom.');
+    const first = stages.findIndex((e) => e.ignite);
+    if (first >= 0 && sa.events[first].twr < 1) warn.push('First stage thrust is lower than its weight (TWR under 1). It will not lift off.');
+    const ch = chain();
+    if (ch.length && ch[ch.length - 1].def.decoupler) warn.push('There is a decoupler at the very bottom.');
     if (parts.some((p) => p.def.engine) && !parts.some((p) => p.def.chute) && parts.some((p) => p.def.crew)) warn.push('No parachute. The crew will need one to come home.');
     $('edWarnings').innerHTML = warn.map((w) => `<li>${w}</li>`).join('');
     $('btnLaunch').disabled = !parts.length;
   };
 
   E.launch = () => {
-    if (!E.craft.parts.length) return;
+    if (!E.parts.length) return;
     persist();
-    game.launch({ name: E.craft.name, parts: E.craft.parts.slice() });
+    game.launch({ name: E.name, parts: FS.serialParts(E.parts) });
   };
 })();
