@@ -21,7 +21,7 @@ Add `?debug` to the address (for example `http://localhost:8000/?debug`) to star
 1. Create a new repository on GitHub and upload everything in this folder (including the empty `.nojekyll` file).
 2. In the repository, go to **Settings → Pages**.
 3. Under **Build and deployment**, choose **Deploy from a branch**, pick `main` and `/ (root)`, and save.
-4. After a minute the game is live at `https://<your-username>.github.io/<repository-name>/`.
+4. After a minute the game is live at `https://rabidkoala25.github.io/FlatSpace/`.
 
 ## First flight
 
