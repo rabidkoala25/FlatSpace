@@ -1,4 +1,16 @@
-// render.js — flight view, map view, particles and effects (Canvas 2D).
+// render.js — the Canvas 2D renderer: flight view, map view, particles and effects.
+//
+// Renderer interface. The rest of the game only talks to FS.Renderer through these
+// methods, so step B1 can swap in a WebGL renderer with the same shape:
+//   init(canvas, game)         set up, and subscribe to game events (explosions, SOI changes)
+//   resize()                   the canvas changed size
+//   size() -> {W, H}           canvas size in CSS pixels
+//   update(game)               advance visual-only state (particles) by game.frame.simDt
+//   drawFlight(game)           draw the flight view
+//   drawMap(game)              draw the map view
+//   worldToScreen(cam, x, y)   world metres → screen pixels, for map clicks
+//   stats() -> {particles}     numbers for the F3 developer overlay
+// The renderer only reads game state; it never changes the simulation.
 (function () {
   const V = FS.vec;
   const TAU = FS.TAU;
@@ -9,8 +21,9 @@
   const stars = [];
   const sprites = {};
 
-  R.init = (canvas) => {
+  R.init = (canvas, game) => {
     cv = canvas;
+    if (game) subscribe(game);
     ctx = canvas.getContext('2d');
     const rnd = FS.rng(4242);
     for (let i = 0; i < 700; i++) {
@@ -58,6 +71,7 @@
     return { x: W / 2 + xr * cam.s, y: H / 2 - yr * cam.s };
   }
   R.w2s = w2s;
+  R.worldToScreen = w2s;
   R.s2w = (cam, sx, sy) => {
     const xr = (sx - W / 2) / cam.s, yr = -(sy - H / 2) / cam.s;
     const c = Math.cos(cam.rot), s = Math.sin(cam.rot);
@@ -440,6 +454,28 @@
   // Stored relative to the body the active vessel is in.
   R.particles = [];
   R.clearParticles = () => (R.particles.length = 0);
+  R.stats = () => ({ particles: R.particles.length });
+
+  // Visual reactions to simulation events.
+  function subscribe(game) {
+    game.on('exploded', ({ vessel }) => {
+      const active = game.vessel;
+      if (active && vessel.body === active.body) R.emitExplosion(vessel.body, vessel.r, vessel.v, Math.max(2, vessel.layout.height * 0.4));
+    });
+    game.on('soi', ({ vessel }) => { if (vessel === game.vessel) R.clearParticles(); });
+    game.on('flight-start', () => R.clearParticles());
+  }
+
+  // Advance particles by the simulated time of the last frame (game.frame, set by sim.js).
+  R.update = (game) => {
+    const f = game.frame, ves = game.vessel;
+    if (!f || !ves) return;
+    if (!f.physics) { R.clearParticles(); return; } // nothing burns on rails
+    // move existing particles first, then add new ones at the current time
+    R.updateParticles(f.simDt, ves.body, game.t);
+    if (!ves.dead && f.rate <= 4) R.emitExhaust(ves, f.simDt, game.t);
+    for (const d of game.debris) if (!d.dead && d.body === ves.body) R.emitExhaust(d, f.simDt, game.t);
+  };
 
   R.emitExhaust = (ves, dt, t) => {
     if (!ves.nozzles || !ves.nozzles.length) return;
@@ -658,12 +694,13 @@
     const ves = game.vessel;
     if (!ves.dead && !ves.landed) {
       drawPatches(cam, game.patches, t, false);
-      if (game.node && game.nodePatches) drawPatches(cam, game.nodePatches, t, true);
+      if (game.node && game.nodePatches) drawPatches(cam, game.nodePatches, t, true, game.node.originT);
     }
     // Node marker
     if (game.node) {
       const nd = game.node;
-      const p = V.add(FS.bodyAbs(nd.body, t), nd.r);
+      // A node on a later patch is drawn around where its body will be when that patch starts.
+      const p = V.add(FS.bodyAbs(nd.body, nd.originT ?? t), nd.r);
       const s = w2s(cam, p.x, p.y);
       ctx.save();
       ctx.translate(s.x, s.y);
@@ -686,13 +723,13 @@
     }
   };
 
-  function drawPatches(cam, patches, t, planned) {
+  function drawPatches(cam, patches, t, planned, firstRef) {
     if (!patches) return;
     patches.forEach((pt, i) => {
       const o = pt.orbit;
       // Frame: the current SOI body is drawn where it is now; later patches
       // are drawn around where their body will be when the patch starts.
-      const tRef = i === 0 ? t : pt.tStart;
+      const tRef = i === 0 ? (firstRef ?? t) : pt.tStart;
       const origin = FS.bodyAbs(pt.body, tRef);
       const t0 = Math.max(pt.tStart, i === 0 ? t : pt.tStart);
       const pts = FS.sampleOrbit(o, t0, pt.tEnd, 360);
@@ -749,4 +786,7 @@
     ctx.fillStyle = col;
     ctx.fillText(txt, s.x + 11, s.y - 4);
   }
+
+  // The active renderer. B1 replaces this with the WebGL renderer.
+  FS.Renderer = R;
 })();

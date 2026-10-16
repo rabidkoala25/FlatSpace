@@ -33,30 +33,35 @@ All names (planets, parts, crew) are original. The game borrows mechanics, not K
 
 ### 1.2 Code structure
 
-The prototype today:
+The code today (after step A0):
 
 ```
 index.html          page shell, HUD markup, script tags
 css/style.css       all styling (HUD, editor, panels)
-js/util.js          vectors, formatting, small helpers
+data/parts.js       part stats as plain data (packs will add more in G1)
+data/bodies.js      planet and moon data
+js/util.js          version number, vectors, formatting, storage helpers
+js/save.js          versioned saves and migrations
 js/bodies.js        planets & moons: orbits, rotation, terrain, atmosphere
 js/orbit.js         Kepler orbits, propagation, patched conics, encounters
-js/parts.js         part catalogue, part drawing, staging and Δv maths
-js/vessel.js        a flying craft: forces, fuel, staging, landing, crashing
-js/render.js        flight view, map view, particles (Canvas 2D)
-js/editor.js        the Vehicle Assembly hangar
+js/parts.js         part lookup, part drawing, staging and Δv maths
+js/vessel.js        a flying craft: forces, fuel, staging, landing, crashing; reports events
+js/sim.js           game state, the event bus, stepping craft and debris (physics or on rails)
+js/warp.js          time warp rates and limits, warping to a time
+js/nodes.js         maneuver nodes on any patch of the predicted path
+js/render.js        the Canvas 2D renderer (FS.Renderer interface): flight, map, particles
 js/hud.js           flight instruments: attitude dial, readouts, stage list
-js/main.js          game loop, input, time warp, maneuver nodes, scenes
+js/editor.js        the Vehicle Assembly hangar
+js/input.js         keyboard, mouse and touch (including pinch zoom)
+js/main.js          scenes, messages and dialogs, milestones, camera, frame loop
+tests/              headless checks: node tests/run.js (npm install once for the page test)
 ```
+
+Simulation code (`data/`, `save.js` to `nodes.js`) never touches the page. It reports what happens through events (`staged`, `touchdown`, `exploded`, `soi`, `message`), which the renderer and `main.js` listen to. The tests load exactly these files in Node.
 
 Added by the roadmap:
 
 ```
-data/parts.js, data/bodies.js   A0  part and body stats as plain data  (done)
-js/save.js                      A0  versioned saves and migrations      (done)
-tests/, package.json            A0  headless checks; npm only installs jsdom for the page test  (done)
-js/sim.js, js/input.js,         A0  main.js split into simulation, input,
-js/warp.js, js/nodes.js             time warp and maneuver nodes
 js/partgraph.js                 A1  the part tree: attach nodes, positions, mass, fuel flow
 js/gl/                          B1  WebGL2 renderer: sprite batch, meshes, shaders
 art/palette.js                  B1  the master palette
@@ -413,7 +418,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 |---|---|---|
 | P | Prototype | ✅ done |
 | **A** | **Prepare and rebuild the builder** | |
-| A0 | Prepare the prototype | ◐ first half done (v0.1.1) |
+| A0 | Prepare the prototype | ✅ done (v0.2.0) |
 | A1 | Part tree and vessel physics | ☐ |
 | A2 | Drag-and-drop editor | ☐ |
 | A3 | Editor tools | ☐ |
@@ -521,24 +526,23 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 
 **Done when:** the game plays as before; `node tests/run.js` passes; the file layout matches section 1.2; the game is live on GitHub Pages.
 
-**Progress (first half, v0.1.1):**
-- **Done:**
+**Result (v0.2.0):** done, except turning on GitHub Pages, which you do in the repository's Settings → Pages.
+- **First half (v0.1.1):**
   - tests;
-  - data files;
-  - versioned saves with a migration hook;
-  - version number in the hangar and menu;
-  - F3 developer overlay;
-  - part renames.
-- **Repository:** you created it in GitHub Desktop. Turning on Pages is still to do: Settings → Pages.
-- **Part renames:**
-  - "Thumper" became "Rumbler", and old saves convert automatically;
-  - tank and engine names that copied KSP's model numbers (T-100, LV-909 and others) became plain names.
-- **Left for the second half:**
-  - simulation separate from drawing (events);
-  - splitting `main.js`;
-  - the renderer interface;
-  - the prototype-limit fixes;
-  - the `?debug` stretch.
+  - part and body data in `data/`;
+  - versioned saves;
+  - version number;
+  - F3 overlay;
+  - part renames ("Thumper" → "Rumbler", and plain tank and engine names).
+- **Second half (v0.2.0):**
+  - **Split:** `main.js` split into `sim.js`, `warp.js`, `nodes.js` and `input.js`.
+  - **Events:** craft report events instead of calling the page.
+  - **Renderer interface:** `FS.Renderer`, which `main.js` checks at start-up.
+  - **Maneuver nodes:** they survive SOI changes and can be placed on any patch.
+  - **Debris:** kept, on rails, during time warp.
+  - **Touch:** pinch zoom in flight and the map.
+  - **Debug flag:** `?debug` starts in orbit.
+- **Tests:** 6 test files, including new ones for debris on rails, a node surviving a Mira encounter, and pinch zoom.
 
 #### A1 · Part tree and vessel physics
 **Goal:** replace the single vertical stack with a tree of parts that can sit anywhere, so side boosters and asymmetric craft fly correctly.
@@ -1238,3 +1242,4 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
 - **Plan revision 4**: added auto-execution of maneuver nodes to step D4.
 - **Plan revision 5**: "moving parts are simulated, not animated" added to the physics model; new step C3 for ropes, cables and physical parachutes; articulated parts and ejection forces added to C2; aerodynamics is now C4 and orbit precision C5; RealChute added to the mods; 49 steps in total.
 - **v0.1.1 (A0, first half)**: tests (`node tests/run.js`), part and body data moved to `data/`, versioned saves (`js/save.js`), version number, F3 developer overlay, original part names (Rumbler booster; plain tank and engine names).
+- **v0.2.0 (A0 complete)**: simulation split from the page (`sim.js`, `warp.js`, `nodes.js`, `input.js`) with events; renderer interface (`FS.Renderer`); maneuver nodes survive SOI changes and can go on any patch; debris kept on rails; pinch zoom; `?debug` start in orbit.

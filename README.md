@@ -8,6 +8,8 @@ No build step, no dependencies: plain HTML, CSS and JavaScript.
 
 Open `index.html` in a browser. (If your browser blocks local files, run `python3 -m http.server` in this folder and open `http://localhost:8000`.)
 
+Add `?debug` to the address (for example `http://localhost:8000/?debug`) to start a flight already in a 100 km orbit.
+
 ## Deploy to GitHub Pages
 
 1. Create a new repository on GitHub and upload everything in this folder (including the empty `.nojekyll` file).

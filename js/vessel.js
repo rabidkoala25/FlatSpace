@@ -1,4 +1,6 @@
 // vessel.js — a craft in flight: forces, torques, fuel, staging, landing, crashing.
+// Methods that change the world take 'sim' (FS.game) and report what happened through
+// sim.emit(): 'staged', 'touchdown', 'exploded' and 'soi'. They never draw anything.
 (function () {
   const V = FS.vec;
 
@@ -75,9 +77,10 @@
     }
 
     // ---- Staging ----
-    stage(game) {
+    stage(sim) {
       if (this.stageIdx >= this.stages.length) return null;
       const ev = this.stages[this.stageIdx++];
+      let dropped = null;
       if (ev.decouple) {
         const segs = FS.segmentsOf(this.parts);
         if (segs.length > 1) {
@@ -99,13 +102,15 @@
           deb.landed = null;
           this.r = newR;
           this.v = V.add(this.v, V.scale(this.nose, 0.6));
-          if (game) game.addDebris(deb);
+          dropped = deb;
           if (this.landed) this.landed = null;
         }
       }
       if (ev.ignite) for (const p of ev.parts) if (p.def.engine && this.parts.includes(p)) p.lit = true;
       if (ev.chutes) for (const p of this.parts) if (p.chute === 'stowed') p.chute = 'armed';
       this.stats.launched = true;
+      // The simulation adds the dropped stage as debris when it hears this event.
+      if (sim) sim.emit('staged', { vessel: this, event: ev, dropped });
       return ev;
     }
 
@@ -169,7 +174,7 @@
       return tq;
     }
 
-    sasTargetAngle(game) {
+    sasTargetAngle(sim) {
       const mode = this.sasMode;
       if (mode === 'stability') return this.sasTarget;
       const r = this.r;
@@ -184,7 +189,7 @@
         case 'radialout': return ra;
         case 'radialin': return ra + Math.PI;
         case 'maneuver': {
-          const nd = game && game.node;
+          const nd = sim && sim.node;
           if (nd && nd.remaining && V.len(nd.remaining) > 0.01) return V.angle(nd.remaining);
           return this.sasTarget;
         }
@@ -193,7 +198,7 @@
     }
 
     // ---- Physics step ----
-    step(dt, t, game) {
+    step(dt, t, sim) {
       if (this.dead) return;
       this.age += dt;
       const b = this.body;
@@ -268,7 +273,7 @@
             tau += this.rot * maxT;
             this.sasTarget = this.angle;
           } else if (this.sas) {
-            let target = this.sasTargetAngle(game);
+            let target = this.sasTargetAngle(sim);
             if (target == null) { this.sasTarget = this.angle; target = this.angle; }
             const err = FS.wrapAngle(target - this.angle);
             const alphaMax = maxT / I;
@@ -288,11 +293,11 @@
       if (b === FS.root) this.stats.maxAlt = Math.max(this.stats.maxAlt, alt);
       this.stats.maxSpeed = Math.max(this.stats.maxSpeed, V.len(this.v));
 
-      this.checkGround(t, game);
-      this.checkSOI(t, game);
+      this.checkGround(t, sim);
+      this.checkSOI(t, sim);
     }
 
-    checkGround(t, game) {
+    checkGround(t, sim) {
       const b = this.body;
       const n = this.nose;
       const ends = [
@@ -311,20 +316,20 @@
         const water = b.ocean && FS.terrainHeight(b, lon) < 0;
         const tol = e.part ? e.part.def.crash : 8;
         if (this.isDebris) {
-          if (speed > 12) { this.explode(game); return; }
+          if (speed > 12) { this.explode(sim); return; }
         }
         if (water && speed < 20 && (tilt < 0.6 || tilt > Math.PI - 0.6 || speed < 8)) {
-          this.setLanded(t, true, game); return;
+          this.setLanded(t, true, sim); return;
         }
-        if (!water && e.bottom && tilt < 0.5 && speed < tol) { this.setLanded(t, false, game); return; }
-        if (!water && !e.bottom && tilt > Math.PI - 0.5 && speed < tol) { this.setLanded(t, false, game); return; }
-        if (speed < 3) { this.setLanded(t, water, game); return; }
-        this.explode(game);
+        if (!water && e.bottom && tilt < 0.5 && speed < tol) { this.setLanded(t, false, sim); return; }
+        if (!water && !e.bottom && tilt > Math.PI - 0.5 && speed < tol) { this.setLanded(t, false, sim); return; }
+        if (speed < 3) { this.setLanded(t, water, sim); return; }
+        this.explode(sim);
         return;
       }
     }
 
-    setLanded(t, water, game) {
+    setLanded(t, water, sim) {
       const b = this.body;
       const radAng = V.angle(this.r);
       const lon = FS.lonAt(b, radAng, t);
@@ -335,21 +340,21 @@
       this.splashed = water;
       this.omega = 0;
       this.syncLanded(t);
-      if (game && !this.isDebris) game.onTouchdown(this, water);
+      if (sim && !this.isDebris) sim.emit('touchdown', { vessel: this, water });
     }
 
-    explode(game) {
+    explode(sim) {
       this.dead = true;
-      if (game) game.onExplode(this);
+      if (sim) sim.emit('exploded', { vessel: this });
     }
 
-    checkSOI(t, game) {
+    checkSOI(t, sim) {
       const b = this.body;
       if (b.parent && V.len(this.r) > b.soi) {
         this.r = V.add(this.r, FS.bodyPos(b, t));
         this.v = V.add(this.v, FS.bodyVel(b, t));
         this.body = b.parent;
-        if (game) game.onSOIChange(this, b);
+        if (sim) sim.emit('soi', { vessel: this, from: b });
         return;
       }
       for (const c of b.children) {
@@ -358,7 +363,7 @@
           this.r = V.sub(this.r, cp);
           this.v = V.sub(this.v, FS.bodyVel(c, t));
           this.body = c;
-          if (game) game.onSOIChange(this, b);
+          if (sim) sim.emit('soi', { vessel: this, from: b });
           return;
         }
       }
@@ -368,13 +373,13 @@
     goOnRails(t) {
       this.rails = FS.orbitFromState(this.r, this.v, this.body.mu, t);
     }
-    railsTo(t, game) {
+    railsTo(t, sim) {
       if (this.landed) { this.syncLanded(t); return; }
       const s = FS.orbitState(this.rails, t);
       this.r = s.r; this.v = s.v;
       this.angle += this.omega * 0; // orientation held
       const prevBody = this.body;
-      this.checkSOI(t, game);
+      this.checkSOI(t, sim);
       if (this.body !== prevBody) this.goOnRails(t);
     }
     offRails() { this.rails = null; }

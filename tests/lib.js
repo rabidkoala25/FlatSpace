@@ -17,6 +17,9 @@ const SIM_FILES = [
   'js/orbit.js',
   'js/parts.js',
   'js/vessel.js',
+  'js/sim.js',
+  'js/warp.js',
+  'js/nodes.js',
 ];
 
 // A localStorage stand-in that keeps values in memory.
@@ -39,15 +42,22 @@ function loadGame() {
   return global.FS;
 }
 
-// A game object with the callbacks a vessel expects, recording what happened.
+// A stand-in for FS.game for tests that drive vessels directly: it records the events
+// vessels emit and collects dropped stages as debris, like sim.js does.
 function fakeGame() {
   const g = {
     events: [],
     debris: [],
-    addDebris(d) { g.debris.push(d); },
-    onExplode(v) { g.events.push({ type: 'explode', debris: v.isDebris }); },
-    onTouchdown(v, water) { g.events.push({ type: 'touchdown', water }); },
-    onSOIChange(v, from) { g.events.push({ type: 'soi', from: from.name, to: v.body.name }); },
+    emit(type, data) {
+      g.events.push({
+        type,
+        to: data.vessel && data.vessel.body && data.vessel.body.name,
+        from: data.from && data.from.name,
+        water: data.water,
+        debris: data.vessel && data.vessel.isDebris,
+      });
+      if (type === 'staged' && data.dropped) g.debris.push(data.dropped);
+    },
   };
   return g;
 }

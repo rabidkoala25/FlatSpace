@@ -36,6 +36,7 @@ const dom = new JSDOM(html, {
   pretendToBeVisual: true,
   beforeParse(w) {
     w.HTMLCanvasElement.prototype.getContext = () => fakeContext();
+    w.Element.prototype.setPointerCapture = () => {}; // not in jsdom
     Object.defineProperty(w.HTMLElement.prototype, 'clientWidth', { get: () => 1280 });
     Object.defineProperty(w.HTMLElement.prototype, 'clientHeight', { get: () => 800 });
     w.addEventListener('error', (e) => errors.push(e.message));
@@ -78,6 +79,21 @@ const key = (k) => {
   key('m');
   await sleep(300);
   check(G.mapMode, 'M opens the map');
+
+  // Two-finger pinch on the map: fingers move from 100 px apart to 200 px apart.
+  const view = w.document.getElementById('view');
+  const pointer = (type, id, x) => {
+    const e = new w.Event(type, { bubbles: true });
+    Object.assign(e, { pointerId: id, clientX: x, clientY: 300 });
+    view.dispatchEvent(e);
+  };
+  const s0 = G.mapCam.s;
+  pointer('pointerdown', 1, 500); pointer('pointerdown', 2, 600);
+  pointer('pointermove', 2, 700);
+  pointer('pointerup', 2, 700); pointer('pointerup', 1, 500);
+  const ratio = G.mapCam.s / s0;
+  check(Math.abs(ratio - 2) < 0.01, `pinching zooms the map (scale ×${ratio.toFixed(2)})`);
+  check(!G.node, 'lifting fingers after a pinch does not add a maneuver node');
   key('Escape');
   await sleep(100);
   check(!w.document.getElementById('dialog').hidden && /v\d/.test(w.document.getElementById('dlgBody').textContent), 'Esc opens the menu with the version number');
