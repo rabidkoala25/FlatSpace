@@ -106,7 +106,7 @@ Every stock KSP part (base game 1.12, Making History and Breaking Ground) mapped
 |---|---|---|---|
 | ☐ | Stack decouplers in all sizes (TD-06/TR-2V, TD-12/TR-18A, TD-25/TR-38-D, TD-37, TD-50) | Decouplers, 0.625–5 m (prototype has 1.25 m) | P / D5 |
 | ☐ | Stack separators in all sizes (TS-06/TR-2C, TS-12/TR-18D, TS-25/TR-XL, TS-37, TS-50) | Separators, 0.625–5 m | D5 |
-| ☐ | TT-38K Radial Decoupler, TT-70 Radial Decoupler | Radial decouplers (Side Decoupler covers TT-38K since A1; TT-70 in D5) | A1 / D5 |
+| ☐ | TT-38K Radial Decoupler, TT-70 Radial Decoupler | Radial decouplers (Side Decoupler covers TT-38K since A1, placeable in the hangar since A2; TT-70 in D5) | A1 / D5 |
 | ☐ | Hydraulic Detachment Manifold, Structural Pylon | Large radial decouplers | D5 |
 | ☐ | Clamp-O-Tron, Jr., Sr., Shielded, Inline, Mk2 Clamp-O-Tron Docking Ports | Docking ports in all sizes and styles (6) | E6 |
 | ☐ | Construction Docking Port | Construction port | E6 |

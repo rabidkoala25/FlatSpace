@@ -17,6 +17,7 @@ const SIM_FILES = [
   'js/orbit.js',
   'js/parts.js',
   'js/partgraph.js',
+  'js/build.js',
   'js/vessel.js',
   'js/sim.js',
   'js/warp.js',

@@ -32,16 +32,18 @@
 
     <div class="ed-body">
       <aside class="palette" aria-label="Parts">
-        <div id="palette"></div>
+        <div id="palTabs" class="pal-tabs" role="tablist" aria-label="Part categories"></div>
+        <div id="palette" class="pal-list"></div>
+        <div class="pal-drop" aria-hidden="true">Drop here to remove</div>
       </aside>
 
       <main class="hangar">
         <canvas id="edCanvas" aria-label="Rocket under construction"></canvas>
         <div class="hangar-tools">
-          <button id="btnUp" class="btn tool" type="button" title="Move up">▲</button>
-          <button id="btnDown" class="btn tool" type="button" title="Move down">▼</button>
-          <button id="btnDel" class="btn tool danger" type="button" title="Remove part">Remove</button>
-          <span id="partInfo" class="part-info">Click a part on the left to add it below the selected part.</span>
+          <button id="btnFit" class="btn tool" type="button" title="Frame the whole craft (Home)">Fit</button>
+          <button id="btnRoot" class="btn tool" type="button" title="Make the selected part the root">Make root</button>
+          <button id="btnDel" class="btn tool danger" type="button" title="Remove the selected part and everything below it (Delete)">Remove</button>
+          <span id="partInfo" class="part-info" aria-live="polite">Drag parts from the tray to build your rocket.</span>
         </div>
       </main>
 
@@ -52,6 +54,7 @@
         <ul id="edWarnings" class="warnings"></ul>
       </aside>
     </div>
+    <div id="partCard" class="part-card" role="tooltip" hidden></div>
   </section>
 
   <!-- ============ FLIGHT ============ -->
@@ -187,6 +190,7 @@
 <script src="js/orbit.js"></script>
 <script src="js/parts.js"></script>
 <script src="js/partgraph.js"></script>
+<script src="js/build.js"></script>
 <script src="js/vessel.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/warp.js"></script>

@@ -25,14 +25,29 @@ Add `?debug` to the address (for example `http://localhost:8000/?debug`) to star
 
 ## First flight
 
-1. In the hangar, load **Orbiter I** from the "Load craft…" menu (or build your own) and press **Launch**.
+1. In the hangar, load **Orbiter I** from the "Load craft…" menu (or build your own by dragging parts from the tray) and press **Launch**.
 2. Press **Space** to ignite. Hold **D** a little after 1 km to tip east and start your gravity turn; aim for about 45° by 12 km.
 3. When the first stage runs dry, press **Space** to drop it and light the upper stage.
 4. Cut the engine (**X**) when your apoapsis (in Flight data, or the map with **M**) reaches about 80 km.
 5. Coast to apoapsis, point prograde (**Pro** button) and burn until the periapsis is above 70 km. You're in orbit.
 6. In the map, click your orbit to add a maneuver node and plan a trip to Mira.
 
-## Controls
+## Building
+
+Drag parts from the tray on the left into the build area. A part snaps end to end with another (the attach points light up), or onto the side of a tank. Red means it can't go there.
+
+| Input | Action |
+|---|---|
+| Drag from the tray | Add a part |
+| Click or tap a tray part | Add it at the lowest free attach point |
+| Drag a placed part (touch: hold, then drag) | Move it with everything below it |
+| Drop on the tray, or Delete | Remove |
+| Wheel, or drag empty space | Zoom, pan |
+| Two fingers | Pan and pinch-zoom |
+| Home, or Fit | Frame the whole craft |
+| Make root | Make the selected part the root |
+
+## Flight controls
 
 | Key | Action |
 |---|---|

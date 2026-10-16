@@ -152,7 +152,7 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 - **Rotate** (Q / E, 15° steps; Shift for 5°) and **flip** (F) for fins, side engines and other asymmetric parts.
 - **Offset** (Alt-drag): slide a placed part along its parent's surface, with a snap toggle.
 - **Undo / redo** (Ctrl+Z / Ctrl+Y).
-- **Overlays:** centre of mass, centre of thrust with its thrust line, and centre of drag.
+- **Overlays:** centre of mass, centre of thrust with its thrust line, and centre of pressure (where the air's forces act; it must sit behind the centre of mass for a rocket to fly straight). Centre of lift joins them in F6.
 
 **Stretchable parts and skins (from Spaceflight Simulator).**
 - Fuel tanks have handles to change their length in 0.25 m steps. Width comes in fixed sizes: 0.625, 1.25, 1.875, 2.5, 3.75 and 5 m.
@@ -162,7 +162,7 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 
 **Staging and tweakables.**
 - Drag parts between stages, and add or remove stages.
-- Right-click a part (long-press on touch) to set fuel level, thrust limit, gimbal, crossfeed and parachute deploy altitude.
+- Right-click a part (on touch, tap the selected part again; a long-press picks parts up) to set fuel level, thrust limit, gimbal, crossfeed and parachute deploy altitude.
 
 **Touch.** Long-press to pick up a part; two fingers to pan and pinch to zoom.
 
@@ -206,6 +206,24 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 - **Precision.** All drawing is done relative to the camera position (subtracting in double precision before the GPU sees the numbers), so nothing jitters far from the planet.
 - **Effects.** Exhaust, smoke, explosions, reentry glow, parachutes and staging debris. From step B4 they are pixel effects built to the rules above.
 
+### 1.7 Performance and size: why it stays one static site
+
+A separate downloadable executable (for example Electron or Tauri) was considered and is **not needed**:
+
+- **Speed doesn't depend on hosting.** Electron and Tauri run the same JavaScript in the same browser engine, so the game would run no faster as an executable. Only rewriting the simulation in a native language would, which isn't worth it for a 2D game.
+- **The content is small.** Pixel-art sprites, procedural terrain and part data amount to a few megabytes; compressed audio adds perhaps 20–50 MB. GitHub Pages allows 1 GB per site and 100 MB per file.
+- **The heavy parts have browser-side fixes:**
+  - big articulated craft (C2), ropes (C3) and many nearby vessels (E6) can move physics to a Web Worker, so drawing stays smooth;
+  - hot loops (the rope solver, the n-body integrator in G4) can move to WebAssembly if profiling shows a need;
+  - a part-count limit per craft (as in KSP's career facilities) keeps the worst case bounded.
+- **Storage and offline play:**
+  - saves move to IndexedDB, with room for hundreds of craft and save games (D3);
+  - the site becomes an installable web app that works offline, much like a desktop app without a separate download (E9);
+  - mods load from a file picker or a GitHub link (G1).
+- **Budget:** 60 frames per second on a mid-range laptop with a 200-part craft. The F3 overlay tracks frame and physics time, and C5 includes a performance pass.
+
+If the budget still can't be met after those fixes, revisit this decision.
+
 ---
 
 ## 2. Every KSP feature, mapped to 2D
@@ -225,7 +243,7 @@ Legend: **P** = in the prototype now · **A0–G8** = the roadmap step that deli
 | Adapters and sizes (0.625–5 m) | Tapered adapters and stretchable tanks in every width | **P** (1.25↔2.5) / A4 / D5 |
 | Rotate, offset, re-root tools | Rotate/flip, Alt-drag offset, re-root | A3 / A2 (re-root, stretch) |
 | Subassemblies, copy, undo/redo | Alt-click copy, saved subassemblies, 100-step history | A3 |
-| Centre of mass / thrust / lift markers | Overlays | A3 (lift with F6) |
+| Centre of mass / thrust / pressure / lift markers | Editor overlays (and in flight, toggled) | A3 (mass, thrust, pressure) / F6 (lift) |
 | Stage editor | Drag parts between stages; per-part "include in staging" | A4 |
 | Part tweakables | Fuel level, thrust limit, gimbal, crossfeed, deploy altitude | A4 |
 | Δv per stage, TWR, burn time | Right-hand panel in the editor | **P** |
@@ -422,7 +440,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 | **A** | **Prepare and rebuild the builder** | |
 | A0 | Prepare the prototype | ✅ done (v0.2.0) |
 | A1 | Part tree and vessel physics | ✅ done (v0.3.0) |
-| A2 | Drag-and-drop editor | ☐ |
+| A2 | Drag-and-drop editor | ✅ done (v0.4.0) |
 | A3 | Editor tools | ☐ |
 | A4 | Staging, tweakables, stretchable tanks, craft files | ☐ |
 | **B** | **Pixel art overhaul** | |
@@ -495,7 +513,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 
 ### Phase A — Prepare and rebuild the builder
 
-#### A0 · Prepare the prototype (next step)
+#### A0 · Prepare the prototype
 **Goal:** reshape the prototype's code so every later phase can build on it without rewrites piling up. No new gameplay; the game should play exactly as it does now.
 
 **Must:**
@@ -591,6 +609,21 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 
 **Done when:** the three sample rockets can be rebuilt from scratch by dragging alone, on desktop and on a phone-sized screen.
 
+**Result (v0.4.0):** done, including the stretch.
+- **Building geometry** in a new `js/build.js`, with no drawing, so tests drive it directly:
+  - stack nodes snap end to end; a parachute has only a bottom node and side-only parts (the Side Decoupler) have none;
+  - surface attach on the left or right side of any part, snapping to the middle of the side;
+  - among the spots in reach, the nearest free one wins; a spot that would overlap another part is refused.
+- **Editor** (`js/editor.js`, rewritten):
+  - **tray:** category tabs and a hover card with full stats; side parts are now in the tray;
+  - **build area:** pan and zoom with no size limit, a grid fixed to the craft, attach points lit while carrying a part, the ghost blue when it fits and red when it doesn't;
+  - **carrying:** a placed part comes away with everything below it; dropping on the tray removes it; a refused drop sends a new part back to the tray and a placed part back where it was;
+  - **live stats:** Δv, launch TWR, mass and height update while a part is carried, as if it were dropped there;
+  - **touch:** hold a part to pick it up, drag from the tray, one finger pans, two fingers pan and pinch;
+  - **extras:** click or tap a tray part to add it at the lowest free attach point; Fit (Home); Make root (the stretch goal).
+- **Tests:** 8 files. A new building test rebuilds all four sample craft by simulated drags, sloppy by up to half a metre, and checks they match part for part with the same Δv and staging. The page test rebuilds Hopper with pointer events and covers long-press, drop on tray, pinch, a bad drop and re-rooting. Real finger drags on a phone-sized page were checked in Chromium.
+- **Plan change:** on touch, part settings (A4) open by tapping the selected part again, since a long-press now picks parts up.
+
 #### A3 · Editor tools
 **Goal:** the precision tools that make building fast.
 
@@ -600,7 +633,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 - **Offset:** Alt-drag along the parent surface, with a snap toggle.
 - **History:** undo/redo with 100 steps.
 - **Copy:** Alt-click to copy a subassembly; save subassemblies to a list.
-- **Overlays:** centre of mass, centre of thrust and centre of drag.
+- **Overlays:** centre of mass, centre of thrust (with its thrust line) and centre of pressure, each switchable; a warning when the centre of pressure sits ahead of the centre of mass.
 
 **Stretch:** angle snap settings; vertical snap.
 
@@ -801,6 +834,7 @@ See the table in section 1.3 for what changes.
 - **Spin:** kept through time warp.
 - **Thrust during warp:** an option for low-thrust engines (Persistent Thrust idea).
 - **Patch predictor:** root-finding encounter search, up to 5 patches, and KSP-style display modes.
+- **Performance pass (section 1.7):** profile a 200-part craft. If physics takes more than about 8 ms a frame, move the physics step into a Web Worker.
 
 **Stretch:** an orbit-decay warning for craft grazing the atmosphere.
 
@@ -840,7 +874,7 @@ See the table in section 1.3 for what changes.
 
 **Must:**
 - **Space Center:** a pixel-art hub with clickable buildings (Assembly, Tracking Station, launch site picker).
-- **Saves:** named save slots and autosave.
+- **Saves:** named save slots and autosave, stored in IndexedDB (room for hundreds of craft and save games; small settings stay in localStorage).
 - **Persistent vessels:** craft left in flight stay on rails.
 - **Tracking Station:** switch to, recover or terminate vessels.
 - **Switching:** `[` `]` to switch vessels in flight.
@@ -1033,6 +1067,7 @@ See the table in section 1.3 for what changes.
 - **Settings:** pixel size, difficulty (reentry heat, crash tolerance, joint strength), key remapping.
 - **Tutorials:** three interactive ones (first launch, reaching orbit, flying to Mira).
 - **Fireworks launcher part.**
+- **Installable and offline:** a web app manifest and service worker, so the game can be installed from the browser and played offline (section 1.7).
 
 **Stretch:** radio chatter (Chatterer idea).
 
@@ -1090,9 +1125,12 @@ See the table in section 1.3 for what changes.
 - **Jets:** all jet engines and the combined jet/rocket engine, with all air intakes and intake air.
 - **Landing gear:** all of it, with brakes and steering.
 - **Starter wings:** one main wing, one elevon and one tail, to test.
+- **Flight controls:** the rotate keys (A/D) also move control surfaces to pitch the plane; trim, airbrakes, and wheel brakes (B).
+- **Plane HUD:** airspeed, angle of attack, vertical speed and a stall warning.
+- **Centre of lift indicator:** in the editor, shown with the centres of mass, thrust and pressure (A3), plus lift arrows on each wing. A plane balances when the centre of lift sits just behind the centre of mass.
 - **Advanced aero option (FAR idea):** extra transonic and stall detail on top of C4.
 
-**Done when:** a simple spaceplane takes off, reaches orbit and lands on the runway.
+**Done when:** a simple spaceplane takes off, reaches orbit and lands on the runway; moving its wing back or forth visibly moves the centre of lift in the editor and changes how it flies.
 
 #### F7 · Parts: spaceplanes, fairings and bays
 **Must:**
@@ -1105,6 +1143,12 @@ See the table in section 1.3 for what changes.
 #### F8 · Rovers and surface science
 **Must:**
 - **Rovers:** all rover wheels (wheel joints from C2) and the rover probe core.
+- **Driving:**
+  - drive forward and back with motor torque, brakes and cruise control;
+  - suspension (C2);
+  - grip that depends on slope and local gravity;
+  - rovers can wheelie, tip over and right themselves with reaction wheels.
+- **Rover HUD:** ground speed, slope, battery and distance driven.
 - **Surface features:** outcrops, geysers and meteorites, scanned with all three scanning arms.
 - **Deployed science:** the full kit, generating science over time.
 - **Anomalies:** hidden monuments.
@@ -1226,16 +1270,21 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
 | Input | Action |
 |---|---|
 | Drag from tray | Add a part |
-| Drag a placed part | Move it with everything attached below |
+| Click / tap a tray part | Add it at the lowest free attach point (side parts: on the selected part) |
+| Drag a placed part (touch: hold, then drag) | Move it with everything attached below |
 | Drop on tray | Delete |
+| Delete | Remove the selected part and everything below it |
+| Make root button | Make the selected part the root |
+| Home / Fit button | Frame the whole craft |
 | X | Mirror symmetry on/off |
 | Q / E (Shift for fine) | Rotate |
 | F | Flip |
 | Alt-drag | Offset along the surface |
 | Alt-click | Copy with attached parts |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
-| Right-click (long-press) | Part settings |
-| Wheel / middle-drag | Zoom / pan |
+| Right-click (touch: tap the selected part) | Part settings |
+| Wheel / drag empty space, middle- or right-drag | Zoom / pan |
+| Touch: one finger / two fingers | Pan / pan and pinch-zoom |
 
 ## 6. Deploying to GitHub Pages
 
@@ -1258,5 +1307,10 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
 - **Plan revision 4**: added auto-execution of maneuver nodes to step D4.
 - **Plan revision 5**: "moving parts are simulated, not animated" added to the physics model; new step C3 for ropes, cables and physical parachutes; articulated parts and ejection forces added to C2; aerodynamics is now C4 and orbit precision C5; RealChute added to the mods; 49 steps in total.
 - **v0.1.1 (A0, first half)**: tests (`node tests/run.js`), part and body data moved to `data/`, versioned saves (`js/save.js`), version number, F3 developer overlay, original part names (Rumbler booster; plain tank and engine names).
+- **Plan revision 6**:
+  - section 1.7 explains why the game stays one static site, with no executable needed;
+  - added a performance pass (C5), IndexedDB saves (D3) and an installable offline web app (E9);
+  - centre of pressure overlay (A3), centre of lift indicator and plane controls (F6), and rover driving (F8) made explicit.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
+- **v0.4.0 (A2)**: drag-and-drop hangar: tray with tabs and hover cards, stack and surface snapping, overlap checks, carrying subassemblies, drop on tray to remove, pan and zoom, touch long-press and pinch, live stats while dragging, re-root; `js/build.js`.
 - **v0.2.0 (A0 complete)**: simulation split from the page (`sim.js`, `warp.js`, `nodes.js`, `input.js`) with events; renderer interface (`FS.Renderer`); maneuver nodes survive SOI changes and can go on any patch; debris kept on rails; pinch zoom; `?debug` start in orbit.
