@@ -28,6 +28,10 @@ function fakeContext() {
 
 let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
+// Every local file carries ?v=<version> so browsers never mix cached old files with new ones.
+const assetTags = [...html.matchAll(/(?:src|href)="((?:js|data|css)\/[^"]+)"/g)].map((m) => m[1]);
+const tagged = assetTags.map((a) => (a.split('?v=')[1] || ''));
+const versionInFile = (fs.readFileSync(path.join(ROOT, 'js/util.js'), 'utf8').match(/FS\.VERSION = '([^']+)'/) || [])[1];
 html = html.replace(/<script src="[^"]+"><\/script>/g, '').replace(/<link[^>]*>/g, '');
 
 const errors = [];
@@ -46,10 +50,11 @@ const w = dom.window;
 w.console.error = (...a) => errors.push(a.join(' '));
 
 for (const src of scripts) {
-  try { w.eval(fs.readFileSync(path.join(ROOT, src), 'utf8')); }
+  try { w.eval(fs.readFileSync(path.join(ROOT, src.split('?')[0]), 'utf8')); }
   catch (e) { errors.push(src + ': ' + e.message); }
 }
-check(scripts.includes('data/parts.js') && scripts.includes('js/save.js'), 'index.html loads the data files and save.js');
+check(scripts.some((s) => s.startsWith('data/parts.js')) && scripts.some((s) => s.startsWith('js/save.js')), 'index.html loads the data files and save.js');
+check(assetTags.length > 10 && tagged.every((v) => v === versionInFile), `every script and style link in index.html ends in ?v=${versionInFile} (bump them with FS.VERSION)`);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const key = (k) => {

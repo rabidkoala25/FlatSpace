@@ -420,6 +420,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 3. Before finishing, it:
    - runs `node tests/run.js` and takes screenshots;
    - ticks the step in the status table below, ticks any finished rows in `PARTS.md`, and adds a line to the changelog at the end of this file;
+   - bumps `FS.VERSION` in `js/util.js` and the matching `?v=` tags on every script and style link in `index.html` (so browsers never mix cached old files with new ones; the page test checks they match);
    - runs `node tools/roadmap.js` to redraw the roadmap graphic in the README;
    - republishes the playable page and hands back the updated project.
 4. If a session runs short, unfinished Must items move to the top of the next step. The game must run at the end of every session, so nothing is left half-built.
@@ -1312,5 +1313,6 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
   - added a performance pass (C5), IndexedDB saves (D3) and an installable offline web app (E9);
   - centre of pressure overlay (A3), centre of lift indicator and plane controls (F6), and rover driving (F8) made explicit.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
+- **v0.4.0 fix**: script and style links carry `?v=<version>`, after a browser served a cached old `editor.js` with the new page and the hangar came up blank.
 - **v0.4.0 (A2)**: drag-and-drop hangar: tray with tabs and hover cards, stack and surface snapping, overlap checks, carrying subassemblies, drop on tray to remove, pan and zoom, touch long-press and pinch, live stats while dragging, re-root; `js/build.js`.
 - **v0.2.0 (A0 complete)**: simulation split from the page (`sim.js`, `warp.js`, `nodes.js`, `input.js`) with events; renderer interface (`FS.Renderer`); maneuver nodes survive SOI changes and can go on any patch; debris kept on rails; pinch zoom; `?debug` start in orbit.
