@@ -13,7 +13,6 @@
     return 0;
   }
   // Drag area when the air flows across the part instead of along it (m²). Fins add a lot.
-  const sideArea = (p) => 0.3 * p.def.len * p.w + (p.def.fin || 0);
 
   class Vessel {
     // source: part ids (a stack, top first), saved parts, or live parts (for debris).
@@ -246,22 +245,21 @@
     }
 
     // ---- Aerodynamics ----
-    // Drag on every part, from how the air meets it: along its axis it uses the part's
-    // front drag area, across it the side area. Each force acts at the part's centre,
-    // so a tail with fins (lots of side area) turns the nose into the airflow.
-    // Returns the total force (world) and the turning effect about the centre of mass.
+    // The air's force on every part (FS.partAero: drag along the flow, and a sideways push
+    // that fins feel most), each acting at the part's centre, so fins at the tail turn the
+    // nose into the airflow. Returns the total force (world) and the turning effect about
+    // the centre of mass.
     aero(vAir, q, angle) {
       const s = V.len(vAir);
       if (q <= 0 || s < 1e-6) return { F: { x: 0, y: 0 }, tau: 0 };
       const u = V.scale(vAir, 1 / s);
       const n = V.fromAngle(angle);
       const toW = (v) => ({ x: n.y * v.x + n.x * v.y, y: -n.x * v.x + n.y * v.y });
+      const toL = (v) => ({ x: n.y * v.x - n.x * v.y, y: n.x * v.x + n.y * v.y });
+      const uL = toL(u);
       let F = { x: 0, y: 0 }, tau = 0;
       for (const p of this.parts) {
-        const cos = Math.abs(V.dot(toW(p.axis), u));
-        const sin = Math.sqrt(Math.max(0, 1 - cos * cos));
-        const A = p.def.cda * cos + sideArea(p) * sin + chuteArea(p);
-        const Fp = V.scale(u, -q * A);
+        const Fp = toW(V.scale(FS.partAero(p, uL, chuteArea(p)), q));
         F = V.add(F, Fp);
         tau += V.cross(toW(p.c), Fp);
       }

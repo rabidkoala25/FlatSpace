@@ -1,4 +1,4 @@
-// tools/roadmap.js — draws docs/roadmap.svg from the status table in PLAN.md (section 4.4).
+// tools/roadmap.js — draws docs/roadmap.svg from the status table in PLAN.md (section 4.5).
 // Run after finishing a step:  node tools/roadmap.js
 // A step counts as done when its status cell contains ✅, in progress when it contains ◐.
 const fs = require('fs');
@@ -15,19 +15,21 @@ const SHORT = {
   C1: 'Rigid body', C2: 'Joints', C3: 'Ropes', C4: 'Aero', C5: 'Orbits',
   D1: 'Legs', D2: 'RCS', D3: 'Space Center', D4: 'Planning', D5: 'Structure', D6: 'Engines', D7: 'Pods',
   E1: 'Solar system', E2: 'Planet art', E3: 'Science', E4: 'Tech tree', E5: 'Power, heat',
-  E6: 'Docking', E7: 'EVA', E8: 'Autopilot', E9: 'Sound',
+  E6: 'Docking', E7: 'EVA', E8: 'Autopilot', E9: 'Sound', E10: 'Terrain', E11: 'Tech, deals',
   F1: 'Funds', F2: 'Contracts', F3: 'Facilities', F4: 'CommNet', F5: 'Resources',
-  F6: 'Spaceplanes', F7: 'Plane parts', F8: 'Rovers', F9: 'Asteroids', F10: 'Planner',
+  F6: 'Spaceplanes', F7: 'Plane parts', F8: 'Rovers', F9: 'Asteroids', F10: 'Planner', F11: 'Tech, deals',
   G1: 'Packs', G2: 'Missions', G3: 'Robotics', G4: 'Realism', G5: 'Scripting',
-  G6: 'Near Future', G7: 'Bases', G8: 'Classics',
+  G6: 'Near Future', G7: 'Bases', G8: 'Classics', G9: 'Tech, deals',
+  H1: 'Astronauts', H2: 'Interiors', H3: 'Hands-on', H4: 'Repairs', H5: 'Life aboard',
+  H6: 'Self-landing', H7: 'Launch sites', H8: 'Tethers', H9: 'Replays', H10: 'Tech, deals',
 };
 const PHASE_TITLE = {
   P: 'Prototype', A: 'Builder', B: 'Pixel art', C: 'Physics', D: 'Sandbox',
-  E: 'Planets & science', F: 'Career', G: 'Modded',
+  E: 'Planets & science', F: 'Career', G: 'Modded', H: 'Beyond KSP',
 };
 
 // ---- Read the status table ----
-const start = plan.indexOf('### 4.4 Status');
+const start = plan.indexOf('### 4.5 Status');
 const table = plan.slice(start, plan.indexOf('### Prototype (done)', start));
 const rows = table.split('\n').filter((l) => /^\| (\*\*)?[A-Z]\d*(\*\*)? \|/.test(l));
 const phases = [];
@@ -57,7 +59,8 @@ const FONT = "-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
 const MONO = "ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace";
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
-const W = 1100, LEFT = 204, BW = 80, GAP = 6, BH = 46, ROW = 62, TOP = 112;
+const LEFT = 204, BW = 80, GAP = 6, BH = 46, ROW = 62, TOP = 112;
+const W = Math.max(1100, LEFT + Math.max(...phases.map((p) => p.steps.length)) * (BW + GAP) + 22);
 const H = TOP + phases.length * ROW + 64;
 const out = [];
 out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="t d">`);

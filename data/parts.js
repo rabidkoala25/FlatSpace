@@ -38,6 +38,8 @@ FS.DATA.parts = [
     desc: 'Holds a side booster and lets it go on staging.' },
   { id: 'adapter', name: 'Taper Adapter', cat: 'Structural', mass: 120, len: 1.0, w: 2.5, topW: 1.25, cda: 0.2, crash: 8,
     desc: 'Joins 1.25 m parts on top of 2.5 m parts.' },
+  { id: 'sweptfin', name: 'Swept Fin', cat: 'Structural', mass: 40, len: 1.0, w: 0.55, cda: 0.02, crash: 8, fin: 0.8, radial: true,
+    desc: 'A single fin for the side of a tank. Place them in mirrored pairs; tilt them to spin or steer.' },
   { id: 'fins', name: 'Tail Fin Collar', cat: 'Structural', mass: 80, len: 0.7, w: 1.25, cda: 0.15, crash: 8, fin: 1.6,
     desc: 'Keeps the rocket pointed into the airflow.' },
 ];
@@ -45,7 +47,7 @@ FS.DATA.parts = [
 // Sample craft shown in the hangar's Load menu: 'parts' is a stack of part ids (top to
 // bottom); 'tree' is a full part tree for craft with side-mounted parts.
 FS.DATA.sampleCraft = [
-  { name: 'Hopper', parts: ['canopy', 'lark', 't400', 'fins', 'hornet'] },
+  { name: 'Hopper', parts: ['canopy', 'lark', 't100', 'fins', 'hornet'] },
   { name: 'Orbiter I', parts: ['canopy', 'lark', 'decoupler', 't400', 't100', 'wren', 'decoupler', 't800', 't800', 'fins', 'kestrel'] },
   { name: 'Mira Voyager', parts: ['canopy', 'lark', 'decoupler', 't800', 't400', 'wren', 'decoupler', 't800', 't800', 'kestrel', 'decoupler', 'adapter', 'x160', 'x160', 'bulwark'] },
   // Built with side boosters on Side Decouplers. 'tree' is a saved part tree (see js/partgraph.js).

@@ -52,7 +52,7 @@ const V = FS.vec;
     if (v.dead || (v.landed && t > 10)) break;
     if (!chute && v.thrustNow === 0 && t > 5) { v.stage(game); chute = true; v.sas = false; }
   }
-  check(v.stats.maxAlt > 10000, `Hopper climbs above 10 km (got ${(v.stats.maxAlt / 1000).toFixed(1)} km)`);
+  check(v.stats.maxAlt > 1500, `Hopper hops above 1.5 km (got ${(v.stats.maxAlt / 1000).toFixed(1)} km)`);
   check(!v.dead && !!v.landed, 'Hopper lands safely under its parachute');
 }
 

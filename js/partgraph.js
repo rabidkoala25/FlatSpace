@@ -4,10 +4,26 @@
 // Positions use the craft frame: metres, +y towards the nose, +x to the right of it.
 // rot is counter-clockwise in radians (0 = upright); flip mirrors a part left-right.
 //
-// Saved craft store parts as { id, parent (index or -1), node, x, y, rot, flip }.
+// Saved craft store parts as { id, parent (index or -1), node, x, y, rot, flip, sym }.
+// x, y and rot are absolute (craft frame). In memory a side-attached part also keeps
+// srfOff (its offset in the parent's own frame) and rel (its angle relative to the
+// parent), so turning a parent carries its side parts round with it. sym links a part
+// to its mirror twin (editor symmetry).
 (function () {
   const V = FS.vec;
   const r3 = (x) => Math.round(x * 1000) / 1000;
+  // rotate v counter-clockwise by angle a
+  const rotV = (v, a) => { const c = Math.cos(a), s = Math.sin(a); return { x: v.x * c - v.y * s, y: v.x * s + v.y * c }; };
+  FS.rotV = rotV;
+
+  // Recompute the stored offset and relative angle of side parts from their absolute pose.
+  FS.syncOffsets = (list) => {
+    for (const p of list) {
+      if (p.node !== 'srf' || !p.parent) continue;
+      p.srfOff = rotV(V.sub(p.pos, p.parent.pos), -p.parent.rot);
+      p.rel = p.rot - p.parent.rot;
+    }
+  };
 
   // ---------- Making parts ----------
   let uid = 1;
@@ -39,7 +55,7 @@
     const p = FS.newPart(id);
     if (!p) return null;
     Object.assign(p, { parent, node: 'srf', pos: { ...pos }, rot, flip });
-    p.srfOff = V.sub(p.pos, parent.pos);
+    FS.syncOffsets([p]);
     parts.push(p);
     FS.relayout(parts);
     return p;
@@ -51,6 +67,7 @@
       const s = { id: p.def.id, parent: p.parent && idx.has(p.parent) ? idx.get(p.parent) : -1, node: p.node, x: r3(p.pos.x), y: r3(p.pos.y) };
       if (p.rot) s.rot = r3(p.rot);
       if (p.flip) s.flip = true;
+      if (p.sym) s.sym = p.sym;
       return s;
     });
   };
@@ -59,11 +76,12 @@
     const parts = list.map((s) => {
       const p = FS.newPart(s.id);
       if (p) Object.assign(p, { pos: { x: s.x || 0, y: s.y || 0 }, rot: s.rot || 0, flip: !!s.flip, node: s.node || 'bottom' });
+      if (p && s.sym) p.sym = s.sym;
       return p;
     });
     list.forEach((s, i) => { if (parts[i] && s.parent >= 0 && parts[s.parent]) parts[i].parent = parts[s.parent]; });
     const out = parts.filter(Boolean);
-    for (const p of out) if (p.node === 'srf' && p.parent) p.srfOff = V.sub(p.pos, p.parent.pos);
+    FS.syncOffsets(out);
     FS.relayout(out);
     return out;
   };
@@ -117,8 +135,9 @@
     const place = (p) => {
       for (const c of kids.get(p)) {
         if (c.node === 'srf') {
-          if (!c.srfOff) c.srfOff = V.sub(c.pos, p.pos);
-          c.pos = V.add(p.pos, c.srfOff);
+          if (!c.srfOff) FS.syncOffsets([c]);
+          c.pos = V.add(p.pos, rotV(c.srfOff, p.rot));
+          c.rot = p.rot + (c.rel || 0);
         } else {
           const d = (c.node === 'top' ? 1 : -1) * (p.def.len / 2 + c.def.len / 2);
           c.rot = p.rot;
@@ -134,6 +153,8 @@
   // The outline of a part in its own frame (centre at 0,0, +y up), before rotation.
   FS.partHull = (p) => {
     const d = p.def, hl = d.len / 2, hw = p.w / 2, ht = p.tw / 2;
+    // a side fin: the root edge (left, x = -hw) is fixed to the parent, the tip is swept back
+    if (d.fin && d.radial) return [{ x: -hw, y: hl }, { x: hw, y: hl - d.len * 0.55 }, { x: hw, y: -hl }, { x: -hw, y: -hl }];
     const pts = [{ x: -ht, y: hl }, { x: ht, y: hl }, { x: hw, y: -hl }, { x: -hw, y: -hl }];
     if (d.fin) pts.push({ x: hw + 0.75, y: -hl - 0.15 }, { x: -hw - 0.75, y: -hl - 0.15 });
     return pts;
@@ -167,6 +188,65 @@
     }
     if (!parts.length) minX = maxX = minY = maxY = 0;
     return { mass, com, I: Math.max(I, 1), minX, maxX, minY, maxY, height: maxY - minY, width: maxX - minX };
+  };
+
+  // ---------- Aerodynamics (shared by flight and the editor) ----------
+
+  // The air's force on one part per unit dynamic pressure (m², so multiply by q), in the
+  // craft frame. u is the craft's direction of motion through the air (unit, craft frame);
+  // extra is drag area added along the flow (an open parachute). Two parts:
+  // - drag straight back along the flow: front area × how head-on the air meets the part;
+  // - a push sideways, across the part: bodies only feel it as the air meets them side-on
+  //   (it grows with the square of the angle), but fins work like small wings and push back
+  //   from the first degree (2·sin·cos, as a thin wing does), so fins at the tail keep a
+  //   rocket pointed into the airflow. (Fuller lift, Mach and shielding come in C4.)
+  FS.partAero = (p, u, extra = 0) => {
+    const a = p.axis || FS.partAxis(p.rot);
+    const ca = V.dot(a, u);
+    const cosA = Math.abs(ca);
+    const across = V.sub(u, V.scale(a, ca)); // the part of the flow that crosses the part
+    const sinA = V.len(across);
+    let F = V.scale(u, -(p.def.cda * cosA + extra));
+    if (sinA > 1e-9) {
+      const body = 0.3 * p.def.len * p.w;
+      const fin = p.def.fin || 0;
+      const N = body * sinA * sinA + fin * (2 * sinA * cosA + sinA * sinA);
+      F = V.add(F, V.scale(across, -N / sinA));
+    }
+    return F;
+  };
+
+  // Where the air's forces act when the craft flies nose-first a few degrees off the
+  // airflow (aoa radians), from FS.partAero. Returned as a point on the line through the
+  // centre of mass along +y, in the craft frame: { pos, ahead, com }, where ahead is how far
+  // in front of the centre of mass it sits (m; negative = behind, which is stable).
+  // null when there is nothing for the air to push on.
+  FS.centreOfPressure = (parts, aoa = 0.09) => {
+    if (!parts.length) return null;
+    const lay = FS.massLayout(parts);
+    const u = { x: Math.sin(aoa), y: Math.cos(aoa) }; // the craft's motion through the air
+    let Fx = 0, tau = 0;
+    for (const p of parts) {
+      const F = FS.partAero(p, u);
+      Fx += F.x;
+      tau += V.cross(p.c, F);
+    }
+    if (Math.abs(Fx) < 1e-9) return null;
+    const ahead = -tau / Fx; // cross((0, s), F) = -s·Fx = tau
+    return { pos: { x: lay.com.x, y: lay.com.y + ahead }, ahead, com: lay.com };
+  };
+
+  // Where the engines of a stage push: the thrust-weighted centre of the engines and the
+  // direction of their combined thrust, in the craft frame. null without engines.
+  FS.centreOfThrust = (engines) => {
+    let F = 0, x = 0, y = 0, dir = { x: 0, y: 0 };
+    for (const e of engines) {
+      const f = e.def.engine.vac, ax = FS.partAxis(e.rot);
+      F += f; x += f * e.pos.x; y += f * e.pos.y;
+      dir = V.add(dir, V.scale(ax, f));
+    }
+    if (!F) return null;
+    return { pos: { x: x / F, y: y / F }, dir: V.norm(dir), thrust: F };
   };
 
   // ---------- Fuel flow ----------

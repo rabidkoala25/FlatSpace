@@ -116,6 +116,14 @@
     } else if (d.id === 'adapter') {
       trap(thw, hw, y, h);
       ctx.fillStyle = cyl(ctx, -hw, hw, '#a9adb3', '#d9dce0', '#5f646b'); ctx.fill(); ctx.stroke();
+    } else if (d.fin && d.radial) {
+      // root edge on the left (x = -hw), swept tip on the right
+      ctx.beginPath();
+      ctx.moveTo(-hw, y); ctx.lineTo(hw, y + h * 0.55); ctx.lineTo(hw, y + h); ctx.lineTo(-hw, y + h); ctx.closePath();
+      const g = ctx.createLinearGradient(-hw, 0, hw, 0);
+      g.addColorStop(0, '#24496d'); g.addColorStop(0.5, '#3a6f9f'); g.addColorStop(1, '#2f5d8a');
+      ctx.fillStyle = g; ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(220,230,240,0.35)'; ctx.fillRect(-hw, y + h * 0.1, w * 0.12, h * 0.85);
     } else if (d.fin) {
       ctx.beginPath(); ctx.rect(-hw, y, w, h);
       ctx.fillStyle = cyl(ctx, -hw, hw, '#8d939b', '#c3c8ce', '#4b5057'); ctx.fill(); ctx.stroke();

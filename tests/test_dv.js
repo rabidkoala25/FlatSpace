@@ -2,7 +2,7 @@
 const { loadGame, check, near, done } = require('./lib');
 const FS = loadGame();
 
-check(FS.PARTS.length === 17, 'there are 17 parts');
+check(FS.PARTS.length === 18, 'there are 18 parts');
 check(new Set(FS.PARTS.map((p) => p.id)).size === FS.PARTS.length, 'part ids are unique');
 check(FS.SAMPLE_CRAFT.every((c) => (c.parts || c.tree.map((t) => t.id)).every((id) => FS.PART[id])), 'every sample craft uses known parts');
 
@@ -16,7 +16,7 @@ const vac = (name) => {
 };
 
 const hopper = vac('Hopper');
-near(hopper[0].dv, 1776, 2, 'Hopper vacuum Δv');
+near(hopper[0].dv, 590, 2, 'Hopper vacuum Δv');
 
 const orbiter = vac('Orbiter I');
 near(orbiter[0].dv, 2413, 2, 'Orbiter I first stage vacuum Δv');

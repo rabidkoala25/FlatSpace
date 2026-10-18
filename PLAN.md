@@ -5,7 +5,7 @@ A 2D spaceflight and rocket-building sandbox, inspired by Kerbal Space Program (
 This document has five parts:
 
 1. How the program works (architecture, physics, the building system and the art direction)
-2. Every KSP feature, and how it maps to 2D
+2. Every KSP feature, and how it maps to 2D, plus features that go beyond KSP and Spaceflight Simulator (2.8)
 3. The most popular KSP mods, and which of their ideas to build in
 4. The roadmap, split into steps that each fit in one work session
 5. Controls and deployment
@@ -103,7 +103,7 @@ Later steps add `science.js`, `career.js`, `comms.js`, `resources.js`, `crew.js`
 
 **Landing and crashing.** *Prototype:* the top and bottom of the stack are tested against the terrain. *From step C1:* every part's hull collides with the ground and with other vessels, so craft can rest on legs, tip over, roll and bump into each other. *From step C2:* a joint that takes more load than it can bear breaks, so a part that hits too hard snaps off and the rest of the craft can survive.
 
-**Terrain.** Each body's surface is a periodic fractal noise function of longitude, with craters on moons, flattened around the launch site. It's computed on the fly at whatever detail the zoom level needs, so there are no tiles to store.
+**Terrain.** Each body's surface is a periodic fractal noise function of longitude, with craters on moons, flattened around the launch site. It's computed on the fly at whatever detail the zoom level needs, so there are no tiles to store. *From step E10:* realistic landforms (ridges, eroded valleys, cliffs, mesas, canyons, dunes, crater rims with ejecta), detail down to 0.25 m up close, collidable boulders, and several layers of distant terrain drawn behind for true parallax depth (the idea behind KSP's Parallax mod).
 
 **Moving parts are simulated, not animated (from Phase C).** Anything that swings, folds, hangs or stretches is a real physics object with mass, joined to the craft by constraints. Its motion comes from the simulation, not from a canned animation or a force added to one rigid body:
 - parachute canopies on their rigging lines;
@@ -358,6 +358,22 @@ Legend: **P** = in the prototype now · **A0–G8** = the roadmap step that deli
 | Flight log after a flight | Mission summary on recovery | **P** |
 | Title screen | Animated pixel scene | B5 |
 
+### 2.8 Beyond KSP and Spaceflight Simulator
+
+Features neither game has in stock, which a 2D game is well placed to do: interiors are easy to show in a side view, and everything is cheap enough to simulate at once. They are built in Phase H, after the full KSP feature set.
+
+| Feature | How it works in 2D | Step |
+|---|---|---|
+| Astronauts with character | Rigged pixel-art astronauts with faces, traits and reactions; a ragdoll when they fall | H1 |
+| Interiors (IVA) you can move around in | A cutaway view of every crewed part; astronauts walk, climb and float between modules, and through docking ports into other vessels | H2 |
+| Hands-on interaction | Grab, carry, throw and hand over objects; flip switches and turn valves on parts; work at lab benches | H3 |
+| Damage and repairs | Parts get damaged instead of only exploding; hull breaches vent air; leaks; astronauts patch and repair inside and on EVA | H4 |
+| Life on board and spin gravity | Simple needs (air, food, sleep, morale); rotating rings where astronauts walk on the inside of the rim | H5 |
+| Self-landing rockets | Grid fins, booster legs, relightable engines; dropped stages fly home by themselves while you fly the upper stage | H6 |
+| Launch and recovery infrastructure | Launch towers with umbilicals, a tower that catches boosters with its arms, recovery ships, your own launch sites | H7 |
+| Tethers, sails and mass drivers | Rotating momentum-exchange tethers, solar sails, an electromagnetic launch track, fuel depots | H8 |
+| Flight recorder and replays | Every flight recorded; scrub, slow-mo, follow any vessel, cinematic cameras, GIF export, race your own ghost | H9 |
+
 ---
 
 ## 3. Popular mods and what to build in
@@ -370,6 +386,7 @@ The community's most-recommended mods (from KSP forum and Reddit mod surveys, PC
 | **Editor Extensions Redux** | Finer angle snap, offset and snap control in the editor | Rotation steps, offset snap toggle | A3 |
 | **Hangar Extender** | Build outside the hangar's walls | Unlimited, pannable build area | A2 |
 | **Scatterer / EVE / Astronomer's Visual Pack** | Atmospheric scattering, clouds, better planets | Dithered sunset skies, pixel cloud layer, lit planets | B1 / B3 |
+| **Parallax** | Detailed, tessellated terrain; high-detail surface textures; collidable ground scatter (rocks, grass, trees) | Realistic landforms with fine detail up close, rock strata shown in the ground's cut face, scatter by biome with collidable boulders, several layers of distant terrain for real parallax depth | B3 (basic) / E10 |
 | **RealPlume / Waterfall** | Exhaust that widens in vacuum | Animated pixel plumes, Mach diamonds in air | **P** (basic) / B4 |
 | **Collision FX** | Sparks and debris on impact | Pixel sparks, debris and scorch marks | B4 |
 | **Kerbal Joint Reinforcement** | Stiffer joints | Joint strengths in C2; optional flex model in G4 | C2 / G4 |
@@ -420,6 +437,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 3. Before finishing, it:
    - runs `node tests/run.js` and takes screenshots;
    - ticks the step in the status table below, ticks any finished rows in `PARTS.md`, and adds a line to the changelog at the end of this file;
+   - from E4 on, if the step added parts or features: notes in its Result which tech node each belongs in and ideas for contracts that use it, for the next "Tech and contracts" step (section 4.4);
    - bumps `FS.VERSION` in `js/util.js` and the matching `?v=` tags on every script and style link in `index.html` (so browsers never mix cached old files with new ones; the page test checks they match);
    - runs `node tools/roadmap.js` to redraw the roadmap graphic in the README;
    - republishes the playable page and hands back the updated project.
@@ -431,9 +449,27 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 2. **Building (A1–A4).** The part tree changes the data every later system reads (mass, drag, contact points, staging), so it comes next.
 3. **Art (B1–B5).** Before any new parts are added, so every part from then on is drawn once, in pixel art.
 4. **Physics (C1–C5).** Before legs, parachutes, wheels, docking, wings and robotics, which all need contacts, joints, ropes and lift.
-5. **Content (D–G).** The parts catalogue is built alongside the features that use it, with dedicated parts steps (D5, D6, D7, F7) for the big families. Mod packs come last, on top of the pack loader.
+5. **Content (D–G).** The parts catalogue is built alongside the features that use it, with dedicated parts steps (D5, D6, D7, F7) for the big families. Mod packs come next, on top of the pack loader.
+6. **Tech and contracts at the end of each phase (E11, F11, G9, H10).** Every new technology gets a logical place in the tech tree and contracts of its own (section 4.4).
+7. **Beyond KSP (H1–H9).** Last, because each one builds on the rest: astronauts on EVA (E7), joints, ropes and water (Phase C), docking (E6), the autopilot (E8), stations and life support (G7).
 
-### 4.4 Status
+### 4.4 Tech and contracts for everything new
+
+The tech tree arrives in E4 and contracts in F2. Everything after that must fit into both, so no part or feature is left outside progression:
+
+- **Every step from E4 on** that adds a part or feature notes, in its Result, which tech node it belongs in and ideas for contracts that use it.
+- **Each phase from E on ends with a "Tech and contracts" step:** E11, F11, G9 and H10. That step:
+  - adds the tech nodes, in a logical place in the tree (a part never unlocks before the parts it depends on);
+  - adds contract templates that ask the player to use the new things;
+  - balances science costs and rewards, so a new save still progresses at the intended pace.
+- **Automated checks**, added in E11 and run by `node tests/run.js` from then on:
+  - every part belongs to exactly one tech node;
+  - every tech node can be reached;
+  - from F11 on, every major feature is used by at least one contract template.
+- **Data:** tech nodes (`data/tech.js`) and contract templates (`data/contracts.js`) are data, so packs add their own (G1, G9).
+- **Earlier content:** parts and features from Phases A–D are placed by E4 itself; everything before F2 gets contracts in F2.
+
+### 4.5 Status
 
 | Step | Name | Status |
 |---|---|---|
@@ -442,7 +478,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 | A0 | Prepare the prototype | ✅ done (v0.2.0) |
 | A1 | Part tree and vessel physics | ✅ done (v0.3.0) |
 | A2 | Drag-and-drop editor | ✅ done (v0.4.0) |
-| A3 | Editor tools | ☐ |
+| A3 | Editor tools | ✅ done (v0.5.0) |
 | A4 | Staging, tweakables, stretchable tanks, craft files | ☐ |
 | **B** | **Pixel art overhaul** | |
 | B1 | WebGL renderer, palette and sky | ☐ |
@@ -474,6 +510,8 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 | E7 | EVA, crew and inventory | ☐ |
 | E8 | Autopilot and trajectory prediction | ☐ |
 | E9 | Sound, settings, tutorials | ☐ |
+| E10 | Terrain detail (Parallax idea) | ☐ |
+| E11 | Tech and contracts: Phase E additions | ☐ |
 | **F** | **Career** | |
 | F1 | Funds, costs and Career start | ☐ |
 | F2 | Contracts | ☐ |
@@ -485,6 +523,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 | F8 | Rovers and surface science | ☐ |
 | F9 | Asteroids and comets | ☐ |
 | F10 | Planner and hardcore options | ☐ |
+| F11 | Tech and contracts: Phase F additions | ☐ |
 | **G** | **Modded** | |
 | G1 | Packs and mods menu | ☐ |
 | G2 | Mission Builder | ☐ |
@@ -494,8 +533,20 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 | G6 | Near Future pack | ☐ |
 | G7 | Bases, stations and colonies pack | ☐ |
 | G8 | Classic rockets pack and final parts audit | ☐ |
+| G9 | Tech and contracts: packs | ☐ |
+| **H** | **Beyond KSP** | |
+| H1 | Living astronauts | ☐ |
+| H2 | Interiors (IVA) | ☐ |
+| H3 | Hands-on: objects, tools and cargo | ☐ |
+| H4 | Damage, failures and repairs | ☐ |
+| H5 | Life on board and spin gravity | ☐ |
+| H6 | Self-landing rockets | ☐ |
+| H7 | Launch and recovery infrastructure | ☐ |
+| H8 | Tethers, sails and mass drivers | ☐ |
+| H9 | Flight recorder, replays and photo mode | ☐ |
+| H10 | Tech and contracts: beyond KSP | ☐ |
 
-49 steps after the prototype.
+63 steps after the prototype.
 
 ### Prototype (done)
 
@@ -639,6 +690,33 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 **Stretch:** angle snap settings; vertical snap.
 
 **Done when:** a rocket with mirrored side boosters, angled fins and an offset part can be built in about a minute, and undo reverses every action.
+
+**Result (v0.5.0):** done, with the vertical-snap stretch (the Snap switch); angle snap settings were not done (Shift gives 5° steps).
+- **Tool rail** on the left of the build area, with a button for every key, so touch screens get every tool:
+  - undo / redo (100 steps; loading a craft can be undone too);
+  - mirror, rotate, flip;
+  - offset and snap;
+  - copy and "save sub".
+- **Mirror (X):**
+  - a part on the side of a part comes with a twin on the other side;
+  - a part on a twin gets its own twin on the other twin, so boosters, their decouplers and anything on them come in pairs;
+  - twins move, turn, slide and are removed together, and the links are saved with the craft.
+- **Rotate (Q / E, Shift for 5°) and flip (F):**
+  - turn the carried part, or a placed side part, which stays touching its parent's surface;
+  - side parts now keep their offset and angle in their parent's own frame, so turning a part carries its side parts round with it.
+- **Offset (Alt-drag, or the Offset switch on touch):** slides a side part along its parent, in 0.25 m steps that catch the middle when Snap is on; overlaps are refused.
+- **Copy and subassemblies:**
+  - Alt-click (or Copy) picks up a copy of a part and everything below it, which follows the pointer until the next click or tap; Alt-drag drags a copy;
+  - "Save sub" keeps the selected part and everything below it in a new Subassemblies tab in the tray, to drag into any craft (saved as `flatspace.subassemblies` v1).
+- **Overlays:** switches for the centre of mass, the centre of thrust with its thrust line, and the centre of pressure; warnings when the centre of pressure is ahead of the centre of mass, or the thrust line misses it.
+- **New part:** Swept Fin, a single side fin (covers KSP's Basic Fin).
+- **Physics change brought forward from C4:**
+  - The overlay showed the drag-only model gave fins almost no straightening force at small angles; with SAS off, every sample rocket turned away from the airflow.
+  - Each part now also feels a sideways push across it. On bodies it grows with the square of the angle; fins act like small wings and push back from the first degree.
+  - Flight and the editor share one function (`FS.partAero`), so the overlay matches how the craft flies.
+  - Now a finned rocket straightens itself and a finless one doesn't, matching its centre of pressure.
+- **Sample change:** finned rockets now fall nose-first and fast. The Hopper went 33 km up and came down too fast for its parachute, so it now uses the short tank and makes a 2.4 km hop.
+- **Tests:** 8 files, about 60 new checks. They cover mirrored boosters and their staging, tilted fins touching the tank, offset with its twin, overlaps refused, save and load of angles and mirror links, the centre of pressure moving behind the centre of mass with fins, and flight agreeing. The page test builds the done-when rocket with pointer events and keys, then Ctrl+Z reverses every step and Ctrl+Y restores them.
 
 #### A4 · Staging, tweakables, stretchable tanks, craft files
 **Goal:** control over each stage, and Spaceflight Simulator-style flexible tanks.
@@ -826,6 +904,8 @@ See the table in section 1.3 for what changes.
 
 **Done when:** a rocket without fins flips in the lower atmosphere and the same rocket with fins flies straight; drag peaks near Mach 1; a capsule floats after splashdown.
 
+*Already in place from A3:* every part feels a sideways push across it, with fins pushing back like small wings (`FS.partAero`, shared by flight and the editor overlay). C4 replaces that with proper lift curves and stall, and adds Mach effects and shielding.
+
 #### C5 · Orbit precision and prediction
 **Goal:** orbits that stay exactly where they should.
 
@@ -1000,7 +1080,8 @@ See the table in section 1.3 for what changes.
 
 **Must:**
 - **New game:** a screen with Sandbox or Science.
-- **Tech tree:** a pixel-art node graph covering every part in `PARTS.md`, unlocked with science.
+- **Tech tree:** a pixel-art node graph, unlocked with science, covering every part and feature that exists by now (Phases A–E4). Later additions get their own nodes in each phase's "Tech and contracts" step (section 4.4).
+- **Data:** tech nodes live in `data/tech.js`, so later steps and packs can add nodes without code changes.
 - **Editor:** shows only unlocked parts.
 - **Pacing:** the first orbit takes about three flights.
 
@@ -1048,6 +1129,8 @@ See the table in section 1.3 for what changes.
 
 **Done when:** walk on Mira, plant a flag, take a sample, and jetpack back to the lander.
 
+*Later:* H1–H5 grow this astronaut into a full character with interiors to move around in, objects to handle and things to repair. Keep the astronaut as its own physics body with a simple pose system, so H1 can add the rig and ragdoll without a rewrite.
+
 #### E8 · Autopilot and trajectory prediction
 **Goal:** MechJeb and Trajectories ideas.
 
@@ -1058,6 +1141,8 @@ See the table in section 1.3 for what changes.
 **Stretch:** a rendezvous autopilot.
 
 **Done when:** orbit to a Mira landing is flown with only autopilot clicks.
+
+*Later:* H6 extends the landing autopilot into booster return (boostback, entry and landing burns) for dropped stages. Keep the guidance code separate from the panel, so it can fly a vessel the player isn't controlling.
 
 #### E9 · Sound, settings, tutorials
 **Goal:** polish for new players.
@@ -1074,6 +1159,41 @@ See the table in section 1.3 for what changes.
 
 **Done when:** a new player can reach orbit by following the tutorials alone.
 
+#### E10 · Terrain detail (Parallax idea)
+**Goal:** ground that looks and feels real up close, the way KSP's Parallax mod does it, in 2D (builds on B3, E2, C1).
+
+**Must:**
+- **Realistic landforms:** the terrain generator is rebuilt per body, with:
+  - ridges, valleys that look eroded, and scree slopes below cliffs;
+  - mesas, canyons and dune fields;
+  - crater rims with ejecta and central peaks.
+  - It keeps the same shape at every zoom: smooth from orbit, detailed down to 0.25 m up close.
+- **Strata:** the ground's cut face shows soil, rock and ice layers by biome, which a side view can show and a 3D game can't.
+- **Ground scatter:** rocks, boulders, grass, shrubs, trees and ice spikes, chosen by biome and slope.
+  - Large boulders are collidable (C1), so landers and rovers must avoid them.
+  - Small scatter sways in the wind and is flattened by engine blast.
+- **Parallax depth:** three to five layers of distant terrain (far ranges, middle hills, near ridges), taken from the same terrain further along the surface, with haze between them, each moving at the right speed for its distance.
+- **Marks that stay:** footprints, wheel tracks, scorch marks and small blast craters from landing engines.
+- **Performance:** terrain built and cached in chunks (in a Web Worker if needed), within the 60 fps budget (section 1.7).
+
+**Stretch:** caves and natural arches at chosen sites, using a 2D density field instead of a height function there.
+
+**Done when:**
+- landings on Aster's mountains, Mira's crater rim and a dune field each look detailed at 1 m per pixel;
+- a boulder stops a rover;
+- the background layers move with visible depth as the camera pans.
+
+#### E11 · Tech and contracts: Phase E additions
+**Goal:** everything added after the tech tree was built gets its place in it (section 4.4).
+
+**Must:**
+- **Tech nodes:** for every part and feature from E5–E10 (power parts, heat shields, docking ports, EVA items, autopilot modes), in a logical place in the tree, with science costs that fit the curve.
+- **In the game:** the editor tooltip and the tech tree show what each node unlocks.
+- **Checks:** the automated tests from section 4.4 (every part in exactly one node; every node reachable).
+- **Balance:** a new Science save still reaches a Mira landing in about the same number of flights as before.
+
+**Done when:** the checks pass, and a Science playthrough unlocks docking ports and EVA items at sensible points.
+
 ---
 
 ### Phase F — Career
@@ -1088,7 +1208,8 @@ See the table in section 1.3 for what changes.
 
 #### F2 · Contracts
 **Must:**
-- **Generator:** reach altitude, orbit, flyby, land on, rescue, test a part in a situation, place a satellite, plant a flag.
+- **Generator:** reach altitude, orbit, flyby, land on, rescue, test a part in a situation, place a satellite, plant a flag; covering every feature that exists by now. Later additions get their own contracts in each phase's "Tech and contracts" step (section 4.4).
+- **Data:** contract templates live in `data/contracts.js`, so later steps and packs can add them without code changes.
 - **Mission Control:** a screen to accept and decline contracts, with deadlines and rewards.
 
 **Done when:** ten contracts of different types can be completed.
@@ -1173,13 +1294,30 @@ See the table in section 1.3 for what changes.
 
 **Done when:** the planner's best window produces an encounter when flown.
 
+#### F11 · Tech and contracts: Phase F additions
+**Goal:** Career-phase additions fit the tech tree and have contracts of their own (section 4.4).
+
+**Must:**
+- **Tech nodes:** for F3–F10 parts and features (CommNet antennas and relays, scanners and drills, spaceplane and rover parts, the grabbing unit).
+- **Contracts:**
+  - set up a relay network;
+  - scan a body;
+  - mine ore and deliver it;
+  - fly a plane to a site;
+  - drive a rover to an anomaly;
+  - capture an asteroid;
+  - contracts that need upgraded facilities.
+- **Checks:** every part in a node; every major feature in at least one contract template.
+
+**Done when:** the checks pass, and a Career save is offered each new kind of contract at a sensible point.
+
 ---
 
 ### Phase G — Modded
 
 #### G1 · Packs and mods menu
 **Must:**
-- **Packs:** parts, planets and missions as data plus sprite sheets.
+- **Packs:** parts, planets and missions as data plus sprite sheets, with their own tech nodes and contract templates (G9 fills these in for the G packs).
 - **Loading:** from a file or a GitHub URL.
 - **Mods menu:** enable, disable and detect conflicts (CKAN idea).
 - **Example:** one example planet pack.
@@ -1237,6 +1375,183 @@ See the table in section 1.3 for what changes.
 
 **Done when:** `PARTS.md` is fully ticked and every listed part appears in the editor.
 
+#### G9 · Tech and contracts: packs
+**Goal:** every pack brings its own tech nodes and contracts (section 4.4).
+
+**Must:**
+- **Pack format:** packs (G1) carry tech nodes and contract templates, so any pack, including ones made by players, adds both.
+- **Nodes and contracts for G2–G8:**
+  - robotics;
+  - realism options, as contract modifiers;
+  - Near Future propulsion;
+  - bases and stations (build a base, keep a crew alive for 30 days);
+  - classic rockets.
+- **Checks:** the section 4.4 checks run for every enabled pack; a pack that adds a part without a node shows a warning in the mods menu.
+
+**Done when:** enabling each pack adds its nodes and contracts, and disabling it removes them cleanly.
+
+---
+
+### Phase H — Beyond KSP
+
+Features that neither KSP nor Spaceflight Simulator has in stock (section 2.8). Each builds on earlier steps, shown in brackets, and H10 gives them all their tech nodes and contracts. Their new parts are listed in `PARTS.md` under "Original parts".
+
+#### H1 · Living astronauts
+**Goal:** astronauts with as much character as KSP's, in rotating pixel art (builds on E7).
+
+**Must:**
+- **Rig:** each astronaut is built from a few pixel-art pieces (head, body, arms, legs) on a simple skeleton, animated for walking, running, climbing, swimming, floating, sitting and waving.
+- **Ragdoll:** when knocked over, hit, or blown off a ladder, the astronaut becomes a ragdoll of joined bodies (C2) that tumbles realistically, then gets back up.
+- **Personality:** two traits per astronaut (bravery and silliness, with original names), shown on their face: a grin, panic at high g or in a spin, cheers at milestones, a gulp on a long fall.
+- **Roles:** pilot, engineer, scientist, and a new medic. Roles decide who can repair (H4), treat injuries (H4) and run experiments faster (H3).
+- **Look:** suit colours, helmet visors that reflect the sky, and a generator for names and portraits.
+- **Crew panel:** portraits in the flight HUD, reacting live to what the craft does.
+
+**Stretch:** speech bubbles with pixel gibberish; astronauts wave at each other on EVA.
+
+**Done when:** an astronaut knocked off a ladder on Mira tumbles as a ragdoll and gets back up, while their portrait shows panic and then relief.
+
+#### H2 · Interiors (IVA)
+**Goal:** see inside crewed parts and move between them, which neither KSP nor Spaceflight Simulator lets you do (builds on H1, E6, D7).
+
+**Must:**
+- **Cutaway view (I):** the outer skin fades and crewed parts show pixel-art interiors: decks, seats, consoles, ladders, handrails, lockers and windows.
+- **Interiors from the part tree:** every crewed part defines its rooms and hatches. Joined parts connect through their hatches, and docked vessels through their docking ports, so a whole station becomes one connected interior.
+- **Moving around:** under gravity astronauts walk and climb ladders. In free fall they float, push off walls and grab handrails, keeping their momentum, so they can drift and spin.
+- **Seats and consoles:** an astronaut in a command seat flies the craft; the rest ride along; swap seats.
+- **Airlocks:** cycle an airlock to go out on EVA (E7) and come back in.
+- **Light:** sunlight through the windows follows day and night; interior lights switch on in the dark.
+
+**Stretch:** look out of a window at the planet turning below.
+
+**Done when:** an astronaut leaves the capsule seat, floats through a docking port into a docked station, cycles its airlock and goes out on EVA.
+
+#### H3 · Hands-on: objects, tools and cargo
+**Goal:** astronauts handle things with their hands, inside and out (builds on H2, C1).
+
+**Must:**
+- **Loose objects:** cargo boxes, sample cases, tools and food packs are physics bodies. They float in free fall and fall under gravity.
+- **Grab, carry, throw and hand over:** carry with one or both hands; heavy things slow you down; in free fall, throwing pushes you back the other way.
+- **Controls on parts:** switches, valves and panels that astronauts operate by hand: open a bay, transfer fuel, start an experiment, deploy a panel. The part menu still works too.
+- **Cargo by hand:** move inventory (E7) between modules and vessels, through hatches and on EVA.
+- **Lab work:** an experiment runs while an astronaut works at the lab bench; scientists are faster.
+
+**Stretch:** tool tethers, so tools don't drift away on EVA.
+
+**Done when:** an astronaut carries a sample case from a lander, through the station, to the lab, and runs it.
+
+#### H4 · Damage, failures and repairs
+**Goal:** things break, and the crew fixes them (builds on H3, C2, E5).
+
+**Must:**
+- **Damage model:** a hard impact, overheating or overloading (C2) can damage a part instead of destroying it. Dents, cracked tanks and broken engines show in the pixel art and weaken the part.
+- **Hull breaches:** a hole in a crewed module vents air. Loose objects and astronauts are pulled toward it, pressure drops and alarms sound; closing the hatch seals the module off.
+- **Leaks:** a damaged tank leaks, with a visible spray that pushes the craft.
+- **Random failures (option):** stuck valves, dead reaction wheels, failed ignitions (extends the G4 failures option).
+- **Repairs:**
+  - inside: a patch kit on a breach, or a swapped console;
+  - on EVA: a welding torch, or an engine part replaced from spares;
+  - engineers repair faster and can fix more;
+  - repairs use spare parts from the inventory.
+- **Injuries:** hard landings and high g can hurt astronauts; a medic treats them.
+
+**Stretch:** a fire inside a module, fed by oxygen, put out with an extinguisher or by venting.
+
+**Done when:** a micrometeoroid breaches a station module, the crew seals the hatch, an engineer patches the hole on EVA, and the module repressurises.
+
+#### H5 · Life on board and spin gravity
+**Goal:** long missions where the crew's needs matter, and rotating stations, which a side view shows perfectly (builds on H2, G7).
+
+**Must:**
+- **Needs:** air, water, food, sleep and morale, in a light version that G7's life-support pack plugs into.
+- **Spin gravity:** rotating rings and centrifuge modules. Astronauts walk on the inside of the rim, with "down" and the strength of gravity set by spin rate and radius. Climbing toward the hub makes them lighter, and dropped objects curve sideways (the Coriolis effect).
+- **Daily life:** exercise machines, sleep pods and a galley that keep morale up.
+- **Crew schedule:** a simple day plan (work, eat, sleep) that keeps running during time warp.
+
+**Stretch:** a greenhouse module whose plants help recycle air.
+
+**Done when:** a spinning ring gives 0.5 g at the rim, an astronaut walks all the way round it, and a crew stays healthy for 30 days with exercise and food.
+
+#### H6 · Self-landing rockets
+**Goal:** boosters that fly themselves home and fly again (builds on E8, D1, C4).
+
+**Must:**
+- **Parts:** grid fins (fold out to steer at high speed), booster landing legs, deep-throttling engines that relight a limited number of times, cold-gas thrusters.
+- **Guidance per stage:**
+  - In the editor, give any stage that will be dropped a return mission: back to the launch site, onto a drone ship, or a splashdown.
+  - The autopilot flies the boostback, entry and landing burns (the "hoverslam"), extending E8's landing autopilot.
+  - The editor shows the fuel the landing needs, held back from the Δv.
+- **Background flight:** dropped stages with a return mission keep flying under full physics while you fly the upper stage (2D makes this cheap), and you can switch over to watch them.
+- **Landing sites:** landing pads at the launch site, and a drone ship that floats (C4 water) and holds its position.
+- **Recovery and reuse:**
+  - landed stages can be recovered for their part value (Career) and launched again;
+  - every part keeps a flight counter.
+
+**Stretch:** a picture-in-picture view of the booster landing while you fly the upper stage.
+
+**Done when:** a two-stage rocket puts a payload in orbit while its first stage flies back and lands on the pad by itself; the stage is then recovered and launched again.
+
+#### H7 · Launch and recovery infrastructure
+**Goal:** the ground systems around the rocket (builds on H6, C2, C3, G7).
+
+**Must:**
+- **Launch towers:**
+  - buildable towers with umbilicals that top up fuel and power until launch, and a crew access arm;
+  - a water deluge system that reduces launch damage.
+- **Catch tower:** arms on hinges (C2) that catch a returning booster by its catch points; booster guidance (H6) can target the tower.
+- **Your own launch sites:** build pads and towers on any body from base parts (G7), and launch from them.
+- **Recovery ships:** ships that catch fairing halves gliding down under parafoils (C3).
+- **Abort tests:** a pad abort and an in-flight abort with an escape tower.
+
+**Stretch:** rollout: the rocket rides a crawler from the assembly building to the pad.
+
+**Done when:** a booster is caught by the tower arms, and a fairing half is caught by a recovery ship.
+
+#### H8 · Tethers, sails and mass drivers
+**Goal:** ways to move that neither game has in stock (builds on C3, E5, F5).
+
+**Must:**
+- **Rotating tethers (rotovators):** a long spinning tether on C3 ropes catches a payload from a suborbital hop and flings it onward. The momentum exchange lowers the tether's own orbit, which it then has to boost back up.
+- **Solar sails:** thrust from sunlight that depends on the sail's angle and distance from the sun, steered from the map.
+- **Mass driver:** a long electromagnetic launch track on an airless moon (Mira) that fires cargo pods into orbit.
+- **Propellant depots:** tankers, fuel transfer between craft, and boil-off of cold fuels over time.
+
+**Stretch:** a space elevator on a small moon.
+
+**Done when:** a rotovator around Mira catches a cargo pod fired from a mass driver and passes it on to an escape trajectory.
+
+#### H9 · Flight recorder, replays and photo mode
+**Goal:** relive and share flights (builds on D3, E9).
+
+**Must:**
+- **Recorder:** every flight is recorded (each vessel's state at intervals, which is cheap in 2D).
+- **Replays:** play back with a timeline: pause, scrub, slow motion, and follow any vessel.
+- **Cinematic camera:** free and tracking cameras, smooth zoom paths, and a photo mode that hides the HUD, with filters.
+- **Export:** GIF clips of a replay, and replay files to share.
+- **Ghosts:** race a translucent ghost of your best attempt (fastest to orbit, least fuel to a Mira landing).
+
+**Stretch:** take over from any moment of a replay as a new flight.
+
+**Done when:** a full flight to Mira is replayed at 10× with the camera following the booster home, and a 10-second clip is exported as a GIF.
+
+#### H10 · Tech and contracts: beyond KSP
+**Goal:** the Phase H features fit the tech tree and have contracts of their own (section 4.4).
+
+**Must:**
+- **Tech nodes:** for H1–H9 parts and features (interior fittings, repair tools, spin habitats, grid fins and booster legs, towers, tethers, sails, mass drivers), in a logical order: booster legs before booster return, for example.
+- **Contracts:**
+  - land a booster and fly it again;
+  - repair a damaged satellite;
+  - rescue a crew from a breached station;
+  - run a spin-gravity station for 30 days;
+  - catch a booster with the tower;
+  - deliver cargo with a rotovator;
+  - ghost-race challenges from replays.
+- **Science:** new experiments where they fit (crew health studies on long missions, for example).
+- **Checks:** the section 4.4 checks pass with Phase H included.
+
+**Done when:** the checks pass, and a Career save can reach and complete each new kind of contract.
+
 ---
 
 ## 5. Controls
@@ -1278,14 +1593,27 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
 | Make root button | Make the selected part the root |
 | Home / Fit button | Frame the whole craft |
 | X | Mirror symmetry on/off |
-| Q / E (Shift for fine) | Rotate |
+| Q / E (Shift for 5°) | Rotate the carried part or the selected side part |
 | F | Flip |
-| Alt-drag | Offset along the surface |
-| Alt-click | Copy with attached parts |
+| Alt-drag (touch: Offset switch, then drag) | Offset along the surface |
+| Alt-click (touch: Copy button) | Copy with attached parts; the copy drops on the next click or tap |
+| Save sub button | Keep the selected part and everything below it in the Subassemblies tab |
 | Ctrl+Z / Ctrl+Y | Undo / redo |
 | Right-click (touch: tap the selected part) | Part settings |
 | Wheel / drag empty space, middle- or right-drag | Zoom / pan |
 | Touch: one finger / two fingers | Pan / pan and pinch-zoom |
+
+### Astronauts and interiors (from steps E7 and H1–H5)
+
+| Input | Action |
+|---|---|
+| A / D | Walk, or push sideways while floating |
+| W / S | Climb ladders; float up and down |
+| Space | Jump; push off a wall in free fall |
+| E | Grab or let go; use a switch, seat, hatch or airlock |
+| Q (hold, aim with mouse) | Throw what you're carrying |
+| I | Interior cutaway view on/off |
+| [ / ] | Switch to the next astronaut or vessel |
 
 ## 6. Deploying to GitHub Pages
 
@@ -1312,7 +1640,10 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
   - section 1.7 explains why the game stays one static site, with no executable needed;
   - added a performance pass (C5), IndexedDB saves (D3) and an installable offline web app (E9);
   - centre of pressure overlay (A3), centre of lift indicator and plane controls (F6), and rover driving (F8) made explicit.
+- **Plan revision 8**: new step E10, "Terrain detail" (realistic landforms, strata, collidable ground scatter and deep parallax layers, the idea behind the Parallax mod); new section 4.4, which says every new part and feature gets a tech-tree node and contracts of its own, with a "Tech and contracts" step closing each phase (E11, F11, G9, H10) and automated checks; tech nodes and contracts are data that packs can extend; 63 steps in total.
+- **Plan revision 7**: new Phase H, "Beyond KSP" (section 2.8): living astronauts with ragdolls (H1), walkable interiors (H2), hands-on objects and tools (H3), damage and repairs (H4), life on board and spin gravity (H5), self-landing rockets (H6), launch and recovery infrastructure (H7), tethers, solar sails and mass drivers (H8), and a flight recorder with replays (H9); 58 steps in total. Original parts added to `PARTS.md`.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
+- **v0.5.0 (A3)**: tool rail; mirror symmetry with linked twins; rotate and flip; offset with snap; undo/redo (100 steps); Alt-click copy; subassemblies tab; centre of mass, thrust and pressure overlays with warnings; Swept Fin part; sideways force on parts and wing-like fins (`FS.partAero`), brought forward from C4; Hopper sample uses the short tank.
 - **v0.4.0 fix**: script and style links carry `?v=<version>`, after a browser served a cached old `editor.js` with the new page and the hangar came up blank.
 - **v0.4.0 (A2)**: drag-and-drop hangar: tray with tabs and hover cards, stack and surface snapping, overlap checks, carrying subassemblies, drop on tray to remove, pan and zoom, touch long-press and pinch, live stats while dragging, re-root; `js/build.js`.
 - **v0.2.0 (A0 complete)**: simulation split from the page (`sim.js`, `warp.js`, `nodes.js`, `input.js`) with events; renderer interface (`FS.Renderer`); maneuver nodes survive SOI changes and can go on any patch; debris kept on rails; pinch zoom; `?debug` start in orbit.

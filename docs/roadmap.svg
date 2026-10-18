@@ -1,13 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="672" viewBox="0 0 1100 672" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" width="1172" height="734" viewBox="0 0 1172 734" role="img" aria-labelledby="t d">
 <title id="t">Flatspace Program roadmap</title>
-<desc id="d">3 of 49 roadmap steps done. Next: A3 Editor tools.</desc>
-<rect width="1100" height="672" rx="14" fill="#0b1222"/>
+<desc id="d">4 of 63 roadmap steps done. Next: A4 Staging, tweakables, stretchable tanks, craft files.</desc>
+<rect width="1172" height="734" rx="14" fill="#0b1222"/>
 <text x="28" y="44" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#e6edf7">Flatspace Program roadmap</text>
-<text x="28" y="70" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#9aa8c2">v0.4.0 · 3 of 49 steps done · next: A3 Editor tools</text>
-<rect x="720" y="52" width="352" height="8" rx="4" fill="#141d33" stroke="#2c3a5a"/>
-<rect x="720" y="52" width="21.6" height="8" rx="4" fill="#3fb68b"/>
-<text x="1072" y="44" text-anchor="end" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" fill="#9aa8c2">6%</text>
-<line x1="44" y1="135" x2="44" y2="569" stroke="#26324d" stroke-width="2"/>
+<text x="28" y="70" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#9aa8c2">v0.5.0 · 4 of 63 steps done · next: A4 Staging, tweakables, stretchable tanks, craft files</text>
+<rect x="792" y="52" width="352" height="8" rx="4" fill="#141d33" stroke="#2c3a5a"/>
+<rect x="792" y="52" width="22.3" height="8" rx="4" fill="#3fb68b"/>
+<text x="1144" y="44" text-anchor="end" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" fill="#9aa8c2">6%</text>
+<line x1="44" y1="135" x2="44" y2="631" stroke="#26324d" stroke-width="2"/>
 <circle cx="44" cy="135" r="15" fill="#3fb68b" stroke="#3fb68b" stroke-width="2"/>
 <text x="44" y="140" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#062317">P</text>
 <text x="70" y="131" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#e6edf7">Prototype</text>
@@ -21,7 +21,7 @@
 <circle cx="44" cy="197" r="15" fill="#111a2f" stroke="#ffb547" stroke-width="2"/>
 <text x="44" y="202" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#ffb547">A</text>
 <text x="70" y="193" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#e6edf7">Builder</text>
-<text x="70" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">3 of 5 done</text>
+<text x="70" y="211" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">4 of 5 done</text>
 <g><title>A0 · Prepare the prototype</title>
 <rect x="204" y="174" width="80" height="46" rx="7" fill="#3fb68b" stroke="#3fb68b" stroke-width="2"/>
 <text x="213" y="193" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#062317">A0</text>
@@ -41,15 +41,16 @@
 <text x="385" y="210" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#062317">Drag &amp; drop</text>
 </g>
 <g><title>A3 · Editor tools</title>
-<rect x="462" y="174" width="80" height="46" rx="7" fill="#141d33" stroke="#ffb547" stroke-width="2"/>
-<text x="471" y="193" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#ffb547">A3</text>
-<text x="534" y="192" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" letter-spacing="0.6" fill="#ffb547">NEXT</text>
-<text x="471" y="210" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#e6edf7">Editor tools</text>
+<rect x="462" y="174" width="80" height="46" rx="7" fill="#3fb68b" stroke="#3fb68b" stroke-width="2"/>
+<text x="471" y="193" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#062317">A3</text>
+<path d="M521 187 l4 4 l8 -8" fill="none" stroke="#062317" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="471" y="210" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#062317">Editor tools</text>
 </g>
 <g><title>A4 · Staging, tweakables, stretchable tanks, craft files</title>
-<rect x="548" y="174" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
-<text x="557" y="193" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">A4</text>
-<text x="557" y="210" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Staging</text>
+<rect x="548" y="174" width="80" height="46" rx="7" fill="#141d33" stroke="#ffb547" stroke-width="2"/>
+<text x="557" y="193" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#ffb547">A4</text>
+<text x="620" y="192" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" letter-spacing="0.6" fill="#ffb547">NEXT</text>
+<text x="557" y="210" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#e6edf7">Staging</text>
 </g>
 <circle cx="44" cy="259" r="15" fill="#111a2f" stroke="#2c3a5a" stroke-width="2"/>
 <text x="44" y="264" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#9aa8c2">B</text>
@@ -151,7 +152,7 @@
 <circle cx="44" cy="445" r="15" fill="#111a2f" stroke="#2c3a5a" stroke-width="2"/>
 <text x="44" y="450" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#9aa8c2">E</text>
 <text x="70" y="441" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#e6edf7">Planets &amp; science</text>
-<text x="70" y="459" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">0 of 9 done</text>
+<text x="70" y="459" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">0 of 11 done</text>
 <g><title>E1 · The solar system</title>
 <rect x="204" y="422" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
 <text x="213" y="441" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">E1</text>
@@ -197,10 +198,20 @@
 <text x="901" y="441" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">E9</text>
 <text x="901" y="458" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Sound</text>
 </g>
+<g><title>E10 · Terrain detail (Parallax idea)</title>
+<rect x="978" y="422" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="987" y="441" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">E10</text>
+<text x="987" y="458" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Terrain</text>
+</g>
+<g><title>E11 · Tech and contracts: Phase E additions</title>
+<rect x="1064" y="422" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="1073" y="441" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">E11</text>
+<text x="1073" y="458" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Tech, deals</text>
+</g>
 <circle cx="44" cy="507" r="15" fill="#111a2f" stroke="#2c3a5a" stroke-width="2"/>
 <text x="44" y="512" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#9aa8c2">F</text>
 <text x="70" y="503" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#e6edf7">Career</text>
-<text x="70" y="521" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">0 of 10 done</text>
+<text x="70" y="521" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">0 of 11 done</text>
 <g><title>F1 · Funds, costs and Career start</title>
 <rect x="204" y="484" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
 <text x="213" y="503" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">F1</text>
@@ -251,10 +262,15 @@
 <text x="987" y="503" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">F10</text>
 <text x="987" y="520" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Planner</text>
 </g>
+<g><title>F11 · Tech and contracts: Phase F additions</title>
+<rect x="1064" y="484" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="1073" y="503" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">F11</text>
+<text x="1073" y="520" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Tech, deals</text>
+</g>
 <circle cx="44" cy="569" r="15" fill="#111a2f" stroke="#2c3a5a" stroke-width="2"/>
 <text x="44" y="574" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#9aa8c2">G</text>
 <text x="70" y="565" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#e6edf7">Modded</text>
-<text x="70" y="583" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">0 of 8 done</text>
+<text x="70" y="583" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">0 of 9 done</text>
 <g><title>G1 · Packs and mods menu</title>
 <rect x="204" y="546" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
 <text x="213" y="565" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">G1</text>
@@ -295,12 +311,71 @@
 <text x="815" y="565" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">G8</text>
 <text x="815" y="582" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Classics</text>
 </g>
-<rect x="28" y="627" width="22" height="14" rx="4" fill="#3fb68b" stroke="#3fb68b" stroke-width="2"/>
-<path d="M34 634 l3 3 l6 -6" fill="none" stroke="#062317" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="58" y="638" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#9aa8c2">Done</text>
-<rect x="112" y="627" width="22" height="14" rx="4" fill="#141d33" stroke="#ffb547" stroke-width="2"/>
-<text x="142" y="638" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#9aa8c2">Next</text>
-<rect x="196" y="627" width="22" height="14" rx="4" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
-<text x="226" y="638" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#9aa8c2">Planned</text>
-<text x="1072" y="638" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#6c7a96">Each step is one work session · details in PLAN.md</text>
+<g><title>G9 · Tech and contracts: packs</title>
+<rect x="892" y="546" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="901" y="565" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">G9</text>
+<text x="901" y="582" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Tech, deals</text>
+</g>
+<circle cx="44" cy="631" r="15" fill="#111a2f" stroke="#2c3a5a" stroke-width="2"/>
+<text x="44" y="636" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#9aa8c2">H</text>
+<text x="70" y="627" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#e6edf7">Beyond KSP</text>
+<text x="70" y="645" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">0 of 10 done</text>
+<g><title>H1 · Living astronauts</title>
+<rect x="204" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="213" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H1</text>
+<text x="213" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Astronauts</text>
+</g>
+<g><title>H2 · Interiors (IVA)</title>
+<rect x="290" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="299" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H2</text>
+<text x="299" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Interiors</text>
+</g>
+<g><title>H3 · Hands-on: objects, tools and cargo</title>
+<rect x="376" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="385" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H3</text>
+<text x="385" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Hands-on</text>
+</g>
+<g><title>H4 · Damage, failures and repairs</title>
+<rect x="462" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="471" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H4</text>
+<text x="471" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Repairs</text>
+</g>
+<g><title>H5 · Life on board and spin gravity</title>
+<rect x="548" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="557" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H5</text>
+<text x="557" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Life aboard</text>
+</g>
+<g><title>H6 · Self-landing rockets</title>
+<rect x="634" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="643" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H6</text>
+<text x="643" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Self-landing</text>
+</g>
+<g><title>H7 · Launch and recovery infrastructure</title>
+<rect x="720" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="729" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H7</text>
+<text x="729" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Launch sites</text>
+</g>
+<g><title>H8 · Tethers, sails and mass drivers</title>
+<rect x="806" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="815" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H8</text>
+<text x="815" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Tethers</text>
+</g>
+<g><title>H9 · Flight recorder, replays and photo mode</title>
+<rect x="892" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="901" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H9</text>
+<text x="901" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Replays</text>
+</g>
+<g><title>H10 · Tech and contracts: beyond KSP</title>
+<rect x="978" y="608" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="987" y="627" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">H10</text>
+<text x="987" y="644" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Tech, deals</text>
+</g>
+<rect x="28" y="689" width="22" height="14" rx="4" fill="#3fb68b" stroke="#3fb68b" stroke-width="2"/>
+<path d="M34 696 l3 3 l6 -6" fill="none" stroke="#062317" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="58" y="700" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#9aa8c2">Done</text>
+<rect x="112" y="689" width="22" height="14" rx="4" fill="#141d33" stroke="#ffb547" stroke-width="2"/>
+<text x="142" y="700" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#9aa8c2">Next</text>
+<rect x="196" y="689" width="22" height="14" rx="4" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
+<text x="226" y="700" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#9aa8c2">Planned</text>
+<text x="1144" y="700" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#6c7a96">Each step is one work session · details in PLAN.md</text>
 </svg>

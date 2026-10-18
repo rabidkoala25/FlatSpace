@@ -1,6 +1,6 @@
 # Flatspace Program — Part Manifest
 
-Every stock KSP part (base game 1.12, Making History and Breaking Ground) mapped to its Flatspace equivalent and the roadmap step that builds it. The final version of the game must have an equivalent for every row. Each step ticks its rows here when they are done. Step G8 cannot be marked done until every box is ticked.
+Every stock KSP part (base game 1.12, Making History and Breaking Ground) mapped to its Flatspace equivalent and the roadmap step that builds it. The final version of the game must have an equivalent for every row. Each step ticks its rows here when they are done. Step G8 cannot be marked done until every box in the KSP and mod sections is ticked; the "Original parts" at the end are ticked by their own steps.
 
 **Rules**
 
@@ -157,7 +157,7 @@ Every stock KSP part (base game 1.12, Making History and Breaking Ground) mapped
 |---|---|---|---|
 | ☐ | Aerodynamic Nose Cone (all sizes), Small Nose Cone, Protective Rocket Nose Cone Mk7 | Rocket nose cones | D5 |
 | ☐ | Advanced Nose Cone Type A, Type B | Plane nose cones | F7 |
-| ☐ | Basic Fin, AV-T1 Winglet, AV-R8 Winglet, Delta-Deluxe Winglet | Rocket fins (prototype has a fin collar) | P / D5 |
+| ☐ | Basic Fin, AV-T1 Winglet, AV-R8 Winglet, Delta-Deluxe Winglet | Rocket fins (prototype has a fin collar; Swept Fin covers Basic Fin since A3) | P / A3 / D5 |
 | ☐ | Tail Fin, FAT-455 Aeroplane Tail Fin, Big-S Spaceplane Tail Fin | Vertical tails (3) | F7 |
 | ☐ | Delta Wing, Small Delta Wing, Wing Strake, Big-S Delta Wing, Big-S Wing Strake, FAT-455 Aeroplane Main Wing | Main wings (6) | F7 |
 | ☐ | Swept Wings, Swept Wing Type A, Swept Wing Type B | Swept wings (3) | F7 |
@@ -263,3 +263,28 @@ The popular part mods ship thousands of parts between them, so the commitment is
 | ☐ | USI Kolonization / MKS and USI Life Support | Colony habitats, workshops, logistics, life-support recyclers and supply containers | G7 |
 | ☐ | TAC Life Support / Kerbalism | Life-support tanks and scrubbers | G7 |
 | ☐ | Bluedog Design Bureau, Tantares | Historical-style rocket and spacecraft families (all with original names) | G8 |
+
+## Original parts (beyond KSP)
+
+Parts for the features in Phase H that KSP has no stock equivalent for. All names are original.
+
+| ✓ | Part | What it does | Step |
+|---|---|---|---|
+| ✅ | Swept Fin | Single side fin, placed in mirrored pairs and tilted to steer or spin (also covers KSP's Basic Fin) | A3 |
+| ☐ | Medic kit, patch kit, welding torch, spare-parts crate | Treating injuries, sealing hull breaches, EVA repairs, replacing broken parts | H4 |
+| ☐ | Handrails, interior ladder, lockers, lab bench | Interior fittings for crewed parts | H2 / H3 |
+| ☐ | Airlock module (inline and side) | Cycle between interior and EVA | H2 |
+| ☐ | Sample case, cargo box, food pack | Loose objects that can be carried and thrown | H3 |
+| ☐ | Exercise machine, sleep pod, galley | Daily-life fittings that keep morale up | H5 |
+| ☐ | Spin ring (small, large), centrifuge module | Rotating habitats with spin gravity | H5 |
+| ☐ | Grid fins (small, large) | Folding lattice fins that steer at high speed | H6 |
+| ☐ | Booster landing legs (two sizes) | Folding legs for self-landing stages | H6 |
+| ☐ | Relightable deep-throttle engines (two sizes), cold-gas thrusters | Landing burns and attitude control for returning stages | H6 |
+| ☐ | Landing pad, drone ship | Places for boosters to land | H6 |
+| ☐ | Launch tower, umbilical arm, crew access arm, water deluge, catch tower | Launch and recovery ground systems | H7 |
+| ☐ | Recovery ship, parafoil fairing | Catching fairing halves at sea | H7 |
+| ☐ | Escape tower | Pulls the capsule clear in an abort | H7 |
+| ☐ | Rotovator hub and tether, catch hook | Rotating momentum-exchange tether | H8 |
+| ☐ | Solar sail (two sizes) | Thrust from sunlight | H8 |
+| ☐ | Mass driver segments, cargo pod | Electromagnetic launch track and its payload | H8 |
+| ☐ | Depot tank with boil-off cooling | Orbital fuel storage | H8 |

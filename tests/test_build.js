@@ -130,4 +130,97 @@ for (const c of FS.SAMPLE_CRAFT.filter((s) => s.parts)) {
   check(B.partAt(parts, { x: 20, y: 0 }) === null, 'empty space picks nothing');
 }
 
+
+// ================= Step A3: precision tools =================
+const DEG = Math.PI / 180;
+// Drop a held group with mirror symmetry, the way the editor does (place()).
+function dropMirrored(parts, held, root, at) {
+  B.placeHeld(held, root, at);
+  const cand = B.candidate(parts, held, root, at, SNAP, true);
+  if (!cand || B.blocker(parts, held, root, cand, true)) return null;
+  const line = B.mirrorFor(parts, cand.parent, cand.kind);
+  let all = B.attach(parts, held, root, cand);
+  if (line) { const twin = B.makeTwin(held, line, cand.kind); B.linkTwins(held, twin); all = all.concat(twin); FS.relayout(all); }
+  return all;
+}
+const part = (id, spin = 0) => { const p = FS.newPart(id); p.spin = spin; FS.relayout([p]); return p; };
+
+// --- Mirror: side boosters in pairs; parts on a twin get twins on the other twin ---
+{
+  let parts = FS.stackToParts(['lark', 't400', 'decoupler', 't800', 't800', 'kestrel']);
+  const core = parts[3], lower = parts[4];
+  const dec = part('radec');
+  parts = dropMirrored(parts, [dec], dec, V.add(core.pos, { x: 0.9, y: 0.2 }));
+  const decTwin = B.twinOf(parts, dec);
+  check(decTwin && decTwin.parent === core && Math.abs(decTwin.pos.x + dec.pos.x - 2 * core.pos.x) < 1e-9 && decTwin.flip !== dec.flip, 'mirror on: a side decoupler comes with a twin on the other side');
+  const boo = part('rumbler');
+  parts = dropMirrored(parts, [boo], boo, V.add(dec.pos, { x: 0.7, y: 0 }));
+  const booTwin = B.twinOf(parts, boo);
+  check(booTwin && booTwin.parent === decTwin, 'a booster on a twinned decoupler gets its twin on the other decoupler');
+  const st = FS.stagesOf(parts).map((e) => (e.decouple ? 'D' : '') + (e.ignite ? 'I' : '')).join(' ');
+  check(st.startsWith('I D'), `the mirrored boosters stage like the sample (${st})`);
+  const o = FS.centreOfThrust(FS.stagesOf(parts)[0].engines);
+  check(Math.abs(o.pos.x - core.pos.x) < 1e-9 && Math.abs(o.dir.x) < 1e-9, 'mirrored boosters keep the thrust on the centre line');
+
+  // --- Rotate: tilted fins, mirrored the other way, staying on the surface ---
+  const fin = part('sweptfin', 15 * DEG);
+  parts = dropMirrored(parts, [fin], fin, V.add(lower.pos, { x: 1.0, y: -1.4 }));
+  check(!!parts, 'tilted fins fit on the tank below the boosters');
+  const finTwin = B.twinOf(parts, fin);
+  near(fin.rot / DEG, 15, 0.01, 'the fin is tilted 15°');
+  near(finTwin.rot / DEG, -15, 0.01, 'its twin is tilted the mirror way');
+  const inner = (p) => Math.min(...B.quad(p).map((q) => Math.abs(q.x - lower.pos.x)));
+  near(inner(fin), 0.625, 0.001, 'the tilted fin still touches the tank (inner corner on the surface)');
+  check(!B.moveOnSurface(parts, fin, B.surfaceHeight(fin), fin.rot + 15 * DEG), 'turning a placed fin another 15° works');
+  near(finTwin.rot / DEG, -30, 0.01, '…and its twin turns the mirror way');
+
+  // --- Offset: slide along the parent; the twin follows; overlaps are refused ---
+  const y0 = B.surfaceHeight(fin);
+  check(!B.moveOnSurface(parts, fin, y0 - 0.25, fin.rot), 'a fin slides 0.25 m down its tank');
+  near(B.surfaceHeight(finTwin), y0 - 0.25, 1e-9, '…and its twin slides with it');
+  const blocked = B.moveOnSurface(parts, fin, 1.875, fin.rot);
+  check(blocked && blocked.def.id === 'rumbler', `sliding the fin up into the booster is refused (blocked by the ${blocked && blocked.def.name})`);
+  near(B.surfaceHeight(fin), y0 - 0.25, 1e-9, '…and leaves it where it was');
+
+  // --- Saving keeps angles, offsets and mirror links ---
+  const again = FS.partsFromSerial(FS.serialParts(parts));
+  check(JSON.stringify(FS.serialParts(again)) === JSON.stringify(FS.serialParts(parts)), 'a mirrored, tilted craft saves and loads unchanged');
+  check(B.twinOf(again, again[parts.indexOf(fin)]) === again[parts.indexOf(finTwin)], 'mirror links survive saving');
+
+  // --- Turning a parent carries its side parts round with it ---
+  const pod = FS.stackToParts(['t400']);
+  const f2 = FS.attachPart(pod, 'sweptfin', pod[0], { x: 0.9, y: 0 });
+  pod[0].rot = 30 * DEG;
+  FS.relayout(pod);
+  const exp = FS.rotV({ x: 0.9, y: 0 }, 30 * DEG);
+  check(Math.abs(f2.pos.x - exp.x) < 1e-9 && Math.abs(f2.pos.y - exp.y) < 1e-9 && Math.abs(f2.rot - 30 * DEG) < 1e-9, 'side parts turn with the part they hang on');
+
+  // --- Copies are new parts with their own mirror links ---
+  const copy = B.clone(FS.subtree(parts, core));
+  check(copy.length === FS.subtree(parts, core).length && copy.every((c) => !parts.includes(c)), 'a copy has the same parts, all new');
+  check(copy.filter((c) => c.sym).every((c) => !parts.some((p) => p.sym === c.sym)), 'a copy gets its own mirror links');
+}
+
+// --- Overlays: the centre of pressure moves behind the centre of mass with fins ---
+{
+  const bare = FS.stackToParts(['lark', 't800', 't800', 'kestrel']);
+  const finned = FS.stackToParts(['lark', 't800', 't800', 'fins', 'kestrel']);
+  const a = FS.centreOfPressure(bare).ahead, b = FS.centreOfPressure(finned).ahead;
+  check(a > 0 && b < 0, `fins move the centre of pressure from ahead of the centre of mass (${a.toFixed(2)} m) to behind it (${b.toFixed(2)} m)`);
+  // and flight agrees: a finned rocket turns back into the airflow without SAS
+  const fakeG = { emit() {} };
+  const fly = (src) => {
+    const v = new FS.Vessel('t', src, FS.root, {});
+    v.landed = null; v.sas = false;
+    v.r = { x: FS.root.R + 4000, y: 0 };
+    v.v = V.add(FS.airVel(FS.root, v.r), { x: 300, y: 0 });
+    v.angle = 5 * DEG;
+    for (let k = 0; k < 300; k++) v.step(0.02, k * 0.02, fakeG);
+    const va = V.sub(v.v, FS.airVel(FS.root, v.r));
+    return Math.abs(FS.wrapAngle(v.angle - Math.atan2(va.y, va.x))) / DEG;
+  };
+  const af = fly(FS.serialParts(finned)), ab = fly(FS.serialParts(bare));
+  check(af < 5 && ab > 5, `in flight, the finned rocket straightens (5° → ${af.toFixed(1)}°) and the bare one doesn't (→ ${ab.toFixed(1)}°)`);
+}
+
 done();

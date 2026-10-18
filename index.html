@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/style.css?v=0.4.0">
+<link rel="stylesheet" href="css/style.css?v=0.5.0">
 </head>
 <body>
 <div id="app">
@@ -39,6 +39,26 @@
 
       <main class="hangar">
         <canvas id="edCanvas" aria-label="Rocket under construction"></canvas>
+        <div class="tool-rail" role="toolbar" aria-label="Building tools">
+          <button id="btnUndo" class="rbtn" type="button" title="Undo (Ctrl+Z)">↶<span>Undo</span></button>
+          <button id="btnRedo" class="rbtn" type="button" title="Redo (Ctrl+Y)">↷<span>Redo</span></button>
+          <hr>
+          <button id="btnMirror" class="rbtn" type="button" aria-pressed="false" title="Mirror symmetry: side parts come in mirrored pairs (X)">⇋<span>Mirror</span></button>
+          <button id="btnRotL" class="rbtn" type="button" title="Rotate 15° anticlockwise (Q; Shift+Q for 5°)">⟲<span>Rotate</span></button>
+          <button id="btnRotR" class="rbtn" type="button" title="Rotate 15° clockwise (E; Shift+E for 5°)">⟳<span>Rotate</span></button>
+          <button id="btnFlip" class="rbtn" type="button" title="Flip left to right (F)">⇄<span>Flip</span></button>
+          <hr>
+          <button id="btnOffset" class="rbtn" type="button" aria-pressed="false" title="Offset: drag a side part to slide it along its parent (Alt-drag with a mouse)">↕<span>Offset</span></button>
+          <button id="btnSnap" class="rbtn" type="button" aria-pressed="true" title="Snap offsets to 0.25 m steps and the middle of a side">⌗<span>Snap</span></button>
+          <hr>
+          <button id="btnCopy" class="rbtn" type="button" title="Copy the selected part and everything below it (Alt-click)">⧉<span>Copy</span></button>
+          <button id="btnSub" class="rbtn" type="button" title="Save the selected part and everything below it as a subassembly">＋<span>Save sub</span></button>
+        </div>
+        <div class="ovl-chips" role="group" aria-label="Overlays">
+          <button id="ovl_com" class="chip com" type="button" aria-pressed="true" title="Centre of mass">Mass</button>
+          <button id="ovl_cot" class="chip cot" type="button" aria-pressed="true" title="Centre of thrust of the first stage, with its thrust line">Thrust</button>
+          <button id="ovl_cop" class="chip cop" type="button" aria-pressed="true" title="Centre of pressure: where the air pushes when the rocket flies a little sideways. It should sit below the centre of mass.">Pressure</button>
+        </div>
         <div class="hangar-tools">
           <button id="btnFit" class="btn tool" type="button" title="Frame the whole craft (Home)">Fit</button>
           <button id="btnRoot" class="btn tool" type="button" title="Make the selected part the root">Make root</button>
@@ -182,23 +202,23 @@
   </div>
 </div>
 
-<script src="js/util.js?v=0.4.0"></script>
-<script src="data/parts.js?v=0.4.0"></script>
-<script src="data/bodies.js?v=0.4.0"></script>
-<script src="js/save.js?v=0.4.0"></script>
-<script src="js/bodies.js?v=0.4.0"></script>
-<script src="js/orbit.js?v=0.4.0"></script>
-<script src="js/parts.js?v=0.4.0"></script>
-<script src="js/partgraph.js?v=0.4.0"></script>
-<script src="js/build.js?v=0.4.0"></script>
-<script src="js/vessel.js?v=0.4.0"></script>
-<script src="js/sim.js?v=0.4.0"></script>
-<script src="js/warp.js?v=0.4.0"></script>
-<script src="js/nodes.js?v=0.4.0"></script>
-<script src="js/render.js?v=0.4.0"></script>
-<script src="js/hud.js?v=0.4.0"></script>
-<script src="js/editor.js?v=0.4.0"></script>
-<script src="js/input.js?v=0.4.0"></script>
-<script src="js/main.js?v=0.4.0"></script>
+<script src="js/util.js?v=0.5.0"></script>
+<script src="data/parts.js?v=0.5.0"></script>
+<script src="data/bodies.js?v=0.5.0"></script>
+<script src="js/save.js?v=0.5.0"></script>
+<script src="js/bodies.js?v=0.5.0"></script>
+<script src="js/orbit.js?v=0.5.0"></script>
+<script src="js/parts.js?v=0.5.0"></script>
+<script src="js/partgraph.js?v=0.5.0"></script>
+<script src="js/build.js?v=0.5.0"></script>
+<script src="js/vessel.js?v=0.5.0"></script>
+<script src="js/sim.js?v=0.5.0"></script>
+<script src="js/warp.js?v=0.5.0"></script>
+<script src="js/nodes.js?v=0.5.0"></script>
+<script src="js/render.js?v=0.5.0"></script>
+<script src="js/hud.js?v=0.5.0"></script>
+<script src="js/editor.js?v=0.5.0"></script>
+<script src="js/input.js?v=0.5.0"></script>
+<script src="js/main.js?v=0.5.0"></script>
 </body>
 </html>

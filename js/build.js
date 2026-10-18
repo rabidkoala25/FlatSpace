@@ -79,7 +79,7 @@
       const hl = p.def.len / 2;
       if (Math.abs(ly) > hl + tol) continue;
       let hw = halfAt(p, ly);
-      if (p.def.fin) hw += 0.75;
+      if (p.def.fin && !p.def.radial) hw += 0.75;
       if (Math.abs(lx) > hw + tol) continue;
       const area = p.def.len * Math.max(p.w, p.tw);
       if (area < bestA) { best = p; bestA = area; }
@@ -87,31 +87,56 @@
     return best;
   };
 
-  // Lay out the held parts around their root, as a free-floating group at pos.
+  // Lay out the held parts around their root, as a free-floating group at pos, turned to
+  // the root's spin (the angle the player gave it with Q / E).
   B.placeHeld = (held, root, pos) => {
     root.parent = null;
     root.pos = { ...pos };
+    root.rot = root.spin || 0;
     FS.relayout(held);
+  };
+
+  // The angle a held part takes on the side of p: its spin relative to p. A side-only part
+  // on the left side is mirrored, so a fin tilted on the right tilts the mirror way on the left.
+  const sideRot = (p, root, sd) => p.rot + (root.def.radial && sd < 0 ? -1 : 1) * (root.spin || 0);
+
+  // The spot on side sd (+1 right, -1 left) of part p, at height ly along it, for the held
+  // root turned to rot: its inner edge touches p's surface. Returns { pos, rot, ly }.
+  B.surfaceSpot = (p, root, sd, ly, rot) => {
+    const hlP = p.def.len / 2;
+    const rr = rot - p.rot;
+    const hl = root.def.len / 2, hw = root.w / 2, ht = root.tw / 2;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const c of [{ x: -ht, y: hl }, { x: ht, y: hl }, { x: hw, y: -hl }, { x: -hw, y: -hl }]) {
+      const q = FS.rotV(c, rr);
+      minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x); minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y);
+    }
+    ly = FS.clamp(ly, -hlP, hlP);
+    const span = [FS.clamp(ly + minY, -hlP, hlP), FS.clamp(ly + maxY, -hlP, hlP)];
+    const hwP = Math.max(halfAt(p, span[0]), halfAt(p, span[1]));
+    const off = sd * (hwP + (sd > 0 ? -minX : maxX));
+    return { pos: V.add(p.pos, FS.rotV({ x: off, y: ly }, p.rot)), rot, ly, want: Math.abs(off) };
   };
 
   // Where the held group would attach if let go with its root's centre at freePos.
   // snap is the snapping distance in metres. Stack nodes within reach win over sides.
   // Among the spots in reach, the nearest free one is chosen; if every one is blocked,
-  // the nearest is returned anyway so the editor can show it in red.
+  // the nearest is returned anyway so the editor can show it in red. With mirror on,
+  // a spot only counts as free if the mirror twin fits too.
   // Returns null when there is nothing to attach to, or
   // { kind: 'root' | 'bottom' | 'top' | 'srf', parent, side, pos, rot, dist, node }.
-  B.candidate = (placed, held, root, freePos, snap) => {
-    if (!placed.length) return { kind: 'root', parent: null, pos: { ...freePos }, rot: root.rot, dist: 0 };
+  B.candidate = (placed, held, root, freePos, snap, mirror = false) => {
+    if (!placed.length) return { kind: 'root', parent: null, pos: { ...freePos }, rot: root.spin || 0, dist: 0 };
     const pick = (list) => {
       if (!list.length) return null;
       list.sort((a, b) => a.dist - b.dist);
-      return list.find((c) => !B.blocker(placed, held, root, c)) || list[0];
+      return list.find((c) => !B.blocker(placed, held, root, c, mirror)) || list[0];
     };
     const hk = FS.childrenOf(held);
     const d = root.def, hl = d.len / 2;
     // stack nodes: the held root's top node meets a free bottom node, or the other way round
     const stack = [];
-    const axH = FS.partAxis(root.rot);
+    const axH = FS.partAxis(root.spin || 0);
     for (const n of B.freeNodes(placed)) {
       const mine = n.node === 'bottom' ? 'top' : 'bottom';
       if (!B.nodeFree(held, root, mine, hk)) continue;
@@ -126,26 +151,20 @@
     if (s || !B.canSurface(d)) return s;
     // surface attach: on the left or right side of a part, next to the pointer
     const side = [];
-    const hwH = Math.max(root.w, root.tw) / 2;
     for (const p of placed) {
       if (!B.takesSurface(p.def)) continue;
       const rel = V.sub(freePos, p.pos);
-      const rx = right(p.rot), ax = FS.partAxis(p.rot);
-      const lx = V.dot(rel, rx);
-      let ly = V.dot(rel, ax);
+      const lx = V.dot(rel, right(p.rot));
+      let ly = V.dot(rel, FS.partAxis(p.rot));
       const hlP = p.def.len / 2;
       if (Math.abs(ly) > hlP + snap * 0.5) continue;
-      ly = FS.clamp(ly, -hlP, hlP);
       if (Math.abs(ly) < snap * 0.35) ly = 0; // snap to the middle of the side
       else ly = Math.round(ly * 20) / 20;
-      const span = [FS.clamp(ly - hl, -hlP, hlP), FS.clamp(ly + hl, -hlP, hlP)];
-      const hwP = Math.max(halfAt(p, span[0]), halfAt(p, span[1]));
       const sd = lx < 0 ? -1 : 1;
-      const want = hwP + hwH;
-      const dist = Math.abs(Math.abs(lx) - want);
-      if (dist > hwH + snap) continue;
-      const pos = V.add(p.pos, V.add(V.scale(rx, sd * want), V.scale(ax, ly)));
-      side.push({ kind: 'srf', parent: p, side: sd, pos, rot: p.rot, dist });
+      const spot = B.surfaceSpot(p, root, sd, ly, sideRot(p, root, sd));
+      const dist = Math.abs(Math.abs(lx) - spot.want);
+      if (dist > Math.max(root.w, root.tw) / 2 + snap) continue;
+      side.push({ kind: 'srf', parent: p, side: sd, pos: spot.pos, rot: spot.rot, dist });
     }
     return pick(side);
   };
@@ -157,23 +176,86 @@
     root.rot = cand.rot;
     root.pos = { ...cand.pos };
     if (cand.kind === 'srf') {
-      root.srfOff = V.sub(cand.pos, cand.parent.pos);
       if (root.def.radial) root.flip = cand.side < 0;
-    } else delete root.srfOff;
+      FS.syncOffsets([root]);
+    } else { delete root.srfOff; delete root.rel; }
     const all = placed.concat(held);
     FS.relayout(all);
     return all;
   };
 
-  // Which placed part the held group would overlap if attached as cand, or null.
-  // Leaves the held parts where cand puts them.
-  B.blocker = (placed, held, root, cand) => {
+  // ---------- Mirror symmetry ----------
+  // A mirror is a line { m (a point), a (unit direction), twinParent }. A part attached
+  // to a part that has a twin gets its own twin on the twin, mirrored across the line
+  // halfway between them; a part on the side of a part without a twin is mirrored across
+  // that part's axis, onto its other side. Stack parts on an unmirrored part have no twin.
+  B.twinOf = (parts, p) => (p && p.sym ? parts.find((q) => q !== p && q.sym === p.sym) || null : null);
+
+  B.mirrorFor = (placed, parent, kind) => {
+    if (!parent) return null;
+    const pt = B.twinOf(placed, parent);
+    if (pt) {
+      const d = V.norm(V.sub(pt.pos, parent.pos));
+      return { m: V.scale(V.add(parent.pos, pt.pos), 0.5), a: V.perp(d), twinParent: pt };
+    }
+    if (kind === 'srf') return { m: { ...parent.pos }, a: FS.partAxis(parent.rot), twinParent: parent };
+    return null;
+  };
+  B.reflect = (line, v) => {
+    const r = V.sub(v, line.m);
+    return V.add(line.m, V.sub(V.scale(line.a, 2 * V.dot(r, line.a)), r));
+  };
+  B.reflectRot = (line, rot) => FS.wrapAngle(2 * Math.atan2(-line.a.x, line.a.y) - rot);
+
+  // Copies of parts (a group whose first part is its root), with mirror links renumbered.
+  let symSeq = 1;
+  B.newSym = () => 's' + Date.now().toString(36) + (symSeq++);
+  B.clone = (group) => {
+    const out = FS.partsFromSerial(FS.serialParts(group));
+    const map = {};
+    for (const p of out) if (p.sym) p.sym = map[p.sym] || (map[p.sym] = B.newSym());
+    return out;
+  };
+
+  // The mirror twin of a held group that has just been attached (B.attach) as kind.
+  B.makeTwin = (held, line, kind) => {
+    const twin = B.clone(held);
+    twin.forEach((t, i) => {
+      const h = held[i];
+      t.pos = B.reflect(line, h.pos);
+      t.rot = B.reflectRot(line, h.rot);
+      t.flip = !h.flip;
+      t.node = h.node;
+    });
+    twin[0].parent = line.twinParent;
+    twin[0].node = kind;
+    FS.syncOffsets(twin);
+    return twin;
+  };
+
+  // Link a group and its twin part for part, so they move, turn and go together.
+  B.linkTwins = (a, b) => a.forEach((p, i) => { p.sym = b[i].sym = B.newSym(); });
+
+  // Which placed part the held group (and its mirror twin, with mirror on) would overlap
+  // if attached as cand, or null. Leaves the held parts where cand puts them.
+  B.blocker = (placed, held, root, cand, mirror = false) => {
     B.attach(placed, held, root, cand);
+    const line = mirror ? B.mirrorFor(placed, cand.parent, cand.kind) : null;
+    let twin = [];
+    if (line) {
+      twin = B.makeTwin(held, line, cand.kind);
+      FS.relayout(placed.concat(held, twin));
+    }
     let hit = null;
-    for (const h of held) {
-      for (const p of placed) {
-        if (h === root && p === cand.parent) continue;
-        if (B.overlap(h, p)) { hit = p; break; }
+    const groups = [[held, root, cand.parent], [twin, twin[0], line && line.twinParent]];
+    for (const [grp, r, par] of groups) {
+      for (const h of grp) {
+        for (const p of placed) {
+          if (h === r && p === par) continue;
+          if (B.overlap(h, p)) { hit = p; break; }
+        }
+        if (!hit && line) for (const t of grp === held ? twin : []) if (B.overlap(h, t)) { hit = h; break; }
+        if (hit) break;
       }
       if (hit) break;
     }
@@ -188,6 +270,55 @@
     FS.relayout(held);
   };
 
+  // Put a part's mirror twin back in mirror position after the part moved or turned.
+  B.syncTwin = (parts, p) => {
+    const t = B.twinOf(parts, p);
+    if (!t || !p.parent || !t.parent) return;
+    const line = p.parent === t.parent
+      ? { m: { ...p.parent.pos }, a: FS.partAxis(p.parent.rot) }
+      : B.mirrorFor(parts, p.parent, p.node);
+    if (!line) return;
+    t.pos = B.reflect(line, p.pos);
+    t.rot = B.reflectRot(line, p.rot);
+    t.flip = !p.flip;
+    FS.syncOffsets([t]);
+    FS.relayout(parts);
+  };
+
+  // Whether part p (with everything below it) overlaps any other part, apart from its parent.
+  B.collides = (parts, p) => {
+    const mine = new Set(FS.subtree(parts, p));
+    for (const h of mine) for (const q of parts) {
+      if (mine.has(q) || (h === p && q === p.parent)) continue;
+      if (B.overlap(h, q)) return q;
+    }
+    return null;
+  };
+
+  // Re-place a side part at height ly on its parent, turned to rot (absolute), keeping
+  // its inner edge on the surface. Its twin follows. Refused (returns the part in the
+  // way) if anything would overlap; then nothing changes.
+  B.moveOnSurface = (parts, p, ly, rot) => {
+    if (p.node !== 'srf' || !p.parent) return null;
+    const saved = parts.map((q) => ({ q, pos: { ...q.pos }, rot: q.rot, flip: q.flip, srfOff: q.srfOff && { ...q.srfOff }, rel: q.rel }));
+    const sd = p.srfOff && p.srfOff.x < 0 ? -1 : 1;
+    const spot = B.surfaceSpot(p.parent, p, sd, ly, rot);
+    p.pos = spot.pos; p.rot = spot.rot;
+    FS.syncOffsets([p]);
+    FS.relayout(parts);
+    B.syncTwin(parts, p);
+    const t = B.twinOf(parts, p);
+    const hit = B.collides(parts, p) || (t && B.collides(parts, t));
+    if (hit) {
+      for (const s of saved) Object.assign(s.q, { pos: s.pos, rot: s.rot, flip: s.flip, srfOff: s.srfOff, rel: s.rel });
+      FS.relayout(parts);
+    }
+    return hit;
+  };
+
+  // A side part's height along its parent (its offset in the parent's frame).
+  B.surfaceHeight = (p) => (p.srfOff ? p.srfOff.y : 0);
+
   // Make part x the root: every link on the path from x up to the old root is reversed.
   B.reroot = (parts, x) => {
     const path = [];
@@ -195,11 +326,12 @@
     for (const { c, p, node } of path) {
       p.parent = c;
       p.node = node === 'bottom' ? 'top' : node === 'top' ? 'bottom' : 'srf';
-      if (p.node === 'srf') p.srfOff = V.sub(p.pos, c.pos); else delete p.srfOff;
+      if (p.node === 'srf') FS.syncOffsets([p]); else { delete p.srfOff; delete p.rel; }
     }
     x.parent = null;
     x.node = 'bottom';
     delete x.srfOff;
+    delete x.rel;
     // keep the new root first, so saved craft list it first
     const i = parts.indexOf(x);
     if (i > 0) { parts.splice(i, 1); parts.unshift(x); }

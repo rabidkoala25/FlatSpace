@@ -8,7 +8,7 @@ No build step, no dependencies: plain HTML, CSS and JavaScript.
 
 ![Flatspace Program roadmap: steps done, next and planned](docs/roadmap.svg)
 
-The game is built in 49 steps after the prototype, each one work session. `PLAN.md` describes every step; `PARTS.md` tracks every part. The graphic is redrawn from the status table in `PLAN.md` with `node tools/roadmap.js`.
+The game is built in 63 steps after the prototype, each one work session. `PLAN.md` describes every step; `PARTS.md` tracks every part. The graphic is redrawn from the status table in `PLAN.md` with `node tools/roadmap.js`.
 
 ## Play locally
 
@@ -46,6 +46,14 @@ Drag parts from the tray on the left into the build area. A part snaps end to en
 | Two fingers | Pan and pinch-zoom |
 | Home, or Fit | Frame the whole craft |
 | Make root | Make the selected part the root |
+| X | Mirror symmetry: side parts come in mirrored pairs |
+| Q / E (Shift for 5°) | Rotate the carried part or the selected side part |
+| F | Flip |
+| Alt-drag (touch: Offset, then drag) | Slide a side part along its parent |
+| Alt-click (touch: Copy) | Copy a part with everything below it |
+| Ctrl+Z / Ctrl+Y | Undo / redo |
+
+Every key also has a button on the tool rail at the left of the build area. The switches at the top right show the centres of mass (yellow), thrust (pink, with its thrust line) and pressure (blue). For a rocket to fly straight on its own, the centre of pressure should sit below the centre of mass: fins near the bottom pull it down.
 
 ## Flight controls
 
@@ -70,4 +78,4 @@ Run `node tests/run.js` (or `npm test`). The physics, orbit and save tests need 
 
 ## Files
 
-See `PLAN.md` for the full design: architecture, physics model, building system, art direction, the complete KSP feature map, the mods whose ideas are planned in, and the step-by-step roadmap. `PARTS.md` lists every stock KSP part and its planned Flatspace equivalent.
+See `PLAN.md` for the full design: architecture, physics model, building system, art direction, the complete KSP feature map, the mods whose ideas are planned in, the step-by-step roadmap, and the features planned beyond KSP and Spaceflight Simulator (Phase H). `PARTS.md` lists every stock KSP part and its planned Flatspace equivalent.

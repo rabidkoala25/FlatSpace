@@ -70,6 +70,7 @@ const key = (k) => {
   // ---- Building by dragging (step A2) ----
   const E = FS.Editor, doc = w.document;
   const cv = doc.getElementById('edCanvas');
+  cv.getBoundingClientRect = () => ({ left: 0, top: 0, right: 1280, bottom: 800, width: 1280, height: 800 });
   // The tray sits left of the build area (jsdom has no layout, so give it a box).
   doc.querySelector('#editor .palette').getBoundingClientRect = () => ({ left: -300, right: -10, top: 0, bottom: 800, width: 290, height: 800 });
   const fire = (el, type, o) => {
@@ -125,7 +126,7 @@ const key = (k) => {
   fire(cv, 'pointermove', { pointerId: 3, clientX: fs0.x + 300, clientY: fs0.y - 200 });
   check(E.drag && !E.drag.valid, 'a part dragged into empty space is shown as invalid');
   fire(cv, 'pointerup', { pointerId: 3, clientX: fs0.x + 300, clientY: fs0.y - 200 });
-  check(E.parts.includes(fins) && fins.parent && fins.parent.def.id === 't400', 'an invalid drop puts a placed part back where it was');
+  check(E.parts.includes(fins) && fins.parent && fins.parent.def.id === 't100', 'an invalid drop puts a placed part back where it was');
 
   // Pinch to zoom the build area.
   const es0 = E.cam.s;
@@ -150,6 +151,66 @@ const key = (k) => {
   trayButton('hornet').click();
   check(E.parts[E.parts.length - 1].def.id === 'hornet' && E.parts[E.parts.length - 1].parent === fins, 'tapping a tray part attaches it below the craft');
   check(Math.abs(dvOf(E.parts) - hopperDv) < 0.5, 'the craft is a working Hopper again');
+
+  // ---- Editor tools (step A3): build a craft with mirrored boosters, tilted fins and an offset, then undo it all ----
+  const loadSample = (name) => { const sel = doc.getElementById('craftLoad'); sel.value = 'sample::' + name; sel.dispatchEvent(new w.Event('change')); };
+  loadSample('Orbiter I');
+  const start = JSON.stringify(FS.serialParts(E.parts)), h0 = E.hpos;
+  const tanks = E.parts.filter((p) => p.def.id === 't800');
+  const scr = (p, dx, dy) => E.toScreen({ x: p.pos.x + dx, y: p.pos.y + dy });
+  key('x');
+  check(E.mirror && doc.getElementById('btnMirror').getAttribute('aria-pressed') === 'true', 'X turns mirror symmetry on');
+  dragFromTray('radec', scr(tanks[1], 0.8, 0.3));
+  const radec = E.parts.find((p) => p.def.id === 'radec');
+  dragFromTray('rumbler', scr(radec, 0.75, 0.1));
+  check(E.parts.filter((p) => p.def.id === 'rumbler').length === 2 && E.parts.filter((p) => p.def.id === 'radec').length === 2, 'dragging one side decoupler and one booster gives a mirrored pair of each');
+  // carry a swept fin, turn it with Q, drop it on the side of the upper tank
+  const fb = trayButton('sweptfin');
+  fire(fb, 'pointerdown', { pointerId: 8, clientX: -150, clientY: 100 });
+  const ft = scr(tanks[0], 1.0, 0.1);
+  fire(fb, 'pointermove', { pointerId: 8, clientX: ft.x, clientY: ft.y });
+  key('q');
+  check(E.drag && Math.abs(E.drag.root.spin - Math.PI / 12) < 1e-9, 'Q turns the carried part 15°');
+  fire(fb, 'pointerup', { pointerId: 8, clientX: ft.x, clientY: ft.y });
+  const fins2 = E.parts.filter((p) => p.def.id === 'sweptfin');
+  check(fins2.length === 2 && Math.abs(Math.abs(fins2[0].rot) - Math.PI / 12) < 1e-9 && Math.abs(fins2[0].rot + fins2[1].rot) < 1e-9, 'the fin lands tilted 15°, with a twin tilted the mirror way');
+  // Alt-drag the fin 1 m down its tank
+  const fin = fins2[0], fy0 = FS.Build.surfaceHeight(fin);
+  const fs1 = E.toScreen(fin.pos);
+  fire(cv, 'pointerdown', { pointerId: 9, clientX: fs1.x, clientY: fs1.y, altKey: true });
+  fire(cv, 'pointermove', { pointerId: 9, clientX: fs1.x, clientY: fs1.y + E.cam.s * 1.0, altKey: true });
+  fire(cv, 'pointerup', { pointerId: 9, clientX: fs1.x, clientY: fs1.y + E.cam.s * 1.0, altKey: true });
+  const fy1 = FS.Build.surfaceHeight(fin);
+  check(Math.abs(fy1 - (fy0 - 1)) < 0.13 && Math.abs(FS.Build.surfaceHeight(FS.Build.twinOf(E.parts, fin)) - fy1) < 1e-9, `Alt-drag slides the fin down its tank, and its twin with it (${fy0.toFixed(2)} → ${fy1.toFixed(2)} m)`);
+  check(E.parts.length === 17, `the craft now has 17 parts (${E.parts.length})`);
+  const built = JSON.stringify(FS.serialParts(E.parts));
+  let undos = 0;
+  while (E.hpos > h0 && undos < 20) { w.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'z', ctrlKey: true })); undos++; }
+  check(JSON.stringify(FS.serialParts(E.parts)) === start, `Ctrl+Z reverses every step back to the original craft (${undos} undos)`);
+  for (let k = 0; k < undos; k++) w.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'y', ctrlKey: true }));
+  check(JSON.stringify(FS.serialParts(E.parts)) === built, 'Ctrl+Y brings every step back');
+
+  // Save a booster as a subassembly; it appears in the tray
+  E.sel = E.parts.find((p) => p.def.id === 'radec');
+  E.render();
+  doc.getElementById('btnSub').click();
+  check(E.subs.length === 1 && E.tab === 'Subassemblies' && doc.querySelector('#palette [data-sub="0"]'), `“Save sub” keeps the side decoupler and booster in the tray (${E.subs[0] && E.subs[0].name})`);
+  // Alt-click copies a part; the copy follows the pointer and is dropped by the next click
+  const collar = E.parts.find((p) => p.def.id === 'fins');
+  const cs = E.toScreen(collar.pos);
+  fire(cv, 'pointerdown', { pointerId: 10, clientX: cs.x, clientY: cs.y, altKey: true });
+  fire(cv, 'pointerup', { pointerId: 10, clientX: cs.x, clientY: cs.y, altKey: true });
+  check(E.drag && E.drag.pointerId === 'carry' && E.drag.held.length === 2, 'Alt-click picks up a copy of the fin collar and the engine below it');
+  fire(cv, 'pointerdown', { pointerId: 11, clientX: 20, clientY: 20 });
+  check(!E.drag && E.parts.length === 17, 'clicking empty space with the copy drops it back to the tray');
+  // overlays
+  doc.getElementById('ovl_cop').click();
+  check(!E.overlays.cop, 'the Pressure switch hides the centre of pressure');
+  doc.getElementById('ovl_cop').click();
+  const od = E.overlayData(E.parts);
+  check(od.cot && od.cop && Math.abs(od.miss) < 1e-4 && Math.abs(od.cot.dir.x) < 1e-9, `overlays: thrust on the centre line, centre of pressure ${od.cop.ahead.toFixed(2)} m from the centre of mass`);
+  key('x');
+  loadSample('Hopper');
 
   FS.Editor.launch();
   await sleep(200);
