@@ -12,6 +12,7 @@
   // ---------- Scenes ----------
   G.showScene = (name) => {
     G.scene = name;
+    FS.PartPanel.closeAll('flight');
     $('editor').hidden = name !== 'editor';
     $('flight').hidden = name !== 'flight';
     $('help').hidden = true;
@@ -51,6 +52,12 @@
   G.on('staged', ({ vessel, event }) => {
     if (vessel !== G.vessel) return;
     toast('Stage ' + vessel.stageIdx + (event.decouple ? ': separation' : event.chutes ? ': parachutes armed' : ': ignition'), '', 1500);
+  });
+
+  G.on('part-action', ({ vessel, part, action }) => {
+    if (vessel !== G.vessel) return;
+    const what = { decouple: 'separated', ignite: 'lit', shutdown: 'shut down', deploy: 'armed' }[action];
+    toast(`${part.def.name} ${what}.`, '', 1500);
   });
 
   G.on('exploded', ({ vessel }) => {
@@ -242,6 +249,9 @@
       }
       updateCamera(dt);
       if (G.mapMode) FS.Renderer.drawMap(G); else FS.Renderer.drawFlight(G);
+      // part pop-ups follow their parts; parts that left the craft close theirs
+      for (const pn of FS.PartPanel.panels('flight')) if (!G.vessel.parts.includes(pn.part)) FS.PartPanel.close(pn);
+      FS.PartPanel.layout('flight', (p) => FS.Renderer.partToScreen(G.cam, G.vessel, G.t, p.c), G.mapMode);
       FS.HUD.update(G, dt);
       updateDevOverlay(dt);
     }
@@ -266,7 +276,7 @@
   }
 
   // ---------- Start ----------
-  const RENDERER_METHODS = ['init', 'resize', 'size', 'update', 'drawFlight', 'drawMap', 'worldToScreen', 'stats'];
+  const RENDERER_METHODS = ['init', 'resize', 'size', 'update', 'drawFlight', 'drawMap', 'worldToScreen', 'partToScreen', 'screenToPart', 'stats'];
 
   function init() {
     const missing = RENDERER_METHODS.filter((m) => typeof FS.Renderer[m] !== 'function');

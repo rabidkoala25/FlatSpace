@@ -21,7 +21,9 @@ It's still early. The building and flying work, and there's a lot more on the wa
 
 ## Building a rocket
 
-Drag parts from the tray on the left into the build area. They snap together end to end, and side parts like boosters and fins stick to the sides of tanks. If a part turns red, it can't go there.
+Drag parts from the tray on the left into the build area. They snap together end to end, and side parts like boosters and fins stick to the sides of tanks (on a sloped part like a capsule, they lean to match it). If a part turns red, it can't go there.
+
+Drop a part in empty space and it just floats there. Floating parts are left behind when you launch, unless you open their settings and pick **Launch with the craft**, in which case they appear next to your rocket on the pad, exactly where you put them. Drag one back onto the rocket to attach it again.
 
 | Input | What it does |
 |---|---|
@@ -41,7 +43,9 @@ Drag parts from the tray on the left into the build area. They snap together end
 
 Everything also has a button on the toolbar down the left side, so it all works on a phone.
 
-Fuel tanks stretch: select one and drag the handle at its end, or right-click it (on a phone, tap it again) to set its length, width, look and how much fuel it starts with. Right-clicking other parts gives their settings too, like an engine's thrust limit or how high a parachute opens.
+Clicking a part opens a little settings pop-up next to it, with a line pointing back at the part. Clicking another part swaps it for that part's pop-up, unless you pin it with 📌, so you can keep a few open at once. Drag a pop-up by its title to move it out of the way.
+
+Fuel tanks stretch: select one and drag the handle at its end, or use its pop-up to set its length, width, look and how much fuel it starts with. Other parts have settings too, like an engine's thrust limit or how high a parachute opens.
 
 The stage list on the right works things out for you, but you can change it: drag the parts between stages, move stages up and down, or leave a part out. **Files** lets you download a craft, open one, or copy it as a line of text to send to someone.
 
@@ -63,6 +67,8 @@ The switches in the top corner show where your rocket's centre of mass (yellow),
 | Tab | Switch what the map is centred on |
 | H | Show the controls |
 | Esc | Menu (revert the flight, go back to the hangar) |
+
+Click or tap a part of your rocket in flight to open its pop-up. You can change an engine's thrust limit, shut it down or restart it, fire a decoupler, turn crossfeed on or off, or arm a parachute without staging everything else.
 
 ## Running it yourself
 

@@ -51,6 +51,7 @@
 
   // The simulation's own reactions come first, before any page code listens.
   G.on('staged', ({ dropped }) => dropped.forEach(G.addDebris));
+  G.on('part-action', ({ dropped }) => dropped.forEach(G.addDebris));
   G.on('exploded', ({ vessel }) => { if (vessel === G.vessel) G.stopWarp(); });
   G.on('touchdown', ({ vessel }) => {
     if (vessel !== G.vessel) return;
@@ -78,6 +79,17 @@
     v.visited = new Set();
     v.landings = [];
     G.debris = [];
+    // floating parts set to launch with the craft appear where they were placed, relative to
+    // it (as uncontrolled objects for now; D3 makes them vessels you can switch to)
+    for (const ex of craft.extras || []) {
+      const d = new FS.Vessel(craft.name + ' (floating)', ex.parts, v.body, { debris: true });
+      const off = V.sub(d.layout.com, v.layout.com); // craft frame
+      d.r = V.add(v.r, v.toWorld(off));
+      d.v = { ...v.v };
+      d.angle = v.angle;
+      d.landed = null;
+      G.debris.push(d);
+    }
     G.node = null;
     G.nodePatches = null;
     G.patches = null;

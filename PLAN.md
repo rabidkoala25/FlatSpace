@@ -479,7 +479,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 | A1 | Part tree and vessel physics | ✅ done (v0.3.0) |
 | A2 | Drag-and-drop editor | ✅ done (v0.4.0) |
 | A3 | Editor tools | ✅ done (v0.5.0) |
-| A4 | Staging, tweakables, stretchable tanks, craft files | ✅ done (v0.6.0) |
+| A4 | Staging, tweakables, stretchable tanks, craft files | ✅ done (v0.6.0; follow-up v0.6.1) |
 | **B** | **Pixel art overhaul** | |
 | B1 | WebGL renderer, palette and sky | ☐ |
 | B2 | Part sprites and lighting | ☐ |
@@ -760,6 +760,27 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 - **Craft files (Files button):** download a `.craft.json` file, open one, copy the craft as one line of text, or paste text to load it. Older formats are upgraded on import; unknown parts are left out with everything attached to them, and the dialog says how many.
 - **Tests:** 9 files. A new craft test covers tank scaling and presets, saving every setting, thrust limit, fuel level, crossfeed, custom staging, parachute height and craft files. It also flies the done-when craft (9 m roll-pattern tank, gold upper tank, decouple and ignite as separate stages) from share text to space. The page test does the done-when steps through the real interface: right-click settings, dragging the stretch handle to 9 m, gold foil, moving a stage chip, saving and reloading, then copying as text and pasting it back.
 
+**Follow-up (v0.6.1):** part pop-ups, floating parts and settings in flight.
+- **Parts on sloped faces line up with the face:** a fin or booster on a tapered part (a capsule, a nose cone, an adapter) leans to match the face's slope and sits flush against it, rather than standing upright and touching at one corner.
+- **Floating parts:** a part dragged into empty space stays there instead of being refused. It is drawn faded with a dashed outline and isn't counted in the stats, staging or overlays. Its pop-up chooses what happens at launch:
+  - **Leave behind** (the default): it stays in the hangar and is saved with the craft;
+  - **Launch with the craft:** it appears beside the craft on the pad, in the same place relative to it, as a separate uncontrolled object (D3 makes these vessels you can switch to).
+  - Dragging it back onto the craft attaches it again. Copies (Alt-click) dropped in empty space float too.
+- **Part pop-ups replace the fixed settings panel:**
+  - selecting a part opens its pop-up beside it, with a dashed pointer line to the part;
+  - selecting another part swaps an unpinned pop-up for the new one; the 📌 button pins it, so several can stay open;
+  - drag the title bar to move one; it then keeps that spot relative to the part as you pan and zoom;
+  - `js/part-panel.js` is now a pop-up manager used by both the hangar and flight.
+- **In flight:** click or tap a part (or right-click it) to open its pop-up. It shows the part's state and lets you change, mid-flight:
+  - an engine's thrust limit and gimbal range; shut it down or start it again (solid boosters can only be lit);
+  - a decoupler's crossfeed, or fire it now;
+  - a parachute's opening height, or arm it now.
+  Pop-ups close when their part is staged away or destroyed.
+- **Renderer interface:** `partToScreen` and `screenToPart`, so flight input can find parts under the pointer.
+- **Vessel:** `act(part, action)` for decouple, ignite, shut down and deploy, with a `part-action` event; the vessel built for flight uses only the main craft.
+- **Tests:** the craft test checks face alignment, floating parts saving and launching in the right spot, and in-flight actions. The page test opens, swaps, pins, drags and closes pop-ups, floats an engine and launches it with the craft, and changes a thrust limit from a pop-up in flight.
+- **Moved to later steps:** see D2 (more in-flight actions), D3 (floating groups as vessels), C3 (cutting and repacking chutes), E5 (temperatures in pop-ups), B5 (pixel-art pop-ups) and D5 (alignment on curved faces).
+
 ---
 
 ### Phase B — Pixel art overhaul
@@ -844,6 +865,7 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 - **Navball:** redrawn as rotating pixel art.
 - **Title screen:** an animated scene (the pad at dawn).
 - **Readability:** minimum text sizes and contrast checks.
+- **Part pop-ups:** redrawn in the UI kit, with a pixel pointer line, and a compact layout that docks to the screen edge on phones instead of covering the craft.
 
 **Stretch:** a short animated logo.
 
@@ -906,6 +928,7 @@ See the table in section 1.3 for what changes.
   - **Drag:** acts on the canopy, so the craft hangs beneath it and swings like a pendulum before settling.
   - **Staged opening:** packed → streaming → partly open → fully open, inflating over a few seconds. The opening shock shows on the G-force readout and can break weak joints (C2).
   - **After opening:** canopies drift with the air, collapse and drape over the ground after landing, and can be cut away to fall as debris.
+  - **From the part pop-up:** cut the chute, and repack it on EVA (E7); the pop-up shows the chute's state and load.
   - **Several chutes:** they share the load, and a drogue-then-main sequence works.
 - **Time warp:** ropes and canopies freeze in their current shape when the craft goes on rails, and carry on from there.
 - **Performance:** a budget for active rope segments, shown in the F3 overlay.
@@ -970,7 +993,11 @@ See the table in section 1.3 for what changes.
 - **RCS:** all monopropellant tanks, RCS blocks and the monopropellant engine; translation keys I/J/K/L; RCS toggle (R).
 - **Control parts:** all reaction wheels and lights.
 - **Action groups:** Gear, Lights, Brakes, Abort, 1–9, assigned in the editor.
-- **In-flight part menu:** shut down an engine, thrust limit, crossfeed, fuel transfer.
+- **In-flight part menu:** builds on the part pop-ups from v0.6.1 (which already do thrust limit, gimbal, engine on/off, crossfeed, decouple and chute height). Adds:
+  - fuel transfer between tanks (pick a source and a target pop-up);
+  - lights, reaction wheels and RCS on/off per part;
+  - action group assignment from the pop-up, in the editor and in flight;
+  - a short history line ("lit at T+00:12, 34% fuel used").
 - **Fuel lines and struts.**
 
 **Stretch:** RCS balance helper in the editor.
@@ -986,6 +1013,7 @@ See the table in section 1.3 for what changes.
 - **Persistent vessels:** craft left in flight stay on rails.
 - **Tracking Station:** switch to, recover or terminate vessels.
 - **Switching:** `[` `]` to switch vessels in flight.
+- **Floating parts as vessels:** floating groups set to "Launch with the craft" (v0.6.1) become real vessels you can switch to, with their own staging and a name; those with a command part are controllable.
 - **Launch sites:** a second launch site.
 
 **Stretch:** a flag picker for the program.
@@ -1025,6 +1053,7 @@ See the table in section 1.3 for what changes.
 - **Coupling:** all stack decouplers and separators in every size; all radial decouplers; all adapters and adapter tanks; multi-couplers and multi-adapters; engine plates.
 - **Structure:** girders, beams, panels, struts, structural tubes; rocket nose cones and fins; launch clamps.
 - **Art:** mostly made with the B2 profile generator.
+- **Curved faces:** side parts on curved profiles (nose cones, rounded pods) line up with the slope at the exact spot they touch; v0.6.1 uses a straight line from base to top.
 
 **Stretch:** service bays (otherwise F7).
 
@@ -1124,6 +1153,8 @@ See the table in section 1.3 for what changes.
 - **Probes:** probe cores use power and lose control without it.
 - **Ion propulsion:** xenon tanks and the ion engine.
 - **Heat:** per-part temperature with conduction; all heat shields with ablator, including the inflatable one; all radiators; overheated parts explode.
+
+- **Pop-ups:** a part's pop-up shows its temperature, its limit, and charge or production for power parts.
 
 **Stretch:** heat overlay in flight.
 
@@ -1670,6 +1701,7 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
 - **Plan revision 8**: new step E10, "Terrain detail" (realistic landforms, strata, collidable ground scatter and deep parallax layers, the idea behind the Parallax mod); new section 4.4, which says every new part and feature gets a tech-tree node and contracts of its own, with a "Tech and contracts" step closing each phase (E11, F11, G9, H10) and automated checks; tech nodes and contracts are data that packs can extend; 63 steps in total.
 - **Plan revision 7**: new Phase H, "Beyond KSP" (section 2.8): living astronauts with ragdolls (H1), walkable interiors (H2), hands-on objects and tools (H3), damage and repairs (H4), life on board and spin gravity (H5), self-landing rockets (H6), launch and recovery infrastructure (H7), tethers, solar sails and mass drivers (H8), and a flight recorder with replays (H9); 58 steps in total. Original parts added to `PARTS.md`.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
+- **v0.6.1 (A4 follow-up)**: side parts line up with sloped faces; floating parts in the hangar (left behind, or launched beside the craft); part pop-ups that open on select, pin, drag and point at their part, in the hangar and in flight; settings and actions mid-flight (thrust limit, gimbal, engine on/off, crossfeed, decouple, chute height and arming); `partToScreen` / `screenToPart` in the renderer; `Vessel.act`. Later parts of this request added to B5, C3, D2, D3, D5 and E5.
 - **v0.6.0 (A4)**: stretchable tanks in six widths with handles and 21 presets; one tank density (tank lengths moved to the 0.25 m grid); five tank looks; part settings panel (fuel level, thrust limit, gimbal, crossfeed, parachute height, fires in staging); staging editor with chips, custom staging saved on parts; craft files (download, open, copy and paste as text); `js/staging-editor.js`, `js/part-panel.js`.
 - **v0.5.0 (A3)**: tool rail; mirror symmetry with linked twins; rotate and flip; offset with snap; undo/redo (100 steps); Alt-click copy; subassemblies tab; centre of mass, thrust and pressure overlays with warnings; Swept Fin part; sideways force on parts and wing-like fins (`FS.partAero`), brought forward from C4; Hopper sample uses the short tank.
 - **v0.4.0 fix**: script and style links carry `?v=<version>`, after a browser served a cached old `editor.js` with the new page and the hangar came up blank.

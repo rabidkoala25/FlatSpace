@@ -120,14 +120,21 @@ const key = (k) => {
   fire(cv, 'pointerup', { pointerId: 21, pointerType: 'touch', clientX: -120, clientY: 300 });
   check(!E.drag && !E.parts.includes(hornet) && E.parts.length === 4, 'dropping it on the tray removes it');
 
-  // A mouse drag of the fins to empty space can't attach, so they spring back.
+  // A mouse drag of the fins to empty space leaves them floating there; dragging them back reattaches them.
   const fins = E.parts.find((p) => p.def.id === 'fins');
   const fs0 = E.toScreen(fins.pos);
   fire(cv, 'pointerdown', { pointerId: 3, clientX: fs0.x, clientY: fs0.y });
   fire(cv, 'pointermove', { pointerId: 3, clientX: fs0.x + 300, clientY: fs0.y - 200 });
-  check(E.drag && !E.drag.valid, 'a part dragged into empty space is shown as invalid');
+  check(E.drag && E.drag.valid && E.drag.loose, 'a part dragged into empty space can be left floating');
   fire(cv, 'pointerup', { pointerId: 3, clientX: fs0.x + 300, clientY: fs0.y - 200 });
-  check(E.parts.includes(fins) && fins.parent && fins.parent.def.id === 't100', 'an invalid drop puts a placed part back where it was');
+  check(E.parts.includes(fins) && !fins.parent && fins.loose === 'drop' && !E.main().includes(fins), 'it floats, left out of the craft (left behind at launch by default)');
+  const tankA = E.parts.find((p) => p.def.id === 't100');
+  const back = E.toScreen({ x: tankA.pos.x, y: tankA.pos.y - tankA.len / 2 - fins.len / 2 });
+  const fp1 = E.toScreen(fins.pos);
+  fire(cv, 'pointerdown', { pointerId: 3, clientX: fp1.x, clientY: fp1.y });
+  fire(cv, 'pointermove', { pointerId: 3, clientX: back.x + 4, clientY: back.y + 3 });
+  fire(cv, 'pointerup', { pointerId: 3, clientX: back.x + 4, clientY: back.y + 3 });
+  check(fins.parent === tankA && !fins.loose && E.main().includes(fins), 'dragging the floating part back attaches it again');
 
   // Pinch to zoom the build area.
   const es0 = E.cam.s;
@@ -203,12 +210,14 @@ const key = (k) => {
   fire(cv, 'pointerup', { pointerId: 10, clientX: cs.x, clientY: cs.y, altKey: true });
   check(E.drag && E.drag.pointerId === 'carry' && E.drag.held.length === 2, 'Alt-click picks up a copy of the fin collar and the engine below it');
   fire(cv, 'pointerdown', { pointerId: 11, clientX: 20, clientY: 20 });
-  check(!E.drag && E.parts.length === 17, 'clicking empty space with the copy drops it back to the tray');
+  check(!E.drag && E.parts.length === 19 && E.main().length === 17, 'clicking empty space with the copy leaves it floating there');
+  E.remove(E.parts[E.parts.length - 2]);
+  check(E.parts.length === 17, 'and the floating copy can be removed');
   // overlays
   doc.getElementById('ovl_cop').click();
   check(!E.overlays.cop, 'the Pressure switch hides the centre of pressure');
   doc.getElementById('ovl_cop').click();
-  const od = E.overlayData(E.parts);
+  const od = E.overlayData(E.main());
   check(od.cot && od.cop && Math.abs(od.miss) < 1e-4 && Math.abs(od.cot.dir.x) < 1e-9, `overlays: thrust on the centre line, centre of pressure ${od.cop.ahead.toFixed(2)} m from the centre of mass`);
   key('x');
 
@@ -219,14 +228,14 @@ const key = (k) => {
   const ctxEv = new w.Event('contextmenu', { bubbles: true, cancelable: true });
   Object.assign(ctxEv, { clientX: tc.x, clientY: tc.y });
   cv.dispatchEvent(ctxEv);
-  check(E.sel === tank && !doc.getElementById('partPanel').hidden && /Length/.test(doc.getElementById('partPanel').textContent), 'right-clicking a tank opens its settings');
+  check(E.sel === tank && !doc.querySelector('#editor .part-panel').hidden && /Length/.test(doc.querySelector('#editor .part-panel').textContent), 'right-clicking a tank opens its settings');
   // drag its stretch handle (at the free bottom end) down by 5 m
   const hp = E.toScreen({ x: tank.pos.x, y: tank.pos.y - tank.len / 2 - 10 / E.cam.s });
   fire(cv, 'pointerdown', { pointerId: 40, clientX: hp.x, clientY: hp.y });
   fire(cv, 'pointermove', { pointerId: 40, clientX: hp.x, clientY: hp.y + E.cam.s * 5 });
   fire(cv, 'pointerup', { pointerId: 40, clientX: hp.x, clientY: hp.y + E.cam.s * 5 });
   check(tank.len === 9 && tank.cap === 9000, `dragging the stretch handle makes a 9 m tank with 9 t of fuel (${tank.len} m)`);
-  [...doc.querySelectorAll('#partPanel .pp-choice')].find((b) => /Gold foil/.test(b.textContent)).click();
+  [...doc.querySelectorAll('#editor .part-panel .pp-choice')].find((b) => /Gold foil/.test(b.textContent)).click();
   check(tank.skin === 'gold', 'the Look buttons change the tank to gold foil');
   // custom staging: give the Wren its own stage, with the keyboard on its chip
   const wrenChip = [...doc.querySelectorAll('#stageList .stg-chip')].find((c) => /Wren/.test(c.textContent));
@@ -256,7 +265,60 @@ const key = (k) => {
   const fv = new FS.Vessel('Long Gold', FS.serialParts(E.parts), FS.root, {});
   check(fv.parts.some((p) => p.len === 9 && p.skin === 'gold') && fv.stages.length === 4 && fv.stages[2].engines[0].def.id === 'wren', 'and it goes to the pad as configured');
   doc.getElementById('cfClose').click();
-  FS.PartPanel.close();
+  FS.PartPanel.closeAll('editor');
+
+  // Pop-ups: selecting a part opens one with a pointer line; selecting another replaces it
+  // unless it is pinned; the title bar drags it.
+  loadSample('Orbiter I');
+  const popups = () => [...doc.querySelectorAll('#editor .part-panel')];
+  const tapPart = (p, id) => {
+    const s = E.toScreen(p.pos);
+    fire(cv, 'pointerdown', { pointerId: id, clientX: s.x, clientY: s.y });
+    fire(cv, 'pointerup', { pointerId: id, clientX: s.x, clientY: s.y });
+  };
+  const eng = E.parts.find((p) => p.def.id === 'kestrel');
+  const capsule = E.parts.find((p) => p.def.id === 'canopy');
+  tapPart(eng, 50);
+  E.render();
+  check(E.sel === eng && popups().length === 1 && /Thrust limit/.test(popups()[0].textContent), 'clicking a part opens its pop-up');
+  check(doc.querySelector('#editor .pp-lines line') && doc.querySelector('#editor .pp-lines circle'), 'the pop-up has a pointer line to its part');
+  tapPart(capsule, 51);
+  check(popups().length === 1 && FS.PartPanel.panels('editor')[0].part === capsule, 'selecting another part swaps the unpinned pop-up for its own');
+  const pinBtn = popups()[0].querySelector('.pp-pin');
+  pinBtn.click();
+  check(pinBtn.getAttribute('aria-pressed') === 'true' && popups()[0].classList.contains('pinned'), 'the pin button pins it');
+  tapPart(eng, 52);
+  check(popups().length === 2, 'a pinned pop-up stays open when another part is selected');
+  const pinned = FS.PartPanel.panels('editor').find((pn) => pn.part === capsule);
+  const off0 = { ...pinned.off };
+  const head = pinned.el.querySelector('.pp-head');
+  fire(head, 'pointerdown', { pointerId: 53, button: 0, clientX: 10, clientY: 10 });
+  fire(head, 'pointermove', { pointerId: 53, clientX: 50, clientY: 70 });
+  fire(head, 'pointerup', { pointerId: 53, clientX: 50, clientY: 70 });
+  check(pinned.off.x === off0.x + 40 && pinned.off.y === off0.y + 60, 'the pop-up can be dragged by its title bar');
+  pinned.el.querySelector('.pp-close').click();
+  check(popups().length === 1, 'the × closes it');
+  FS.PartPanel.closeAll('editor');
+
+  // A floating part set to launch with the craft goes along, where it was placed.
+  loadSample('Hopper');
+  const loose = E.parts.find((p) => p.def.id === 'hornet');
+  const lp0 = E.toScreen(loose.pos);
+  fire(cv, 'pointerdown', { pointerId: 54, clientX: lp0.x, clientY: lp0.y });
+  fire(cv, 'pointermove', { pointerId: 54, clientX: lp0.x + 250, clientY: lp0.y });
+  fire(cv, 'pointerup', { pointerId: 54, clientX: lp0.x + 250, clientY: lp0.y });
+  check(loose.loose === 'drop', 'the engine floats beside the Hopper');
+  FS.PartPanel.select(loose, 'editor');
+  [...popups()[0].querySelectorAll('.pp-choice')].find((b) => /Launch with/.test(b.textContent)).click();
+  check(loose.loose === 'keep', 'its pop-up sets it to launch with the craft');
+  FS.Editor.launch();
+  await sleep(200);
+  const extra = G.debris.find((d) => d.parts.some((p) => p.def.id === 'hornet'));
+  check(G.scene === 'flight' && extra && !G.vessel.parts.some((p) => p.def.id === 'hornet'), 'it launches as a separate object next to the craft');
+  const gap = extra && FS.vec.len(FS.vec.sub(extra.r, G.vessel.r));
+  check(extra && gap > 3 && gap < 40, `placed where it floated in the hangar (${gap && gap.toFixed(1)} m away)`);
+  G.showScene('editor');
+  await sleep(100);
 
   loadSample('Hopper');
 
@@ -268,6 +330,19 @@ const key = (k) => {
   await sleep(2000);
   const climb = G.vessel.altitude - padAlt;
   check(G.vessel.thrustNow > 0 && climb > 1, `the rocket lifts off (climbed ${climb.toFixed(1)} m in 2 s)`);
+
+  // Tapping a part in flight opens its pop-up, and its settings still work.
+  const fview = doc.getElementById('view');
+  const hornetF = G.vessel.parts.find((p) => p.def.id === 'hornet');
+  const hsF = FS.Renderer.partToScreen(G.cam, G.vessel, G.t, hornetF.c);
+  fire(fview, 'pointerdown', { pointerId: 60, clientX: hsF.x, clientY: hsF.y });
+  fire(fview, 'pointerup', { pointerId: 60, clientX: hsF.x, clientY: hsF.y });
+  const fpop = doc.querySelector('#flight .part-panel');
+  check(fpop && FS.PartPanel.panels('flight')[0].part === hornetF, 'tapping a part in flight opens its pop-up');
+  const lim = fpop && fpop.querySelector('input[type=range]');
+  if (lim) { lim.value = 50; lim.dispatchEvent(new w.Event('input', { bubbles: true })); lim.dispatchEvent(new w.Event('change', { bubbles: true })); }
+  check(hornetF.limit === 0.5, `its thrust limit can be changed mid-flight (${hornetF.limit})`);
+  FS.PartPanel.closeAll('flight');
 
   key('F3');
   await sleep(400);

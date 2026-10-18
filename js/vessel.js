@@ -19,6 +19,9 @@
     constructor(name, source, body, opts = {}) {
       this.name = name;
       this.parts = FS.toParts(source);
+      // only the craft proper flies; floating parts from the editor are launched separately (sim.js)
+      const root = FS.rootOf(this.parts);
+      if (root && this.parts.some((p) => p !== root && !p.parent)) this.parts = FS.subtree(this.parts, root);
       this.body = body;
       this.r = { x: body.R, y: 0 };
       this.v = { x: 0, y: 0 };
@@ -98,6 +101,22 @@
       // The simulation adds the dropped parts as debris when it hears this event.
       if (sim) sim.emit('staged', { vessel: this, event: ev, dropped });
       return ev;
+    }
+
+    // Use one part from its menu in flight: 'decouple' fires a decoupler, 'ignite' lights an
+    // engine, 'shutdown' stops a liquid engine, 'deploy' arms a parachute. Reports what
+    // happened with a 'part-action' event (the simulation adds any dropped parts as debris).
+    act(part, action, sim) {
+      if (!this.parts.includes(part)) return false;
+      const d = part.def, dropped = [];
+      if (action === 'decouple' && d.decoupler) { const deb = this.separate(part); if (!deb) return false; dropped.push(deb); }
+      else if (action === 'ignite' && d.engine) part.lit = true;
+      else if (action === 'shutdown' && d.engine && !d.engine.solid) part.lit = false;
+      else if (action === 'deploy' && d.chute && part.chute === 'stowed') part.chute = 'armed';
+      else return false;
+      this.stats.launched = true;
+      if (sim) sim.emit('part-action', { vessel: this, part, action, dropped });
+      return true;
     }
 
     // Fire one decoupler: split the tree there. The side with the command part stays this

@@ -3,7 +3,7 @@
 <desc id="d">5 of 63 roadmap steps done. Next: B1 WebGL renderer, palette and sky.</desc>
 <rect width="1172" height="734" rx="14" fill="#0b1222"/>
 <text x="28" y="44" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#e6edf7">Flatspace Program roadmap</text>
-<text x="28" y="70" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#9aa8c2">v0.6.0 · 5 of 63 steps done · next: B1 WebGL renderer, palette and sky</text>
+<text x="28" y="70" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#9aa8c2">v0.6.1 · 5 of 63 steps done · next: B1 WebGL renderer, palette and sky</text>
 <rect x="792" y="52" width="352" height="8" rx="4" fill="#141d33" stroke="#2c3a5a"/>
 <rect x="792" y="52" width="27.9" height="8" rx="4" fill="#3fb68b"/>
 <text x="1144" y="44" text-anchor="end" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" fill="#9aa8c2">8%</text>

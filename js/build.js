@@ -96,26 +96,34 @@
     FS.relayout(held);
   };
 
-  // The angle a held part takes on the side of p: its spin relative to p. A side-only part
-  // on the left side is mirrored, so a fin tilted on the right tilts the mirror way on the left.
-  const sideRot = (p, root, sd) => p.rot + (root.def.radial && sd < 0 ? -1 : 1) * (root.spin || 0);
+  // How much the side faces of part p lean in from its axis (radians): a part that is
+  // narrower at the top (a capsule, an adapter) has faces that lean inwards. The right
+  // face leans by +tilt, the left by -tilt.
+  B.faceTilt = (p) => Math.atan2((p.w - p.tw) / 2, p.len);
+
+  // The angle a held part takes on side sd of p: lined up with that face, plus the spin the
+  // player gave it. A side-only part on the left is mirrored, so a fin tilted on the right
+  // tilts the mirror way on the left.
+  const sideRot = (p, root, sd) => p.rot + sd * B.faceTilt(p) + (root.def.radial && sd < 0 ? -1 : 1) * (root.spin || 0);
 
   // The spot on side sd (+1 right, -1 left) of part p, at height ly along it, for the held
-  // root turned to rot: its inner edge touches p's surface. Returns { pos, rot, ly }.
+  // root turned to rot: pushed out from the face along its normal until its nearest corner
+  // touches it, so it sits flush on sloped faces too. Returns { pos, rot, ly, want }.
   B.surfaceSpot = (p, root, sd, ly, rot) => {
     const hlP = p.len / 2;
+    ly = FS.clamp(ly, -hlP, hlP);
+    const t = B.faceTilt(p);
+    const n = { x: sd * Math.cos(t), y: Math.sin(t) }; // the face's outward normal, in p's frame
     const rr = rot - p.rot;
     const hl = root.len / 2, hw = root.w / 2, ht = root.tw / 2;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let inner = 0;
     for (const c of [{ x: -ht, y: hl }, { x: ht, y: hl }, { x: hw, y: -hl }, { x: -hw, y: -hl }]) {
       const q = FS.rotV(c, rr);
-      minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x); minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y);
+      inner = Math.max(inner, -(q.x * n.x + q.y * n.y));
     }
-    ly = FS.clamp(ly, -hlP, hlP);
-    const span = [FS.clamp(ly + minY, -hlP, hlP), FS.clamp(ly + maxY, -hlP, hlP)];
-    const hwP = Math.max(halfAt(p, span[0]), halfAt(p, span[1]));
-    const off = sd * (hwP + (sd > 0 ? -minX : maxX));
-    return { pos: V.add(p.pos, FS.rotV({ x: off, y: ly }, p.rot)), rot, ly, want: Math.abs(off) };
+    const face = { x: sd * halfAt(p, ly), y: ly };
+    const local = { x: face.x + n.x * inner, y: face.y + n.y * inner };
+    return { pos: V.add(p.pos, FS.rotV(local, p.rot)), rot, ly, want: Math.abs(local.x) };
   };
 
   // Where the held group would attach if let go with its root's centre at freePos.

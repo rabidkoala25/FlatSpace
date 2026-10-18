@@ -175,4 +175,64 @@ const dvOf = (parts) => FS.stageStats(parts, FS.stagesOf(parts), 0, 0, 9.81);
   check(maxAp > 70000, `the craft flies as configured and reaches space (apoapsis ${(maxAp / 1000).toFixed(0)} km)`);
 }
 
+
+// --- Parts on a sloped face line up with it ---
+{
+  const B = FS.Build;
+  let parts = FS.stackToParts(['lark', 't400']);
+  const lark = parts[0];
+  const fin = FS.newPart('sweptfin'); FS.relayout([fin]); fin.spin = 0;
+  const at = V.add(lark.pos, { x: 0.7, y: 0 });
+  B.placeHeld([fin], fin, at);
+  const c = B.candidate(parts, [fin], fin, at, 1.7);
+  const tilt = Math.atan2((lark.w - lark.tw) / 2, lark.len);
+  check(c && c.kind === 'srf' && c.parent === lark, 'a fin dropped beside the capsule goes on its sloped side');
+  near(c.rot * 180 / Math.PI, tilt * 180 / Math.PI, 1e-6, 'it leans with the face (degrees)');
+  parts = B.attach(parts, [fin], fin, c);
+  // flush: the fin's inner edge lies along the face line
+  const q = B.quad(fin).map((pt) => FS.rotV(V.sub(pt, lark.pos), -lark.rot));
+  const n = { x: Math.cos(tilt), y: Math.sin(tilt) };
+  const faceDist = (pt) => (pt.x - (lark.w / 2 + (lark.tw - lark.w) / 2 * ((pt.y + lark.len / 2) / lark.len))) * Math.cos(tilt);
+  const inner = Math.min(...q.map(faceDist));
+  near(inner, 0, 1e-6, 'and sits flush on it, touching but not inside (m)');
+}
+
+// --- Floating parts: left out of the craft, or launched beside it ---
+{
+  const craft = FS.stackToParts(['lark', 't400', 'hornet']);
+  const extra = FS.newPart('t100');
+  extra.pos = { x: 6, y: craft[1].pos.y };
+  extra.loose = 'keep';
+  const all = craft.concat([extra]);
+  FS.relayout(all);
+  const ser = FS.serialParts(all);
+  check(ser[3].parent === -1 && ser[3].loose === 'keep', 'a floating part saves as its own tree, marked to launch');
+  const back = FS.partsFromSerial(ser);
+  check(back[3].loose === 'keep' && !back[3].parent, '…and loads back the same');
+  const v = new FS.Vessel('t', ser, FS.root, {});
+  check(v.parts.length === 3, 'a vessel built from the whole list flies only the craft proper');
+  const G = FS.game;
+  G.newFlight({ name: 'Float', parts: FS.serialParts(craft), extras: [{ parts: FS.serialParts([extra]) }] });
+  const d = G.debris[0];
+  const lay = FS.massLayout(craft);
+  const want = V.sub(extra.pos, lay.com);
+  const got = V.sub(d.r, G.vessel.r);
+  check(G.debris.length === 1 && Math.abs(V.len(got) - V.len(want)) < 1e-6, `a floating part set to launch appears beside the craft, ${V.len(got).toFixed(2)} m from its centre of mass, as placed`);
+}
+
+// --- In flight: using parts from their pop-up ---
+{
+  const g = fakeGame();
+  const parts = FS.stackToParts(['sparrow', 't400', 'decoupler', 't400', 'gnat']);
+  const v = new FS.Vessel('t', FS.serialParts(parts), FS.root, { throttle: 1 });
+  v.landed = null; v.r = { x: 800000, y: 0 }; v.v = { x: 0, y: 2000 };
+  const gnat = v.parts[4], dec = v.parts[2];
+  check(v.act(gnat, 'ignite', g) && gnat.lit, 'an engine can be lit from its pop-up');
+  check(v.runEngines(0, 0) > 0, '…and pushes');
+  check(v.act(gnat, 'shutdown', g) && !gnat.lit && v.runEngines(0, 0) === 0, '…and shut down again');
+  const n = v.parts.length;
+  check(v.act(dec, 'decouple', g) && v.parts.length < n && g.debris.length === 1, 'a decoupler can be fired on its own, dropping what is below it');
+  check(!v.act(gnat, 'ignite', g), 'parts that left the craft can no longer be used from it');
+}
+
 done();

@@ -54,6 +54,17 @@
     }
   }
 
+  // Click or tap in the flight view: open the pop-up of the part under the pointer (in flight,
+  // some settings can still change, and engines, decouplers and parachutes can be used).
+  function pickPart(x, y) {
+    const ves = G.vessel;
+    if (!ves || G.mapMode) return;
+    const local = FS.Renderer.screenToPart(G.cam, ves, G.t, x, y);
+    const pt = FS.vec.add(local, ves.layout.com);
+    const hit = FS.Build.partAt(ves.parts, pt, 8 / Math.max(G.cam.s, 0.01));
+    FS.PartPanel.select(hit, 'flight');
+  }
+
   // Zoom the map or the flight view by factor f.
   function zoomBy(f) {
     if (G.mapMode) G.mapCam.s = FS.clamp(G.mapCam.s * f, 1e-7, 0.5);
@@ -77,6 +88,8 @@
         drag = null;
       } else if (pointers.size === 1 && G.mapMode) {
         drag = { x: e.clientX, y: e.clientY, moved: false, pan: { ...G.mapPan } };
+      } else if (pointers.size === 1) {
+        drag = { x: e.clientX, y: e.clientY, moved: false, flight: true };
       }
     });
     view.addEventListener('pointermove', (e) => {
@@ -91,7 +104,7 @@
       if (!drag) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.hypot(dx, dy) > 4) drag.moved = true;
-      if (drag.moved) G.mapPan = { x: drag.pan.x - dx / G.mapCam.s, y: drag.pan.y + dy / G.mapCam.s };
+      if (drag.moved && !drag.flight) G.mapPan = { x: drag.pan.x - dx / G.mapCam.s, y: drag.pan.y + dy / G.mapCam.s };
     });
     const end = (e) => {
       pointers.delete(e.pointerId);
@@ -102,12 +115,21 @@
       }
       if (drag && !drag.moved && e.type === 'pointerup') {
         const r = view.getBoundingClientRect();
-        FS.UI.mapClick(e.clientX - r.left, e.clientY - r.top);
+        if (drag.flight) pickPart(e.clientX - r.left, e.clientY - r.top);
+        else FS.UI.mapClick(e.clientX - r.left, e.clientY - r.top);
       }
       drag = null;
     };
     view.addEventListener('pointerup', end);
     view.addEventListener('pointercancel', end);
+
+    // right-click a part for its pop-up, as in the hangar
+    view.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (G.mapMode) return;
+      const r = view.getBoundingClientRect();
+      pickPart(e.clientX - r.left, e.clientY - r.top);
+    });
 
     view.addEventListener('wheel', (e) => {
       e.preventDefault();

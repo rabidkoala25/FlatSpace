@@ -58,7 +58,7 @@ function fakeGame() {
         water: data.water,
         debris: data.vessel && data.vessel.isDebris,
       });
-      if (type === 'staged') g.debris.push(...data.dropped);
+      if (type === 'staged' || type === 'part-action') g.debris.push(...data.dropped);
     },
   };
   return g;

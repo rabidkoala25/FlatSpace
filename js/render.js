@@ -9,6 +9,8 @@
 //   drawFlight(game)           draw the flight view
 //   drawMap(game)              draw the map view
 //   worldToScreen(cam, x, y)   world metres → screen pixels, for map clicks
+//   partToScreen(cam, ves, t, c)    a point on a craft (craft frame, from its centre of mass) → screen
+//   screenToPart(cam, ves, t, x, y) the reverse, for clicking parts in flight
 //   stats() -> {particles}     numbers for the F3 developer overlay
 // The renderer only reads game state; it never changes the simulation.
 (function () {
@@ -362,6 +364,23 @@
   }
 
   // ---- Vessel ----
+  // Where a craft is drawn: its centre of mass on screen, and the turn of its drawing frame
+  // (x = the craft's x, y = minus the craft's y). Shared by drawVessel and part clicks.
+  function vesselFrame(cam, ves, t) {
+    const c = V.add(FS.bodyAbs(ves.body, t), ves.r);
+    return { sp: w2s(cam, c.x, c.y), th: -(ves.angle - cam.rot) + Math.PI / 2 };
+  }
+  R.partToScreen = (cam, ves, t, pt) => {
+    const f = vesselFrame(cam, ves, t);
+    const x = pt.x * cam.s, y = -pt.y * cam.s, c = Math.cos(f.th), s = Math.sin(f.th);
+    return { x: f.sp.x + x * c - y * s, y: f.sp.y + x * s + y * c };
+  };
+  R.screenToPart = (cam, ves, t, sx, sy) => {
+    const f = vesselFrame(cam, ves, t);
+    const dx = (sx - f.sp.x) / cam.s, dy = (sy - f.sp.y) / cam.s, c = Math.cos(-f.th), s = Math.sin(-f.th);
+    return { x: dx * c - dy * s, y: -(dx * s + dy * c) };
+  };
+
   R.drawVessel = (cam, ves, t, opts = {}) => {
     const c = V.add(FS.bodyAbs(ves.body, t), ves.r);
     const sp = w2s(cam, c.x, c.y);

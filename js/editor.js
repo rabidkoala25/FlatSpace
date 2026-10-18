@@ -58,7 +58,7 @@
     cv = $('edCanvas');
     ctx = cv.getContext('2d');
     const saved = FS.store.load('flatspace.current', null);
-    if (saved && Array.isArray(saved.parts)) { E.name = saved.name || 'Untitled'; E.parts = FS.partsFromSerial(saved.parts); }
+    if (saved && Array.isArray(saved.parts)) { E.name = saved.name || 'Untitled'; E.parts = FS.partsFromSerial(saved.parts); E.normalize(); }
     else E.parts = sampleParts(FS.SAMPLE_CRAFT[1]);
     E.subs = FS.store.load('flatspace.subassemblies', []) || [];
     const view = FS.store.get('flatspace.editorView', null);
@@ -110,7 +110,7 @@
     on('btnSnap', () => { E.snap = !E.snap; saveView(); say(E.snap ? 'Snap on: offsets move in 0.25 m steps and catch the middle of a side.' : 'Snap off: offsets move freely.'); E.render(); });
     on('btnCopy', () => E.copy(E.sel));
     on('btnSub', () => E.saveSub(E.sel));
-    on('btnSettings', () => { if (E.sel) FS.PartPanel.open(E.sel); else say('Select a part first, then open its settings (or right-click it).'); });
+    on('btnSettings', () => { if (E.sel) { FS.PartPanel.select(E.sel, 'editor'); E.render(); } else say('Select a part to see its settings.'); });
     on('btnFiles', () => FS.CraftFiles.open());
     FS.PartPanel.init(E);
     FS.CraftFiles.init();
@@ -138,9 +138,29 @@
     else if (k === 'f') E.flip();
   }
 
+  // The craft proper is the root (the first part) and everything attached to it. Any other
+  // tree is a floating part, left where it was dropped; its loose setting says whether it
+  // launches with the craft at that spot ('keep') or is left behind ('drop', the default).
+  E.main = () => (E.parts.length ? FS.subtree(E.parts, E.parts[0]) : []);
+  E.floating = () => { const m = new Set(E.main()); return E.parts.filter((p) => !m.has(p)); };
+  // Keep the part list tidy: the root first; every other tree marked as floating.
+  E.normalize = () => {
+    if (!E.parts.length) return;
+    let r = E.parts[0];
+    while (r.parent && E.parts.includes(r.parent)) r = r.parent;
+    if (r !== E.parts[0]) E.parts = [r].concat(E.parts.filter((q) => q !== r));
+    delete r.loose;
+    for (const p of E.parts) {
+      if (p === r) continue;
+      if (!p.parent || !E.parts.includes(p.parent)) { p.parent = null; if (!p.loose) p.loose = 'drop'; }
+      else delete p.loose;
+    }
+  };
+
   E.load = (name, parts) => {
     E.name = name;
     E.parts = parts;
+    E.normalize();
     E.sel = null;
     $('craftName').value = name;
     E.fit();
@@ -187,6 +207,7 @@
     E.parts = FS.partsFromSerial(JSON.parse(E.history[i]));
     E.sel = null;
     persist();
+    FS.PartPanel.rebuildAll('editor', (p) => E.parts.includes(p));
     E.render();
     E.updateStats();
   }
@@ -430,18 +451,19 @@
       twin = { held: th, root: t, origin: poseOf(t) };
     }
     const origin = poseOf(p);
+    const isMain = p === E.parts[0];
     p.spin = spinOf(p);
     E.parts = E.parts.filter((q) => !set.has(q));
     p.parent = null;
     if (p.def.radial) p.flip = false;
     FS.relayout(E.parts);
     FS.relayout(held);
-    startDrag(held, p, V.sub(p.pos, world), origin, pointerId, { twin });
+    startDrag(held, p, V.sub(p.pos, world), origin, pointerId, { twin, isMain });
     E.sel = p;
     E.dragTo(world);
   };
 
-  const poseOf = (p) => ({ parent: p.parent, node: p.node, pos: { ...p.pos }, rot: p.rot, flip: p.flip, srfOff: p.srfOff && { ...p.srfOff }, rel: p.rel });
+  const poseOf = (p) => ({ parent: p.parent, node: p.node, pos: { ...p.pos }, rot: p.rot, flip: p.flip, srfOff: p.srfOff && { ...p.srfOff }, rel: p.rel, loose: p.loose });
 
   // Carry a copy of a placed part and everything below it (Alt-click, or the Copy button).
   // The copy follows the pointer without a button held and drops on the next click or tap.
@@ -467,24 +489,38 @@
     const free = V.add(world, d.grab);
     B.placeHeld(d.held, d.root, free);
     d.cand = toTray ? null : B.candidate(E.parts, d.held, d.root, free, SNAP_PX / E.cam.s, d.mirror);
+    // the whole craft can be moved anywhere
+    if (!d.cand && !toTray && d.isMain) d.cand = { kind: 'root', parent: null, pos: { ...free }, rot: d.root.spin || 0, dist: 0 };
     d.block = d.cand ? B.blocker(E.parts, d.held, d.root, d.cand, d.mirror) : null;
-    d.valid = !!d.cand && !d.block;
-    if (d.cand && d.cand.kind === 'root') B.placeHeld(d.held, d.root, free);
+    // nothing to attach to: it can be left floating here, if it overlaps nothing
+    d.loose = false;
+    if (!d.cand && !toTray) {
+      B.placeHeld(d.held, d.root, free);
+      d.block = E.parts.find((q) => d.held.some((h) => B.overlap(h, q))) || null;
+      d.loose = !d.block;
+    }
+    d.valid = (!!d.cand && !d.block) || d.loose;
+    if (d.loose || (d.cand && d.cand.kind === 'root')) B.placeHeld(d.held, d.root, free);
     // the mirror twin's ghost, and live stats for the craft as it would be if dropped here
     d.ghostTwin = null;
-    const key = d.valid ? `${d.cand.kind}:${d.cand.parent ? d.cand.parent.uid : 0}:${d.cand.side || 0}:${d.cand.pos.y.toFixed(2)}:${d.cand.rot.toFixed(3)}:${d.mirror}` : 'none';
-    if (d.valid) {
+    const key = d.loose ? 'loose' : d.valid ? `${d.cand.kind}:${d.cand.parent ? d.cand.parent.uid : 0}:${d.cand.side || 0}:${d.cand.pos.y.toFixed(2)}:${d.cand.rot.toFixed(3)}:${d.mirror}` : 'none';
+    if (d.valid && d.cand) {
       const line = d.mirror ? B.mirrorFor(E.parts, d.cand.parent, d.cand.kind) : null;
       let all = B.attach(E.parts, d.held, d.root, d.cand);
       if (line) { d.ghostTwin = B.makeTwin(d.held, line, d.cand.kind); all = all.concat(d.ghostTwin); FS.relayout(all); }
-      if (key !== d.statKey) E.updateStats(all);
+      // the craft it would be part of: the main craft, unless it is dropped onto a floating part
+      let r = d.isMain ? d.root : all[0];
+      while (r.parent) r = r.parent;
+      d.joinsMain = d.isMain || r === E.parts[0];
+      if (key !== d.statKey) E.updateStats(FS.subtree(all, r));
       B.detach(E.parts, d.held, d.root);
-    } else if (key !== d.statKey) E.updateStats(E.parts);
+    } else if (key !== d.statKey) E.updateStats(E.main());
     d.statKey = key;
     const tray = document.querySelector('#editor .palette');
     if (tray) tray.classList.toggle('drop-remove', toTray);
     if (toTray) say(`Release to remove ${d.held.length > 1 || d.twin ? 'these parts' : 'this part'}.`);
     else if (d.block) say(`Can't go there: it would overlap the ${d.block.def.name}.`);
+    else if (d.loose) say('Release to leave it floating here. Its settings say whether it launches with the craft or stays behind.');
     else if (!d.cand) say('Bring it next to an attach point or the side of a part.');
     else say(`${d.root.def.name}: release to attach${d.cand.kind === 'srf' ? ' to the side of the ' + d.cand.parent.def.name : d.cand.parent ? ' to the ' + d.cand.parent.def.name : ''}${d.ghostTwin ? ', with a mirror twin' : ''}.`);
     E.render();
@@ -521,8 +557,21 @@
       say(d.origin ? `Removed ${d.held.length + (d.twin ? d.twin.held.length : 0)} parts.` : hint());
       return;
     }
+    if (d.valid && d.loose) {
+      // left floating where it was dropped
+      d.root.parent = null;
+      d.root.loose = d.root.loose || 'drop';
+      for (const h of d.held) { delete h.spin; if (h.sym && !d.held.some((q) => q !== h && q.sym === h.sym)) delete h.sym; }
+      E.parts = E.parts.concat(d.held);
+      FS.relayout(E.parts);
+      E.sel = d.root;
+      E.changed();
+      say(`Floating ${d.root.def.name}: it ${d.root.loose === 'keep' ? 'launches with the craft' : 'is left behind at launch'}. Change that in its settings.`);
+      return;
+    }
     if (d.valid) {
       place(d.held, d.root, d.cand, d.mirror);
+      if (d.isMain) { let r = d.root; while (r.parent) r = r.parent; E.parts = [r].concat(E.parts.filter((q) => q !== r)); }
       E.sel = d.root;
       E.changed();
       say(`${d.root.def.name}: ${d.root.def.desc}`);
@@ -554,7 +603,8 @@
     back(d.root, d.origin);
     let all = E.parts.concat(d.held);
     if (d.twin) { back(d.twin.root, d.twin.origin); all = all.concat(d.twin.held); }
-    if (!d.origin.parent) all = d.held.concat(all.filter((q) => !d.held.includes(q)));
+    if (d.isMain) all = d.held.concat(all.filter((q) => !d.held.includes(q)));
+    if (d.origin.loose) d.root.loose = d.origin.loose;
     E.parts = all;
     FS.relayout(E.parts);
   }
@@ -793,7 +843,7 @@
       // right-click a part: its settings
       const pt = canvasPt(e);
       const hit = B.partAt(E.parts, E.toWorld(pt.x, pt.y), 3 / E.cam.s);
-      if (hit && !E.drag) { E.sel = hit; E.render(); FS.PartPanel.open(hit); }
+      if (hit && !E.drag) { E.sel = hit; FS.PartPanel.select(hit, 'editor'); E.render(); }
     });
     cv.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -916,9 +966,8 @@
         else {
           E.sel = gesture.hit;
           say(E.sel ? `${E.sel.def.name}: ${E.sel.def.desc}` : hint());
-          // tapping the selected part again opens its settings (right-click does it with a mouse)
-          if (gesture.wasSel && gesture.touch) FS.PartPanel.open(E.sel);
-          else if (FS.PartPanel.isOpen()) { if (E.sel) FS.PartPanel.open(E.sel); else FS.PartPanel.close(); }
+          // selecting a part opens its settings pop-up (unpinned ones give way)
+          FS.PartPanel.select(E.sel, 'editor');
           E.render();
         }
         gesture = null;
@@ -1001,7 +1050,9 @@
   };
 
   E.changed = () => {
-    const added = FS.StagingEditor.assignNew(E.parts);
+    E.normalize();
+    FS.PartPanel.rebuildAll('editor', (p) => E.parts.includes(p));
+    const added = FS.StagingEditor.assignNew(E.main());
     record(); persist(); E.render(); E.updateStats();
     if (added) say(`Staging is custom, so the new part${added > 1 ? 's go' : ' goes'} into a new last stage. Drag ${added > 1 ? 'them' : 'it'} where you want in the stage list.`);
   };
@@ -1118,6 +1169,7 @@
     }
 
     syncButtons();
+    FS.PartPanel.layout('editor', (p) => (E.parts.includes(p) ? E.toScreen(p.pos) : null), !!E.drag);
     const parts = E.parts;
     const d = E.drag;
     if (!parts.length && !d) {
@@ -1131,8 +1183,9 @@
       return;
     }
 
+    const main = E.main(), mainSet = new Set(main);
     if (parts.length) {
-      const lay = FS.massLayout(parts);
+      const lay = FS.massLayout(main);
       const top = E.toScreen({ x: 0, y: lay.com.y + lay.maxY }).y;
       const bot = E.toScreen({ x: 0, y: lay.com.y + lay.minY }).y;
       const rx = Math.max(railW + 58, E.toScreen({ x: lay.com.x + lay.minX, y: 0 }).x - 46);
@@ -1148,7 +1201,26 @@
         ctx.beginPath(); ctx.moveTo(rx - 5, y + 0.5); ctx.lineTo(rx + 0.5, y + 0.5); ctx.stroke();
         ctx.fillText(m + ' m', rx - 8, y + 4);
       }
-      drawParts(parts, { sel: !d });
+      drawParts(main, { sel: !d });
+      // floating parts: faded if they stay behind, with a dashed outline and a tag
+      const floating = parts.filter((p) => !mainSet.has(p));
+      for (const p of floating) {
+        let r = p; while (r.parent) r = r.parent;
+        const keep = r.loose === 'keep';
+        ctx.globalAlpha = keep ? 0.95 : 0.5;
+        drawParts([p], { sel: !d });
+        ctx.globalAlpha = 1;
+        quadPath(p);
+        ctx.setLineDash([4, 4]); ctx.strokeStyle = keep ? 'rgba(127,224,164,0.85)' : 'rgba(200,215,240,0.55)'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
+        if (p === r) {
+          const top = Math.min(...B.quad(p).map((q) => E.toScreen(q).y));
+          const c = E.toScreen(p.pos);
+          ctx.font = '600 10.5px "Saira Semi Condensed", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = keep ? 'rgba(127,224,164,0.95)' : 'rgba(200,215,240,0.75)';
+          ctx.fillText(keep ? 'FLOATING · LAUNCHES' : 'FLOATING · LEFT BEHIND', c.x, top - 8);
+        }
+      }
 
       // the selected part's mirror twin, outlined
       const hd = handleOf(E.sel);
@@ -1183,7 +1255,7 @@
         ctx.font = '600 11px "Saira Semi Condensed", sans-serif';
         ctx.textAlign = 'left';
         const x = E.toScreen({ x: lay.com.x + lay.maxX, y: 0 }).x + 14;
-        FS.stagesOf(parts).forEach((ev, k) => {
+        FS.stagesOf(main).forEach((ev, k) => {
           const p = ev.parts[0];
           if (!p) return;
           ctx.fillStyle = 'rgba(255,181,71,0.9)';
@@ -1230,7 +1302,7 @@
     }
 
     // overlays: for the craft as it would be if the carried part were dropped here
-    const shown = d && d.valid && !d.overTray ? parts.concat(d.held, d.ghostTwin || []) : parts;
+    const shown = d && d.valid && d.cand && d.joinsMain && !d.overTray ? main.concat(d.held, d.ghostTwin || []) : main;
     drawOverlays(shown);
   };
 
@@ -1252,16 +1324,15 @@
     set('btnCopy', null, !!E.drag || !sel);
     set('btnSub', null, !!E.drag || !sel);
     set('btnSettings', null, !!E.drag || !sel);
-    if (FS.PartPanel.isOpen()) FS.PartPanel.refresh();
     for (const k of ['com', 'cot', 'cop']) set('ovl_' + k, E.overlays[k]);
   }
 
   // ---------- Stats ----------
-  E.updateStats = (parts = E.parts) => {
+  E.updateStats = (parts = E.main()) => {
     const stages = FS.stagesOf(parts);
     const sv = FS.stageStats(parts, stages, 0, 0, 9.81);
     const sa = FS.stageStats(parts, stages, 0, 1, 9.81);
-    FS.StagingEditor.render(parts, stages, sv, sa, parts === E.parts && !E.drag);
+    FS.StagingEditor.render(parts, stages, sv, sa, !E.drag);
     const lay = FS.massLayout(parts);
     const first = stages.findIndex((e) => e.ignite);
     const twr = first >= 0 ? sa.events[first].twr : 0;
@@ -1269,7 +1340,7 @@
       <dt>Launch TWR</dt><dd${first >= 0 && twr < 1 ? ' class="bad"' : ''}>${first >= 0 ? twr.toFixed(2) : '—'}</dd>
       <dt>Mass</dt><dd>${(lay.mass / 1000).toFixed(2)} t</dd>
       <dt>Height</dt><dd>${lay.height.toFixed(1)} m</dd>
-      <dt>Parts</dt><dd>${parts.length}</dd>`;
+      <dt>Parts</dt><dd>${parts.length}</dd>${floatNote()}`;
     const warn = [];
     if (parts.length && !parts.some((p) => p.def.command)) warn.push('Add a capsule or probe core so the craft can be controlled.');
     if (parts.length && !parts.some((p) => p.def.engine)) warn.push('No engines yet.');
@@ -1283,10 +1354,18 @@
     $('edWarnings').innerHTML = warn.map((w) => `<li>${w}</li>`).join('');
     $('btnLaunch').disabled = !E.parts.length;
   };
+  function floatNote() {
+    const roots = E.floating().filter((p) => !p.parent);
+    if (!roots.length) return '';
+    const keep = roots.filter((p) => p.loose === 'keep').length;
+    return `<dt>Floating</dt><dd>${roots.length} (${keep} launch${keep === 1 ? 'es' : ''})</dd>`;
+  }
 
   E.launch = () => {
     if (!E.parts.length) return;
     persist();
-    game.launch({ name: E.name, parts: FS.serialParts(E.parts) });
+    // floating parts set to launch come along as separate objects, where they were placed
+    const extras = E.floating().filter((p) => !p.parent && p.loose === 'keep').map((r) => ({ parts: FS.serialParts(FS.subtree(E.parts, r)) }));
+    game.launch({ name: E.name, parts: FS.serialParts(E.main()), extras });
   };
 })();

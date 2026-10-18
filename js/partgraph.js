@@ -36,6 +36,8 @@
   //   crossfeed     a decoupler lets fuel flow across it
   //   chuteAlt      height above ground at which a parachute opens fully (m)
   //   stage         custom staging: the stage it fires in (-1 = not staged); absent = automatic
+  //   loose         on the root of a floating group (not the craft's root): 'keep' launches it
+  //                 with the craft where it was placed, 'drop' leaves it behind
   FS.TANK_WIDTHS = [0.625, 1.25, 1.875, 2.5, 3.75, 5];
   FS.TANK_SKINS = ['white', 'gold', 'foam', 'roll', 'steel'];
   FS.LEN_STEP = 0.25;
@@ -53,7 +55,7 @@
     if (d.fuel) p.skin = d.foam ? 'foam' : 'white';
     if (d.engine) { p.limit = 1; p.gimbal = 1; }
     if (d.chute) p.chuteAlt = 1000;
-    for (const k of ['len', 'size', 'fill', 'skin', 'limit', 'gimbal', 'crossfeed', 'chuteAlt', 'stage']) if (opts[k] !== undefined) p[k] = opts[k];
+    for (const k of ['len', 'size', 'fill', 'skin', 'limit', 'gimbal', 'crossfeed', 'chuteAlt', 'stage', 'loose']) if (opts[k] !== undefined) p[k] = opts[k];
     FS.applySize(p, true);
     return p;
   };
@@ -123,6 +125,7 @@
       if (p.crossfeed) s.crossfeed = true;
       if (p.chuteAlt !== undefined && p.chuteAlt !== 1000) s.chuteAlt = p.chuteAlt;
       if (typeof p.stage === 'number') s.stage = p.stage;
+      if (p.loose && s.parent < 0) s.loose = p.loose;
       return s;
     });
   };

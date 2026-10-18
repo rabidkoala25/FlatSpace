@@ -16,14 +16,14 @@
   };
 
   // ---------- Operations (also used by tests) ----------
-  const custom = () => { if (!FS.customStaging(E.parts)) FS.freezeStaging(E.parts); };
-  const maxStage = () => Math.max(-1, ...E.parts.map((p) => (typeof p.stage === 'number' ? p.stage : -1)));
+  const custom = () => { if (!FS.customStaging(E.main())) FS.freezeStaging(E.main()); };
+  const maxStage = () => Math.max(-1, ...E.main().map((p) => (typeof p.stage === 'number' ? p.stage : -1)));
 
   // Renumber stages 0, 1, 2… in order, without gaps.
   function compact() {
-    const used = [...new Set(E.parts.filter((p) => p.stage >= 0).map((p) => p.stage))].sort((a, b) => a - b);
+    const used = [...new Set(E.main().filter((p) => p.stage >= 0).map((p) => p.stage))].sort((a, b) => a - b);
     const map = new Map(used.map((k, i) => [k, i]));
-    for (const p of E.parts) if (p.stage >= 0) p.stage = map.get(p.stage);
+    for (const p of E.main()) if (p.stage >= 0) p.stage = map.get(p.stage);
   }
 
   // Move parts to stage k (0 = fires first), 'new' (a new last stage) or 'none' (left out).
@@ -45,7 +45,7 @@
     custom();
     const j = k + d;
     if (j < 0 || j > maxStage()) return;
-    for (const p of E.parts) {
+    for (const p of E.main()) {
       if (p.stage === k) p.stage = j;
       else if (p.stage === j) p.stage = k;
     }
@@ -58,17 +58,17 @@
     const last = maxStage();
     if (k > last) { S.emptyStages = Math.max(0, S.emptyStages - 1); E.render(); E.updateStats(); return; }
     const to = k < last ? k + 1 : k - 1;
-    for (const p of E.parts) if (p.stage === k) p.stage = Math.max(0, to);
+    for (const p of E.main()) if (p.stage === k) p.stage = Math.max(0, to);
     compact();
     E.changed();
   };
 
   S.add = () => { custom(); S.emptyStages++; E.changed(); E.updateStats(); };
-  S.reset = () => { FS.resetStaging(E.parts); S.emptyStages = 0; E.changed(); E.say('Staging is automatic again.'); };
+  S.reset = () => { FS.resetStaging(E.main()); S.emptyStages = 0; E.changed(); E.say('Staging is automatic again.'); };
 
   // Put a part (and its mirror twin) in or out of staging.
   S.setStaged = (p, on) => {
-    const twin = FS.Build.twinOf(E.parts, p);
+    const twin = FS.Build.twinOf(E.main(), p);
     custom();
     const parts = [p, twin].filter(Boolean);
     if (on) { const k = maxStage() + 1; for (const q of parts) q.stage = k; compact(); }
@@ -92,7 +92,7 @@
     const out = [], seen = new Set();
     for (const p of parts) {
       if (seen.has(p)) continue;
-      const t = FS.Build.twinOf(E.parts, p);
+      const t = FS.Build.twinOf(E.main(), p);
       const group = t && parts.includes(t) ? [p, t] : [p];
       group.forEach((q) => seen.add(q));
       out.push(group);
@@ -110,7 +110,7 @@
     b.title = editable ? 'Drag to another stage. Click to select it. [ and ] move it a stage up or down.' : p.def.name;
     b.setAttribute('aria-label', `${group.length > 1 ? group.length + ' ' : ''}${p.def.name}${editable ? ', press [ or ] to move between stages' : ''}`);
     if (group.includes(E.sel)) b.classList.add('sel');
-    b.addEventListener('click', () => { if (dragged) return; E.sel = p; E.render(); });
+    b.addEventListener('click', () => { if (dragged) return; E.sel = p; FS.PartPanel.select(p, 'editor'); E.render(); });
     if (editable) {
       b.addEventListener('keydown', (e) => {
         if (e.key !== '[' && e.key !== ']') return;
@@ -125,8 +125,8 @@
     return b;
   }
   // stage index of a part in automatic staging (before the first edit)
-  function stageIndexOf(p) { return FS.stagesOf(E.parts).findIndex((ev) => ev.parts.includes(p)); }
-  const maxStageNow = () => (FS.customStaging(E.parts) ? maxStage() : FS.stagesOf(E.parts).length - 1);
+  function stageIndexOf(p) { return FS.stagesOf(E.main()).findIndex((ev) => ev.parts.includes(p)); }
+  const maxStageNow = () => (FS.customStaging(E.main()) ? maxStage() : FS.stagesOf(E.main()).length - 1);
 
   // ---------- Dragging chips ----------
   let drag = null, dragged = false;
