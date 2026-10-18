@@ -266,11 +266,14 @@ The popular part mods ship thousands of parts between them, so the commitment is
 
 ## Original parts (beyond KSP)
 
-Parts for the features in Phase H that KSP has no stock equivalent for. All names are original.
+Parts for features KSP has no stock equivalent for (competition mode in D8, and Phase H). All names are original.
 
 | ✓ | Part | What it does | Step |
 |---|---|---|---|
 | ✅ | Swept Fin | Single side fin, placed in mirrored pairs and tilted to steer or spin (also covers KSP's Basic Fin) | A3 |
+| ☐ | Model rocket motors, classes A to G (several thrust curves each) | Small solid motors with realistic thrust curves and a delay charge that deploys the parachute | D8 |
+| ☐ | Model body tubes, nose cones, fin sets, streamer and small parachute | Light model-scale airframe parts for club rockets | D8 |
+| ☐ | Egg capsule | Fragile payload that breaks above a set impact speed or G-force, for egg-drop challenges | D8 |
 | ☐ | Medic kit, patch kit, welding torch, spare-parts crate | Treating injuries, sealing hull breaches, EVA repairs, replacing broken parts | H4 |
 | ☐ | Handrails, interior ladder, lockers, lab bench | Interior fittings for crewed parts | H2 / H3 |
 | ☐ | Airlock module (inline and side) | Cycle between interior and EVA | H2 |

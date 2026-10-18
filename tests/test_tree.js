@@ -43,6 +43,41 @@ function inOrbit(source) {
   check(w.thrustNow > 0 && v.thrustNow > 0, 'side engines draw fuel from the tank they hang on');
 }
 
+// --- On the ground, engines that turn the craft tip it over once they beat its weight ---
+{
+  // one engine pushing up on one side, one pushing down on the other: no lift, all turn
+  const pinwheel = (id, x = 1.3) => {
+    const parts = FS.stackToParts(['lark', 't800']);
+    const t = parts[1];
+    FS.attachPart(parts, id, t, { x, y: t.pos.y - 1 }, 0);
+    FS.attachPart(parts, id, t, { x: -x, y: t.pos.y + 1 }, Math.PI);
+    const v = new FS.Vessel('Pinwheel', FS.serialParts(parts), FS.root, {});
+    v.placeOnPad(0);
+    for (const p of v.parts) if (p.def.engine) p.lit = true;
+    return v;
+  };
+  const g = fakeGame();
+  const small = pinwheel('gnat', 0.95);
+  small.throttle = 1;
+  for (let i = 0; i < 100; i++) small.step(0.02, i * 0.02, g);
+  check(small.landed && small.landed.rel === 0, `small engines can't tip it: its weight holds it on its base (turning effect ${(small.thrustTorque / 1000).toFixed(0)} kN·m)`);
+
+  const big = pinwheel('hornet');
+  big.throttle = 0.12;
+  let t = 0, most = 0;
+  const up0 = big.angle;
+  for (let i = 0; i < 300 && !big.dead; i++) { t += 0.02; big.step(0.02, t, g); most = Math.max(most, Math.abs(FS.wrapAngle(big.angle - up0))); }
+  check(!big.dead && !big.landed && most > 1, `bigger engines tip it and turn it over on the ground (turned ${(most * 180 / Math.PI).toFixed(0)}°)`);
+  big.throttle = 0;
+  for (let i = 0; i < 400 && !big.dead && !big.landed; i++) { t += 0.02; big.step(0.02, t, g); }
+  check(big.landed && Math.abs(big.landed.rel) > 0.3, `with the engines off it comes to rest where it fell (${(big.landed && big.landed.rel * 180 / Math.PI).toFixed(0)}° from upright)`);
+
+  const hard = pinwheel('hornet');
+  hard.throttle = 1;
+  for (let i = 0; i < 150 && !hard.dead; i++) hard.step(0.02, i * 0.02, g);
+  check(hard.dead, 'at full power it flips so hard that it smashes into the ground');
+}
+
 // --- Side boosters: staging order, Δv, and separation ---
 {
   const twin = FS.SAMPLE_CRAFT.find((c) => c.name === 'Twin Boosters').tree;

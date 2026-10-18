@@ -66,6 +66,32 @@
     get bottomDist() { return -this.layout.minY; }
     get topDist() { return this.layout.maxY; }
 
+    // Height of the centre of mass above the ground when resting at angle rel from upright.
+    restDist(rel) {
+      if (rel === 0) return this.bottomDist;
+      if (rel === Math.PI) return this.topDist;
+      const up = { x: Math.sin(rel), y: Math.cos(rel) }; // world "up" in the craft frame
+      let d = 0;
+      for (const p of this.parts) for (const h of p.hullC) d = Math.max(d, -V.dot(h, up));
+      return d;
+    }
+
+    // Resting on the ground, does the engines' turning effect beat what the weight can hold?
+    // The craft tips over the edge of its base on the side it is turning towards.
+    tipsOver(thrustVec, m, g) {
+      const tau = this.thrustTorque;
+      if (Math.abs(tau) < 1) return false;
+      const rel = this.landed.rel;
+      const up = { x: Math.sin(rel), y: Math.cos(rel) }, right = { x: Math.cos(rel), y: -Math.sin(rel) };
+      let low = Infinity;
+      for (const p of this.parts) for (const h of p.hullC) low = Math.min(low, V.dot(h, up));
+      const side = tau < 0 ? 1 : -1; // turning clockwise lowers the right-hand side
+      let edge = 0;
+      for (const p of this.parts) for (const h of p.hullC) if (V.dot(h, up) < low + 0.25) edge = Math.max(edge, side * V.dot(h, right));
+      const N = Math.max(0, m * g - V.dot(thrustVec, V.norm(this.r)));
+      return Math.abs(tau) > N * edge;
+    }
+
     // A craft-frame vector (relative to the centre of mass) in world coordinates.
     toWorld(v) {
       const n = this.nose;
@@ -82,7 +108,7 @@
       const L = this.landed;
       const radAng = L.lon + FS.bodyRot(b, t);
       const ground = FS.surfaceHeight(b, L.lon);
-      const rest = L.rel === 0 ? this.bottomDist : this.topDist;
+      const rest = this.restDist(L.rel);
       this.r = V.fromAngle(radAng, b.R + ground + rest + 0.02);
       this.v = FS.airVel(b, this.r);
       this.angle = radAng + L.rel;
@@ -316,6 +342,12 @@
           this.landed = null;
           this.splashed = false;
           this.r = V.add(this.r, V.scale(up, 0.05));
+        } else if (this.tipsOver(thrustVec, m, g)) {
+          // engines turning the craft harder than its weight holds it: it tips and pivots on the ground
+          this.landed = null;
+          this.splashed = false;
+          this.rolling = true;
+          this.r = V.add(this.r, V.scale(up, 0.01));
         } else {
           this.syncLanded(t);
           this.thrustAccel = { x: 0, y: 0 };
@@ -383,17 +415,28 @@
     checkGround(t, sim) {
       const b = this.body;
       const reach = Math.max(this.layout.height, this.layout.width);
-      if (this.altitude > b.terrain.amp * 2.5 + reach + 50) return; // far above any ground
+      const far = this.altitude > b.terrain.amp * 2.5 + reach + 50; // far above any ground
       let hit = null;
-      for (const p of this.parts) {
-        for (const hp of p.hullC) {
-          const pt = V.add(this.r, this.toWorld(hp));
-          const lon = FS.lonAt(b, V.angle(pt), t);
-          const clear = V.len(pt) - b.R - FS.surfaceHeight(b, lon);
-          if (clear < 0 && (!hit || clear < hit.clear)) hit = { clear, part: p, lon, bottom: hp.y < 0 };
+      const touching = [];
+      if (!far) {
+        for (const p of this.parts) {
+          for (const hp of p.hullC) {
+            const pt = V.add(this.r, this.toWorld(hp));
+            const lon = FS.lonAt(b, V.angle(pt), t);
+            const clear = V.len(pt) - b.R - FS.surfaceHeight(b, lon);
+            if (clear < 0) {
+              touching.push({ hp, pt, part: p, clear });
+              if (!hit || clear < hit.clear) hit = { clear, part: p, lon, bottom: hp.y < 0 };
+            }
+          }
         }
       }
+      if (this.rolling) {
+        if (hit) this.lastContact = t;
+        else if (t - (this.lastContact ?? t) > 1) this.rolling = false; // thrown clear: flying again
+      }
       if (!hit) return;
+      if (this.rolling || Math.abs(this.omega - b.omega) > 0.5) { this.groundContact(t, sim, hit, touching); return; }
       const speed = V.len(V.sub(this.v, FS.airVel(b, this.r)));
       const up = V.norm(this.r);
       const tilt = Math.acos(FS.clamp(V.dot(this.nose, up), -1, 1));
@@ -405,6 +448,56 @@
       if (!water && !hit.bottom && tilt > Math.PI - 0.5 && speed < tol) { this.setLanded(t, false, sim); return; }
       if (speed < 3) { this.setLanded(t, water, sim); return; }
       this.explode(sim);
+    }
+
+    // Interim ground contact for a craft turning on the ground (step C1 replaces it with a
+    // rigid-body engine): every touching corner pushes back and grips with friction, so the
+    // craft pivots, rolls and bounces. A corner hitting the ground too fast breaks the craft.
+    groundContact(t, sim, hit, touching) {
+      const b = this.body;
+      const m = this.mass, I = this.layout.I;
+      const up = V.norm(this.r), tan = { x: -up.y, y: up.x };
+      const pointVel = (rc, pt) => V.sub({ x: this.v.x - this.omega * rc.y, y: this.v.y + this.omega * rc.x }, FS.airVel(b, pt));
+      this.rolling = true;
+      this.lastContact = t;
+      for (const c of touching) {
+        const rc = this.toWorld(c.hp);
+        if (V.len(pointVel(rc, c.pt)) > c.part.def.crash) { this.explode(sim); return; }
+      }
+      this.r = V.add(this.r, V.scale(up, -hit.clear));
+      for (let pass = 0; pass < 2; pass++) {
+        for (const c of touching) {
+          const rc = this.toWorld(c.hp);
+          const pv = pointVel(rc, c.pt);
+          const vn = V.dot(pv, up);
+          if (vn >= 0) continue;
+          const rn = V.cross(rc, up);
+          const j = (-(1 + 0.1) * vn) / (1 / m + (rn * rn) / I) / touching.length;
+          this.v = V.add(this.v, V.scale(up, j / m));
+          this.omega += (rn * j) / I;
+          const rt = V.cross(rc, tan);
+          const vt = V.dot(pointVel(rc, c.pt), tan);
+          const jt = FS.clamp(-vt / (1 / m + (rt * rt) / I), -0.8 * j, 0.8 * j);
+          this.v = V.add(this.v, V.scale(tan, jt / m));
+          this.omega += (rt * jt) / I;
+        }
+      }
+      // settled: at rest for half a second, and the engines can't turn it any more
+      // (a little contact jitter is allowed: only a real movement restarts the clock)
+      const speed = V.len(V.sub(this.v, FS.airVel(b, this.r))), spin = Math.abs(this.omega - b.omega);
+      if (speed > 1 || spin > 0.15) this.stillSince = null;
+      else if (speed < 0.5 && spin < 0.1) this.stillSince = this.stillSince ?? t;
+      const still = this.stillSince != null;
+      if (still && t - this.stillSince > 0.5 && Math.abs(this.thrustTorque) < 1) {
+        const radAng = V.angle(this.r);
+        this.landed = { lon: FS.lonAt(b, radAng, t), rel: FS.wrapAngle(this.angle - radAng) };
+        this.rolling = false;
+        this.stillSince = null;
+        this.splashed = !!(b.ocean && FS.terrainHeight(b, hit.lon) < 0);
+        this.omega = 0;
+        this.syncLanded(t);
+        if (sim && !this.isDebris) sim.emit('touchdown', { vessel: this, water: this.splashed });
+      }
     }
 
     setLanded(t, water, sim) {

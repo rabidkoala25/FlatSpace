@@ -336,6 +336,7 @@ Legend: **P** = in the prototype now · **A0–G8** = the roadmap step that deli
 | History pack missions | Scripted historical-style missions | G2 |
 | Alternative launch sites | Several pads around Aster | D3 |
 | Difficulty settings | Settings panel | E9 |
+| *(not in KSP)* Competition mode | A physics club or class builds to shared rules and budgets; flights are re-run to check the scores; leaderboard, projector view, flight data graphs, model rocket motors | D8 |
 | Tutorials | Interactive tutorials | E9 |
 
 ### 2.6 Communications and resources
@@ -449,7 +450,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 2. **Building (A1–A4).** The part tree changes the data every later system reads (mass, drag, contact points, staging), so it comes next.
 3. **Art (B1–B5).** Before any new parts are added, so every part from then on is drawn once, in pixel art.
 4. **Physics (C1–C5).** Before legs, parachutes, wheels, docking, wings and robotics, which all need contacts, joints, ropes and lift.
-5. **Content (D–G).** The parts catalogue is built alongside the features that use it, with dedicated parts steps (D5, D6, D7, F7) for the big families. Mod packs come next, on top of the pack loader.
+5. **Content (D–G).** The parts catalogue is built alongside the features that use it, with dedicated parts steps (D5, D6, D7, F7) for the big families. Mod packs come next, on top of the pack loader. Competition mode (D8) closes Phase D: by then the physics is final, saves and craft codes exist, and the parts list is big enough for interesting rules, but it doesn't wait for science or career.
 6. **Tech and contracts at the end of each phase (E11, F11, G9, H10).** Every new technology gets a logical place in the tech tree and contracts of its own (section 4.4).
 7. **Beyond KSP (H1–H9).** Last, because each one builds on the rest: astronauts on EVA (E7), joints, ropes and water (Phase C), docking (E6), the autopilot (E8), stations and life support (G7).
 
@@ -500,6 +501,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 | D5 | Parts: sizes, coupling and structure | ☐ |
 | D6 | Parts: engines | ☐ |
 | D7 | Parts: command pods, probes and cabins | ☐ |
+| D8 | Competition mode (physics club) | ☐ |
 | **E** | **Solar system and science** | |
 | E1 | The solar system | ☐ |
 | E2 | Planet art and biomes | ☐ |
@@ -546,7 +548,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 | H9 | Flight recorder, replays and photo mode | ☐ |
 | H10 | Tech and contracts: beyond KSP | ☐ |
 
-63 steps after the prototype.
+64 steps after the prototype.
 
 ### Prototype (done)
 
@@ -886,7 +888,7 @@ See the table in section 1.3 for what changes.
 - **Collisions:** between vessels and debris.
 - **Floating origin and moving frame:** the solver works near the active craft, in a frame moving with it, so orbital speeds stay within the engine's limits.
 - **Forces:** gravity, thrust, drag and parachutes applied per part at the right point.
-- **Ground behaviour:** craft rest, tip over, roll and bounce, replacing the prototype's two-point ground test.
+- **Ground behaviour:** craft rest, tip over, roll and bounce, replacing the prototype's ground test and the interim contact model from v0.6.2 (`Vessel.groundContact`, `tipsOver`), whose tests must still pass.
 - **Unchanged parts:** physics warp and on-rails behaviour work as before.
 
 **Stretch:** sparks and dust on scraping contact (feeds B4's effects).
@@ -1083,6 +1085,50 @@ See the table in section 1.3 for what changes.
 **Stretch:** pod interior view (a small pixel-art IVA window).
 
 **Done when:** every D7 row is ticked.
+
+#### D8 · Competition mode (physics club)
+**Goal:** run a rocket-building competition for a physics club or a class. Everyone builds to the same rules, flies, and the organiser gets checked, ranked results on one screen. No server is needed: rules, entries and results travel as share codes and files, the same way craft files do (A4).
+
+**Must:**
+- **Organiser setup:** choose the challenges and rules, then share them as a competition code (one line of text starting `FLATSPACE-COMP-1:`, a file, or a QR code to scan). The rules can set:
+  - which parts are allowed (by category or one by one), a part count limit and a mass limit;
+  - a budget, with prices the organiser can change (Career's costs come later, in F1);
+  - the world: Aster, one of the moons, or a "lab" world with switches for flat ground, no air and adjustable gravity, so flights can be checked against calculations done by hand;
+  - a build time limit, the number of attempts, and whether pilots may steer or flights are hands-off (only a staging plan and a simple pitch program set in the hangar).
+- **Challenges:** the organiser picks one or more:
+  - **highest apogee** on a budget;
+  - **predict then fly:** before launch, teams write down their predicted apogee, flight time and top speed, and are scored on how close they get. This rewards doing the physics, not just building the biggest rocket;
+  - **egg drop:** a fragile payload part that breaks above a set impact speed or G-force, scored on landing speed;
+  - **precision landing:** land closest to a marker downrange;
+  - **payload to orbit:** the most payload, or the lowest cost per tonne;
+  - **moon shot**, for more advanced groups.
+- **Entering:** teams join with the code on their own devices (or take turns on one computer), build before the timer runs out, and fly. An entry is the craft text plus a log of the flight: control inputs and staging, step by step.
+- **Checked scores:** the organiser's device re-runs every entry from its craft and flight log, using the same fixed physics steps, so a score can't be typed in or edited. Entries that break the rules (a banned part, over budget, over the mass limit) are flagged with the reason. Browsers can differ in the last digits of some maths functions, so the organiser's re-run is the official result, and the team's own number must agree within a small tolerance.
+- **Leaderboard and projector view:**
+  - a results table for each challenge, with tie-breaks;
+  - a big-screen mode with large text;
+  - every entry's flight drawn together on one altitude–time graph and over the planet, then played back as ghosts side by side.
+- **Flight data:** graphs of altitude, speed, acceleration, thrust, drag, mass and dynamic pressure over time, with each staging event marked, and CSV export for spreadsheets.
+- **Model rocket parts:**
+  - small solid motors in the standard impulse classes A to G, with realistic thrust curves and a delay charge that pops the parachute;
+  - light body tubes, nose cones and fins at model scale.
+
+  A club can then build the rockets it really launches and compare the simulation with its own flights. These parts get tech nodes and contracts in E11 (section 4.4).
+- **Saved competitions:** the organiser can save a competition, reopen it later, and export the results as CSV.
+
+**Stretch:**
+- a printable results sheet and certificates;
+- a worksheet view that shows the equations behind a flight (the rocket equation, drag, energy) next to the team's own numbers;
+- head-to-head knockout rounds, with two ghosts racing on the projector.
+
+**Done when:**
+- an organiser makes a competition code with a budget and a banned part;
+- three teams on separate browsers build, fly and send in their entries;
+- the organiser's re-runs match the teams' scores, and an over-budget entry is flagged;
+- a predict-then-fly entry is scored on its error;
+- all three flights play together as ghosts in the projector view.
+
+H9's flight recorder builds on the flight log from this step.
 
 ---
 
@@ -1579,7 +1625,7 @@ Features that neither KSP nor Spaceflight Simulator has in stock (section 2.8). 
 **Done when:** a rotovator around Mira catches a cargo pod fired from a mass driver and passes it on to an escape trajectory.
 
 #### H9 · Flight recorder, replays and photo mode
-**Goal:** relive and share flights (builds on D3, E9).
+**Goal:** relive and share flights (builds on D3, D8, E9).
 
 **Must:**
 - **Recorder:** every flight is recorded (each vessel's state at intervals, which is cheap in 2D).
@@ -1698,9 +1744,11 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
   - section 1.7 explains why the game stays one static site, with no executable needed;
   - added a performance pass (C5), IndexedDB saves (D3) and an installable offline web app (E9);
   - centre of pressure overlay (A3), centre of lift indicator and plane controls (F6), and rover driving (F8) made explicit.
+- **Plan revision 9**: new step D8, "Competition mode (physics club)": shared rules and budgets as a competition code, challenges (highest apogee, predict then fly, egg drop, precision landing, payload to orbit), entries re-run from their flight logs to check the scores, leaderboard and projector view with ghosts, flight data graphs with CSV export, and model rocket motors (A–G); 64 steps in total.
 - **Plan revision 8**: new step E10, "Terrain detail" (realistic landforms, strata, collidable ground scatter and deep parallax layers, the idea behind the Parallax mod); new section 4.4, which says every new part and feature gets a tech-tree node and contracts of its own, with a "Tech and contracts" step closing each phase (E11, F11, G9, H10) and automated checks; tech nodes and contracts are data that packs can extend; 63 steps in total.
 - **Plan revision 7**: new Phase H, "Beyond KSP" (section 2.8): living astronauts with ragdolls (H1), walkable interiors (H2), hands-on objects and tools (H3), damage and repairs (H4), life on board and spin gravity (H5), self-landing rockets (H6), launch and recovery infrastructure (H7), tethers, solar sails and mass drivers (H8), and a flight recorder with replays (H9); 58 steps in total. Original parts added to `PARTS.md`.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
+- **v0.6.2 fix**: engines that turn a craft sitting on the ground now tip it over once their turning effect beats what its weight can hold (before, a landed craft ignored turning completely unless it had enough thrust to lift off). While it turns on the ground, a simple contact model lets it pivot, roll and bounce, a part hitting the ground too fast breaks the craft, and it comes to rest at whatever angle it ends up. C1 replaces this with full rigid-body contact.
 - **v0.6.1 (A4 follow-up)**: side parts line up with sloped faces; floating parts in the hangar (left behind, or launched beside the craft); part pop-ups that open on select, pin, drag and point at their part, in the hangar and in flight; settings and actions mid-flight (thrust limit, gimbal, engine on/off, crossfeed, decouple, chute height and arming); `partToScreen` / `screenToPart` in the renderer; `Vessel.act`. Later parts of this request added to B5, C3, D2, D3, D5 and E5.
 - **v0.6.0 (A4)**: stretchable tanks in six widths with handles and 21 presets; one tank density (tank lengths moved to the 0.25 m grid); five tank looks; part settings panel (fuel level, thrust limit, gimbal, crossfeed, parachute height, fires in staging); staging editor with chips, custom staging saved on parts; craft files (download, open, copy and paste as text); `js/staging-editor.js`, `js/part-panel.js`.
 - **v0.5.0 (A3)**: tool rail; mirror symmetry with linked twins; rotate and flip; offset with snap; undo/redo (100 steps); Alt-click copy; subassemblies tab; centre of mass, thrust and pressure overlays with warnings; Swept Fin part; sideways force on parts and wing-like fins (`FS.partAero`), brought forward from C4; Hopper sample uses the short tank.
