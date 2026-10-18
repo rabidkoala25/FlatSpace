@@ -41,6 +41,10 @@ Drag parts from the tray on the left into the build area. They snap together end
 
 Everything also has a button on the toolbar down the left side, so it all works on a phone.
 
+Fuel tanks stretch: select one and drag the handle at its end, or right-click it (on a phone, tap it again) to set its length, width, look and how much fuel it starts with. Right-clicking other parts gives their settings too, like an engine's thrust limit or how high a parachute opens.
+
+The stage list on the right works things out for you, but you can change it: drag the parts between stages, move stages up and down, or leave a part out. **Files** lets you download a craft, open one, or copy it as a line of text to send to someone.
+
 The switches in the top corner show where your rocket's centre of mass (yellow), thrust (pink) and pressure (blue) are. If the blue one is above the yellow one, the air will try to flip your rocket over. Fins near the bottom fix that.
 
 ## Flying

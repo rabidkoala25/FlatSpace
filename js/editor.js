@@ -110,6 +110,11 @@
     on('btnSnap', () => { E.snap = !E.snap; saveView(); say(E.snap ? 'Snap on: offsets move in 0.25 m steps and catch the middle of a side.' : 'Snap off: offsets move freely.'); E.render(); });
     on('btnCopy', () => E.copy(E.sel));
     on('btnSub', () => E.saveSub(E.sel));
+    on('btnSettings', () => { if (E.sel) FS.PartPanel.open(E.sel); else say('Select a part first, then open its settings (or right-click it).'); });
+    on('btnFiles', () => FS.CraftFiles.open());
+    FS.PartPanel.init(E);
+    FS.CraftFiles.init();
+    FS.StagingEditor.init(E);
     for (const k of ['com', 'cot', 'cop']) {
       on('ovl_' + k, () => { E.overlays[k] = !E.overlays[k]; saveView(); E.render(); });
     }
@@ -145,6 +150,8 @@
   function persist() { FS.store.save('flatspace.current', { name: E.name, parts: FS.serialParts(E.parts) }); }
   function saveView() { FS.store.set('flatspace.editorView', { overlays: E.overlays, snap: E.snap }); }
   function say(text) { $('partInfo').textContent = text; }
+  E.say = say;
+  E.refreshLoadList = () => refreshLoadList();
   const hint = () => (window.matchMedia && matchMedia('(pointer: coarse)').matches
     ? 'Drag or tap a part in the tray to add it. Hold a placed part to pick it up. Pinch to zoom.'
     : 'Drag parts from the tray. Drag a placed part to move it; drop it on the tray to remove it. Alt-drag slides a side part, Alt-click copies.');
@@ -266,6 +273,32 @@
       });
       return;
     }
+    if (E.tab === 'Fuel') {
+      // tank presets, grouped by width; each is a stretchable tank of its base type
+      let width = null;
+      FS.DATA.tankPresets.forEach((pr, i) => {
+        if (pr.size !== width) {
+          width = pr.size;
+          const h = document.createElement('div');
+          h.className = 'pal-sub';
+          h.textContent = `${width} m wide`;
+          host.appendChild(h);
+        }
+        const d = FS.PART[pr.base];
+        const opts = { len: pr.len, size: pr.size };
+        const sample = FS.newPart(pr.base, opts);
+        FS.relayout([sample]);
+        const b = trayButton(pr.name, `${(sample.cap / 1000).toFixed(sample.cap < 1000 ? 2 : 1)} t fuel · ${pr.len} × ${pr.size} m`, (c) => drawThumb(c, d, sample));
+        b.dataset.preset = String(i);
+        if (pr.len === d.len && pr.size === d.w) b.dataset.part = d.id;
+        b.setAttribute('aria-label', `${pr.name}: ${d.desc}`);
+        b.addEventListener('click', () => { if (suppressClick) { suppressClick = false; return; } E.quickAdd(pr.base, opts); });
+        b.addEventListener('pointerdown', (e) => trayDown(e, { id: pr.base, opts }));
+        hoverCard(b, () => showCard(b, pr.name, `${d.desc} Stretch it with the handle at its end, and change its width and look in its settings. (KSP: ${pr.ksp}.)`, cardRows(d, sample)));
+        host.appendChild(b);
+      });
+      return;
+    }
     for (const d of FS.PARTS.filter((p) => p.cat === E.tab)) {
       const b = trayButton(d.name, partStat(d), (c) => drawThumb(c, d));
       b.dataset.part = d.id;
@@ -277,12 +310,12 @@
     }
   }
 
-  function drawThumb(c, d) {
+  function drawThumb(c, d, sample) {
     const g = c.getContext('2d');
-    const p = FS.newPart(d.id);
+    const p = sample || FS.newPart(d.id);
     FS.relayout([p]);
-    const s = Math.min(70 / Math.max(p.w + (d.fin && !d.radial ? 1.6 : 0), 0.6), 84 / d.len, 60);
-    g.setTransform(s, 0, 0, s, 44, 52 - (d.len * s) / 2);
+    const s = Math.min(70 / Math.max(p.w + (d.fin && !d.radial ? 1.6 : 0), 0.6), 84 / p.len, 60);
+    g.setTransform(s, 0, 0, s, 44, 52 - (p.len * s) / 2);
     FS.drawPart(g, p, 0, 1 / s, {});
   }
 
@@ -298,17 +331,18 @@
       g.scale(s, s);
       g.rotate(-p.rot);
       if (p.flip) g.scale(-1, 1);
-      FS.drawPart(g, p, -p.def.len / 2, 1 / s, {});
+      FS.drawPart(g, p, -p.len / 2, 1 / s, {});
     }
   }
 
   // The hover card: everything the tray row has no room for.
-  function cardRows(d) {
+  function cardRows(d, p) {
     const rows = [];
     const t = (kg) => (kg / 1000).toFixed(kg < 1000 ? 3 : 2) + ' t';
-    const wet = d.mass + (d.fuel || 0) + (d.solid || 0);
-    rows.push(['Mass', wet > d.mass ? `${t(wet)} (${t(d.mass)} empty)` : t(d.mass)]);
-    rows.push(['Size', `${d.len} m long · ${d.w === 'auto' ? 'fits its neighbours' : d.w + ' m wide'}`]);
+    const dry = p ? p.dry : d.mass, fuel = p ? p.cap : d.fuel || 0;
+    const wet = dry + fuel + (d.solid || 0);
+    rows.push(['Mass', wet > dry ? `${t(wet)} (${t(dry)} empty)` : t(dry)]);
+    rows.push(['Size', `${p ? p.len : d.len} m long · ${d.w === 'auto' ? 'fits its neighbours' : (p ? p.size : d.w) + ' m wide'}`]);
     if (d.engine) {
       const e = d.engine;
       rows.push(['Thrust', `${(e.asl / 1000).toFixed(0)} kN sea level · ${(e.vac / 1000).toFixed(0)} kN vacuum`]);
@@ -316,7 +350,8 @@
       if (e.solid) rows.push(['Burn', `${(d.solid / (e.vac / (e.ispVac * FS.G0))).toFixed(0)} s, cannot throttle`]);
       rows.push(['Gimbal', e.gimbal ? `±${e.gimbal}°` : 'none']);
     }
-    if (d.fuel) rows.push(['Fuel', t(d.fuel)]);
+    if (d.fuel) rows.push(['Fuel', t(fuel)]);
+    if (d.stretch) rows.push(['Stretchable', `${FS.LEN_STEP} m steps, ${FS.TANK_WIDTHS.length} widths`]);
     if (d.torque) rows.push(['Reaction wheel', `${(d.torque / 1000).toFixed(0)} kN·m`]);
     if (d.chute) rows.push(['Parachute', 'semi-deploys in thick air, opens fully below 1 km']);
     if (d.fin) rows.push(['Fins', `${d.fin} m² of side area`]);
@@ -364,8 +399,8 @@
   };
 
   // Pick up a new part from the tray, centred on the pointer.
-  E.pickNew = (id, world, pointerId) => {
-    const p = FS.newPart(id);
+  E.pickNew = (id, world, pointerId, opts) => {
+    const p = FS.newPart(id, opts);
     if (!p) return;
     p.spin = 0;
     FS.relayout([p]);
@@ -377,6 +412,7 @@
   E.pickGroup = (serial, world, pointerId) => {
     const held = B.clone(FS.partsFromSerial(serial));
     if (!held.length) return;
+    for (const p of held) delete p.stage; // the craft's own staging decides
     held[0].spin = 0;
     startDrag(held, held[0], { x: 0, y: 0 }, null, pointerId);
     E.dragTo(world);
@@ -524,9 +560,9 @@
   }
 
   // Click or tap on a tray part (and the keyboard): attach it somewhere sensible without dragging.
-  E.quickAdd = (id) => {
+  E.quickAdd = (id, opts) => {
     if (E.drag) return;
-    const p = FS.newPart(id);
+    const p = FS.newPart(id, opts);
     if (!p) return;
     FS.relayout([p]);
     const held = [p];
@@ -550,7 +586,7 @@
       while (!cand && nodes.length) {
         const n = nodes.pop();
         const ax = FS.partAxis(n.part.rot);
-        const at = V.add(n.pos, V.scale(ax, (n.node === 'top' ? 1 : -1) * p.def.len / 2));
+        const at = V.add(n.pos, V.scale(ax, (n.node === 'top' ? 1 : -1) * p.len / 2));
         const c = B.candidate([n.part], held, p, at, 0.05);
         cand = tryCand(c && c.parent === n.part ? c : null);
       }
@@ -636,6 +672,7 @@
     const taken = new Set(E.subs.map((s) => s.name));
     for (let k = 2; taken.has(name); k++) name = `${p.def.name}${group.length > 1 ? ` + ${group.length - 1}` : ''} (${k})`;
     const serial = FS.serialParts(group);
+    for (const s of serial) delete s.stage;
     serial[0].parent = -1;
     serial[0].node = 'bottom';
     E.subs.push({ name, parts: serial });
@@ -643,6 +680,85 @@
     E.tab = SUB_TAB;
     buildPalette();
     say(ok ? `Saved “${name}” to Subassemblies in the tray.` : 'Could not save: browser storage is unavailable.');
+  };
+
+  // ---------- Tank size and part settings (A4) ----------
+  // Pairs of parts that overlap (ignoring each part and its own parent).
+  function overlaps(parts) {
+    let n = 0;
+    for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+      const a = parts[i], b = parts[j];
+      if (a.parent === b || b.parent === a) continue;
+      if (B.overlap(a, b)) n++;
+    }
+    return n;
+  }
+  const snapshot = (parts) => parts.map((q) => ({ q, len: q.len, size: q.size, pos: { ...q.pos }, rot: q.rot, flip: q.flip, srfOff: q.srfOff && { ...q.srfOff }, rel: q.rel }));
+  function restoreSnap(snap) {
+    for (const s of snap) { Object.assign(s.q, { len: s.len, size: s.size, pos: s.pos, rot: s.rot, flip: s.flip, srfOff: s.srfOff, rel: s.rel }); FS.applySize(s.q); }
+    FS.relayout(E.parts);
+  }
+
+  // Where the selected tank's stretch handle is: its free end (away from its parent).
+  function handleOf(p) {
+    if (!p || !p.def.stretch || !E.parts.includes(p) || E.drag) return null;
+    const ax = FS.partAxis(p.rot);
+    const sgn = p.node === 'top' && p.parent ? 1 : -1;
+    const dir = V.scale(ax, sgn);
+    return { pos: V.add(p.pos, V.scale(dir, p.len / 2 + 10 / E.cam.s)), dir };
+  }
+
+  // Change a tank's length or width, keeping the end it is attached by in place; side parts
+  // on it stay on its surface; its mirror twin changes too. Refused if it would make parts
+  // overlap. record: add an undo step now (a handle drag records once, when let go).
+  function resize(p, change, record) {
+    if (!p || !p.def.stretch) return false;
+    const twin = B.twinOf(E.parts, p);
+    const snap = snapshot(E.parts);
+    const before = overlaps(E.parts);
+    const apply = (q) => {
+      const ax = FS.partAxis(q.rot);
+      const freeTop = q.node === 'top' && q.parent;
+      const fixed = V.add(q.pos, V.scale(ax, (freeTop ? -1 : 1) * q.len / 2)); // the end that stays put
+      change(q);
+      FS.applySize(q);
+      if (!q.parent || q.node === 'srf') {
+        q.pos = V.sub(fixed, V.scale(ax, (freeTop ? -1 : 1) * q.len / 2));
+        FS.syncOffsets([q]);
+      }
+      FS.relayout(E.parts);
+      // keep side parts on the (maybe wider) surface
+      for (const c of E.parts.filter((c) => c.parent === q && c.node === 'srf')) {
+        const sd = c.srfOff.x < 0 ? -1 : 1;
+        const spot = B.surfaceSpot(q, c, sd, c.srfOff.y, c.rot);
+        c.pos = spot.pos;
+        FS.syncOffsets([c]);
+      }
+      FS.relayout(E.parts);
+    };
+    apply(p);
+    if (twin) { apply(twin); B.syncTwin(E.parts, p); }
+    if (overlaps(E.parts) > before) {
+      restoreSnap(snap);
+      say(`The ${p.def.name} can't grow there: it would run into another part.`);
+      E.render();
+      return false;
+    }
+    if (record) E.changed(); else { E.render(); E.updateStats(); }
+    say(`${p.def.name}: ${p.len} m long, ${p.size} m wide, ${(p.cap / 1000).toFixed(2)} t of fuel.`);
+    return true;
+  }
+  E.setLength = (p, len, record = true) => resize(p, (q) => (q.len = Math.round(len / FS.LEN_STEP) * FS.LEN_STEP), record);
+  E.setWidth = (p, size, record = true) => resize(p, (q) => (q.size = size), record);
+
+  // Set one of a part's settings (and its twin's), e.g. E.setSetting(p, 'limit', 0.5).
+  E.setSetting = (p, key, value, record = true) => {
+    if (!p || !E.parts.includes(p)) return;
+    for (const q of [p, B.twinOf(E.parts, p)].filter(Boolean)) {
+      q[key] = value;
+      if (key === 'fill') FS.applySize(q);
+    }
+    if (record) E.changed(); else { E.render(); E.updateStats(); }
   };
 
   // ---------- Pointer and touch ----------
@@ -663,6 +779,7 @@
     suppressClick = true;
     if (t.touch && navigator.vibrate) navigator.vibrate(12);
     if (typeof t.what === 'string') E.pickNew(t.what, worldOf(t.last), t.pointerId);
+    else if (t.what.id) E.pickNew(t.what.id, worldOf(t.last), t.pointerId, t.what.opts);
     else E.pickGroup(E.subs[t.what.sub].parts, worldOf(t.last), t.pointerId);
     E.dragTo(worldOf(t.last), overTray(t.last));
   }
@@ -671,7 +788,13 @@
   let gesture = null;
 
   function initPointer() {
-    cv.addEventListener('contextmenu', (e) => e.preventDefault());
+    cv.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      // right-click a part: its settings
+      const pt = canvasPt(e);
+      const hit = B.partAt(E.parts, E.toWorld(pt.x, pt.y), 3 / E.cam.s);
+      if (hit && !E.drag) { E.sel = hit; E.render(); FS.PartPanel.open(hit); }
+    });
     cv.addEventListener('wheel', (e) => {
       e.preventDefault();
       const pt = canvasPt(e);
@@ -693,8 +816,17 @@
       if (ptrs.size > 2) return;
       if (e.button === 1 || e.button === 2) { e.preventDefault(); gesture = { type: 'pan', last: pt }; return; }
       const touch = e.pointerType !== 'mouse';
+      // the stretch handle of the selected tank comes first
+      const hd = handleOf(E.sel);
+      if (hd && e.button === 0) {
+        const hs = E.toScreen(hd.pos);
+        if (Math.hypot(hs.x - pt.x, hs.y - pt.y) < (touch ? 22 : 12)) {
+          gesture = { type: 'stretch', part: E.sel, len0: E.sel.len, w0: E.toWorld(pt.x, pt.y), dir: hd.dir };
+          return;
+        }
+      }
       const hit = B.partAt(E.parts, E.toWorld(pt.x, pt.y), (touch ? 10 : 3) / E.cam.s);
-      gesture = { type: 'press', id: e.pointerId, start: pt, last: pt, hit, touch, alt: e.altKey, timer: null };
+      gesture = { type: 'press', id: e.pointerId, start: pt, last: pt, hit, touch, alt: e.altKey, timer: null, wasSel: hit && hit === E.sel };
       if (touch && hit && !E.offsetMode) {
         const g0 = gesture;
         g0.timer = setTimeout(() => {
@@ -727,6 +859,10 @@
         E.render();
       } else if (gesture.type === 'offset') {
         slide(pt);
+      } else if (gesture.type === 'stretch') {
+        const w = E.toWorld(pt.x, pt.y);
+        const len = gesture.len0 + V.dot(V.sub(w, gesture.w0), gesture.dir);
+        E.setLength(gesture.part, len, false);
       } else if (gesture.type === 'press' && e.pointerId === gesture.id) {
         gesture.last = pt;
         const moved = Math.hypot(pt.x - gesture.start.x, pt.y - gesture.start.y);
@@ -780,9 +916,15 @@
         else {
           E.sel = gesture.hit;
           say(E.sel ? `${E.sel.def.name}: ${E.sel.def.desc}` : hint());
+          // tapping the selected part again opens its settings (right-click does it with a mouse)
+          if (gesture.wasSel && gesture.touch) FS.PartPanel.open(E.sel);
+          else if (FS.PartPanel.isOpen()) { if (E.sel) FS.PartPanel.open(E.sel); else FS.PartPanel.close(); }
           E.render();
         }
         gesture = null;
+      } else if (gesture.type === 'stretch') {
+        gesture = null;
+        E.changed();
       } else if (gesture.type === 'offset') {
         gesture = null;
         E.changed();
@@ -858,7 +1000,11 @@
     E.cam.y = lay.com.y + (lay.minY + lay.maxY) / 2 - 22 / E.cam.s;
   };
 
-  E.changed = () => { record(); persist(); E.render(); E.updateStats(); };
+  E.changed = () => {
+    const added = FS.StagingEditor.assignNew(E.parts);
+    record(); persist(); E.render(); E.updateStats();
+    if (added) say(`Staging is custom, so the new part${added > 1 ? 's go' : ' goes'} into a new last stage. Drag ${added > 1 ? 'them' : 'it'} where you want in the stage list.`);
+  };
 
   E.resize = () => {
     DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -880,7 +1026,7 @@
       ctx.scale(s, s);
       ctx.rotate(-p.rot);
       if (p.flip) ctx.scale(-1, 1);
-      FS.drawPart(ctx, p, -p.def.len / 2, 1 / s, { selected: opts.sel && p === E.sel });
+      FS.drawPart(ctx, p, -p.len / 2, 1 / s, { selected: opts.sel && p === E.sel });
       ctx.restore();
     }
   }
@@ -1005,6 +1151,20 @@
       drawParts(parts, { sel: !d });
 
       // the selected part's mirror twin, outlined
+      const hd = handleOf(E.sel);
+      if (hd) {
+        const c = E.toScreen(hd.pos);
+        const ang = Math.atan2(-hd.dir.y, hd.dir.x);
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        ctx.rotate(ang);
+        ctx.fillStyle = '#ffb547'; ctx.strokeStyle = '#241500'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-9, -13, 18, 26, 6) : ctx.rect(-9, -13, 18, 26); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#241500';
+        ctx.beginPath(); ctx.moveTo(-5, -5); ctx.lineTo(5, -5); ctx.moveTo(-5, 0); ctx.lineTo(5, 0); ctx.moveTo(-5, 5); ctx.lineTo(5, 5);
+        ctx.strokeStyle = '#241500'; ctx.lineWidth = 1.6; ctx.stroke();
+        ctx.restore();
+      }
       const twin = !d && E.sel ? B.twinOf(parts, E.sel) : null;
       if (twin) {
         quadPath(twin);
@@ -1091,6 +1251,8 @@
     set('btnSnap', E.snap);
     set('btnCopy', null, !!E.drag || !sel);
     set('btnSub', null, !!E.drag || !sel);
+    set('btnSettings', null, !!E.drag || !sel);
+    if (FS.PartPanel.isOpen()) FS.PartPanel.refresh();
     for (const k of ['com', 'cot', 'cop']) set('ovl_' + k, E.overlays[k]);
   }
 
@@ -1099,29 +1261,7 @@
     const stages = FS.stagesOf(parts);
     const sv = FS.stageStats(parts, stages, 0, 0, 9.81);
     const sa = FS.stageStats(parts, stages, 0, 1, 9.81);
-    const list = $('stageList');
-    list.innerHTML = '';
-    stages.forEach((ev, k) => {
-      const li = document.createElement('li');
-      li.className = 'stage-card';
-      const what = [];
-      if (ev.decouple) what.push('Decouple' + (ev.decouplers.length > 1 ? ' ×' + ev.decouplers.length : ''));
-      if (ev.ignite) {
-        const names = {};
-        ev.engines.forEach((p) => (names[p.def.name] = (names[p.def.name] || 0) + 1));
-        what.push('Ignite ' + Object.entries(names).map(([n, c]) => (c > 1 ? c + '× ' : '') + n.replace(/ Engine| Solid Booster/, '')).join(', '));
-      }
-      if (ev.chutes) what.push('Deploy parachutes');
-      let dv = '', nums = '';
-      const v = sv.events[k], a = sa.events[k];
-      if (ev.ignite || v.dv > 0.5) {
-        dv = `${v.dv.toFixed(0)} m/s`;
-        const twrCls = k === 0 && a.twr < 1 ? ' class="bad"' : '';
-        nums = `<span${twrCls}>TWR ${a.twr.toFixed(2)}</span><span>ASL ${a.dv.toFixed(0)}</span><span>${v.time.toFixed(0)} s</span>`;
-      }
-      li.innerHTML = `<header><span class="sn">Stage ${k + 1}</span><span class="dv">${dv}</span></header><div class="what">${what.join(' · ')}</div>${nums ? `<div class="nums">${nums}</div>` : ''}`;
-      list.appendChild(li);
-    });
+    FS.StagingEditor.render(parts, stages, sv, sa, parts === E.parts && !E.drag);
     const lay = FS.massLayout(parts);
     const first = stages.findIndex((e) => e.ignite);
     const twr = first >= 0 ? sa.events[first].twr : 0;

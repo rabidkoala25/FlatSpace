@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="css/style.css?v=0.5.0">
+<link rel="stylesheet" href="css/style.css?v=0.6.0">
 </head>
 <body>
 <div id="app">
@@ -26,6 +26,7 @@
         <select id="craftLoad" aria-label="Load a craft"></select>
         <button id="btnNew" class="btn ghost" type="button">New</button>
         <button id="btnSave" class="btn ghost" type="button">Save</button>
+        <button id="btnFiles" class="btn ghost" type="button" title="Export, import and share craft files">Files</button>
         <button id="btnLaunch" class="btn primary" type="button">Launch</button>
       </div>
     </header>
@@ -53,7 +54,10 @@
           <hr>
           <button id="btnCopy" class="rbtn" type="button" title="Copy the selected part and everything below it (Alt-click)">⧉<span>Copy</span></button>
           <button id="btnSub" class="rbtn" type="button" title="Save the selected part and everything below it as a subassembly">＋<span>Save sub</span></button>
+          <hr>
+          <button id="btnSettings" class="rbtn" type="button" title="Settings of the selected part (or right-click it; on touch, tap it again)">⚙<span>Settings</span></button>
         </div>
+        <div id="partPanel" class="part-panel" role="dialog" aria-label="Part settings" hidden></div>
         <div class="ovl-chips" role="group" aria-label="Overlays">
           <button id="ovl_com" class="chip com" type="button" aria-pressed="true" title="Centre of mass">Mass</button>
           <button id="ovl_cot" class="chip cot" type="button" aria-pressed="true" title="Centre of thrust of the first stage, with its thrust line">Thrust</button>
@@ -68,13 +72,34 @@
       </main>
 
       <aside class="stats" aria-label="Staging and performance">
-        <h2>Staging</h2>
+        <div class="stg-head">
+          <h2>Staging</h2>
+          <span id="stageMode" class="stg-mode">Automatic</span>
+          <button id="btnStageAdd" class="stg-btn" type="button" title="Add an empty stage at the end">+ Stage</button>
+          <button id="btnStageReset" class="stg-btn" type="button" title="Go back to automatic staging" hidden>Reset</button>
+        </div>
         <ol id="stageList" class="stage-list"></ol>
         <div id="edTotals" class="totals"></div>
         <ul id="edWarnings" class="warnings"></ul>
       </aside>
     </div>
     <div id="partCard" class="part-card" role="tooltip" hidden></div>
+    <div id="craftFiles" class="dialog-back" hidden>
+      <div class="dialog craft-files" role="dialog" aria-modal="true" aria-labelledby="cfTitle">
+        <h2 id="cfTitle">Craft files</h2>
+        <p id="cfMsg" class="cf-msg" aria-live="polite"></p>
+        <div class="cf-grid">
+          <button id="cfDownload" class="btn ghost" type="button">Download file</button>
+          <button id="cfOpen" class="btn ghost" type="button">Open file…</button>
+          <button id="cfCopy" class="btn ghost" type="button">Copy as text</button>
+          <button id="cfPaste" class="btn ghost" type="button">Load pasted text</button>
+        </div>
+        <input id="cfFile" type="file" accept=".json,.craft,application/json,text/plain" hidden>
+        <label class="cf-label" for="cfText">Craft text, to share or to load</label>
+        <textarea id="cfText" rows="4" spellcheck="false" placeholder="Paste craft text here, then press “Load pasted text”."></textarea>
+        <div class="dlg-actions"><button id="cfClose" class="btn primary" type="button">Done</button></div>
+      </div>
+    </div>
   </section>
 
   <!-- ============ FLIGHT ============ -->
@@ -202,23 +227,25 @@
   </div>
 </div>
 
-<script src="js/util.js?v=0.5.0"></script>
-<script src="data/parts.js?v=0.5.0"></script>
-<script src="data/bodies.js?v=0.5.0"></script>
-<script src="js/save.js?v=0.5.0"></script>
-<script src="js/bodies.js?v=0.5.0"></script>
-<script src="js/orbit.js?v=0.5.0"></script>
-<script src="js/parts.js?v=0.5.0"></script>
-<script src="js/partgraph.js?v=0.5.0"></script>
-<script src="js/build.js?v=0.5.0"></script>
-<script src="js/vessel.js?v=0.5.0"></script>
-<script src="js/sim.js?v=0.5.0"></script>
-<script src="js/warp.js?v=0.5.0"></script>
-<script src="js/nodes.js?v=0.5.0"></script>
-<script src="js/render.js?v=0.5.0"></script>
-<script src="js/hud.js?v=0.5.0"></script>
-<script src="js/editor.js?v=0.5.0"></script>
-<script src="js/input.js?v=0.5.0"></script>
-<script src="js/main.js?v=0.5.0"></script>
+<script src="js/util.js?v=0.6.0"></script>
+<script src="data/parts.js?v=0.6.0"></script>
+<script src="data/bodies.js?v=0.6.0"></script>
+<script src="js/save.js?v=0.6.0"></script>
+<script src="js/bodies.js?v=0.6.0"></script>
+<script src="js/orbit.js?v=0.6.0"></script>
+<script src="js/parts.js?v=0.6.0"></script>
+<script src="js/partgraph.js?v=0.6.0"></script>
+<script src="js/build.js?v=0.6.0"></script>
+<script src="js/vessel.js?v=0.6.0"></script>
+<script src="js/sim.js?v=0.6.0"></script>
+<script src="js/warp.js?v=0.6.0"></script>
+<script src="js/nodes.js?v=0.6.0"></script>
+<script src="js/render.js?v=0.6.0"></script>
+<script src="js/hud.js?v=0.6.0"></script>
+<script src="js/editor.js?v=0.6.0"></script>
+<script src="js/staging-editor.js?v=0.6.0"></script>
+<script src="js/part-panel.js?v=0.6.0"></script>
+<script src="js/input.js?v=0.6.0"></script>
+<script src="js/main.js?v=0.6.0"></script>
 </body>
 </html>

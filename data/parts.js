@@ -12,13 +12,13 @@ FS.DATA.parts = [
     desc: 'Uncrewed guidance unit. Light, weak reaction wheel.' },
   { id: 'canopy', name: 'Canopy Parachute', cat: 'Utility', mass: 100, len: 0.45, w: 0.6, cda: 0.15, crash: 12, chute: { semi: 25, full: 1100 },
     desc: 'Arms on staging. Semi-deploys in thick air, opens fully below 1 km.' },
-  { id: 't100', name: 'Ferro Short Tank', cat: 'Fuel', mass: 62.5, fuel: 500, len: 0.75, w: 1.25, cda: 0.25, crash: 8,
+  { id: 't100', name: 'Ferro Short Tank', cat: 'Fuel', mass: 62.5, fuel: 500, len: 0.5, w: 1.25, cda: 0.25, crash: 8, stretch: true,
     desc: 'Small liquid fuel tank.' },
-  { id: 't400', name: 'Ferro Medium Tank', cat: 'Fuel', mass: 250, fuel: 2000, len: 1.9, w: 1.25, cda: 0.3, crash: 8,
+  { id: 't400', name: 'Ferro Medium Tank', cat: 'Fuel', mass: 250, fuel: 2000, len: 2, w: 1.25, cda: 0.3, crash: 8, stretch: true,
     desc: 'Medium liquid fuel tank.' },
-  { id: 't800', name: 'Ferro Long Tank', cat: 'Fuel', mass: 500, fuel: 4000, len: 3.75, w: 1.25, cda: 0.35, crash: 8,
+  { id: 't800', name: 'Ferro Long Tank', cat: 'Fuel', mass: 500, fuel: 4000, len: 4, w: 1.25, cda: 0.35, crash: 8, stretch: true,
     desc: 'Long liquid fuel tank.' },
-  { id: 'x160', name: 'Ferro Heavy Tank', cat: 'Fuel', mass: 2000, fuel: 16000, len: 7.5, w: 2.5, cda: 1.2, crash: 8, foam: true,
+  { id: 'x160', name: 'Ferro Heavy Tank', cat: 'Fuel', mass: 2000, fuel: 16000, len: 4, w: 2.5, cda: 1.2, crash: 8, foam: true, stretch: true,
     desc: 'Heavy 2.5 m tank for big first stages.' },
   { id: 'kestrel', name: 'Kestrel Engine', cat: 'Engines', mass: 1500, len: 1.6, w: 1.25, cda: 0.3, crash: 9,
     engine: { vac: 215000, asl: 167970, ispVac: 320, ispAsl: 250, gimbal: 3 }, desc: 'Steerable lifter engine.' },
@@ -44,6 +44,34 @@ FS.DATA.parts = [
     desc: 'Keeps the rocket pointed into the airflow.' },
 ];
 
+// Fuel tanks in the tray. Every tank can be stretched in 0.25 m steps and set to any of the
+// six widths; these presets cover every stock KSP tank (see PARTS.md), each built from a base
+// tank type above. All tanks hold 640 kg of fuel per metre of length per square metre of
+// width², and weigh an eighth of their fuel when empty, so presets and stretched tanks agree.
+FS.DATA.tankPresets = [
+  { name: 'Pip Tank', base: 't100', len: 0.5, size: 0.625, ksp: 'Oscar-B' },
+  { name: 'Pip Long Tank', base: 't100', len: 1, size: 0.625, ksp: 'small 0.625 m tanks' },
+  { name: 'Ferro Short Tank', base: 't100', len: 0.5, size: 1.25, ksp: 'FL-T100' },
+  { name: 'Ferro Small Tank', base: 't400', len: 1, size: 1.25, ksp: 'FL-T200' },
+  { name: 'Ferro Medium Tank', base: 't400', len: 2, size: 1.25, ksp: 'FL-T400' },
+  { name: 'Ferro Long Tank', base: 't800', len: 4, size: 1.25, ksp: 'FL-T800' },
+  { name: 'Ferro XL Tank 1 m', base: 't800', len: 1, size: 1.875, ksp: 'FL-TX220' },
+  { name: 'Ferro XL Tank 2 m', base: 't800', len: 2, size: 1.875, ksp: 'FL-TX440' },
+  { name: 'Ferro XL Tank 4 m', base: 't800', len: 4, size: 1.875, ksp: 'FL-TX900' },
+  { name: 'Ferro XL Tank 8 m', base: 't800', len: 8, size: 1.875, ksp: 'FL-TX1800' },
+  { name: 'Heavy Tank 1 m', base: 'x160', len: 1, size: 2.5, ksp: 'X200-8' },
+  { name: 'Heavy Tank 2 m', base: 'x160', len: 2, size: 2.5, ksp: 'X200-16' },
+  { name: 'Ferro Heavy Tank', base: 'x160', len: 4, size: 2.5, ksp: 'X200-32' },
+  { name: 'Heavy Tank 8 m', base: 'x160', len: 8, size: 2.5, ksp: 'Jumbo-64' },
+  { name: 'Titan Tank 2 m', base: 'x160', len: 2, size: 3.75, ksp: 'S3-3600' },
+  { name: 'Titan Tank 4 m', base: 'x160', len: 4, size: 3.75, ksp: 'S3-7200' },
+  { name: 'Titan Tank 8 m', base: 'x160', len: 8, size: 3.75, ksp: 'S3-14400' },
+  { name: 'Colossus Tank 2 m', base: 'x160', len: 2, size: 5, ksp: 'S4-64' },
+  { name: 'Colossus Tank 4 m', base: 'x160', len: 4, size: 5, ksp: 'S4-128' },
+  { name: 'Colossus Tank 8 m', base: 'x160', len: 8, size: 5, ksp: 'S4-256' },
+  { name: 'Colossus Tank 16 m', base: 'x160', len: 16, size: 5, ksp: 'S4-512' },
+];
+
 // Sample craft shown in the hangar's Load menu: 'parts' is a stack of part ids (top to
 // bottom); 'tree' is a full part tree for craft with side-mounted parts.
 FS.DATA.sampleCraft = [
@@ -55,15 +83,15 @@ FS.DATA.sampleCraft = [
     {"id": "canopy", "parent": -1, "node": "bottom", "x": 0, "y": 0},
     {"id": "lark", "parent": 0, "node": "bottom", "x": 0, "y": -0.875},
     {"id": "decoupler", "parent": 1, "node": "bottom", "x": 0, "y": -1.65},
-    {"id": "t400", "parent": 2, "node": "bottom", "x": 0, "y": -2.725},
-    {"id": "wren", "parent": 3, "node": "bottom", "x": 0, "y": -4.225},
-    {"id": "decoupler", "parent": 4, "node": "bottom", "x": 0, "y": -4.9},
-    {"id": "t800", "parent": 5, "node": "bottom", "x": 0, "y": -6.9},
-    {"id": "t800", "parent": 6, "node": "bottom", "x": 0, "y": -10.65},
-    {"id": "kestrel", "parent": 7, "node": "bottom", "x": 0, "y": -13.325},
-    {"id": "radec", "parent": 7, "node": "srf", "x": 0.775, "y": -10.65},
-    {"id": "rumbler", "parent": 9, "node": "srf", "x": 1.55, "y": -10.65},
-    {"id": "radec", "parent": 7, "node": "srf", "x": -0.775, "y": -10.65},
-    {"id": "rumbler", "parent": 11, "node": "srf", "x": -1.55, "y": -10.65}
+    {"id": "t400", "parent": 2, "node": "bottom", "x": 0, "y": -2.775},
+    {"id": "wren", "parent": 3, "node": "bottom", "x": 0, "y": -4.325},
+    {"id": "decoupler", "parent": 4, "node": "bottom", "x": 0, "y": -5},
+    {"id": "t800", "parent": 5, "node": "bottom", "x": 0, "y": -7.125},
+    {"id": "t800", "parent": 6, "node": "bottom", "x": 0, "y": -11.125},
+    {"id": "kestrel", "parent": 7, "node": "bottom", "x": 0, "y": -13.925},
+    {"id": "radec", "parent": 7, "node": "srf", "x": 0.775, "y": -11.125},
+    {"id": "rumbler", "parent": 9, "node": "srf", "x": 1.55, "y": -11.125},
+    {"id": "radec", "parent": 7, "node": "srf", "x": -0.775, "y": -11.125},
+    {"id": "rumbler", "parent": 11, "node": "srf", "x": -1.55, "y": -11.125}
   ] },
 ];

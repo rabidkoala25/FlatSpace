@@ -10,7 +10,7 @@
     if (!ves) return Infinity;
     let F = 0, mdot = 0;
     for (const q of ves.activeEngines()) {
-      const th = FS.engineThrust(q.def.engine, FS.pressure(ves.body, ves.altitude), 1);
+      const th = FS.partThrust(q, FS.pressure(ves.body, ves.altitude), 1);
       F += th.F; mdot += th.mdot;
     }
     if (F <= 0) return Infinity;

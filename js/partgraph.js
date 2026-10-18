@@ -26,16 +26,61 @@
   };
 
   // ---------- Making parts ----------
+  // Every part instance carries its own size and settings, so tanks can be stretched and
+  // engines throttled down part by part (step A4):
+  //   len, size     length and width (m); only stretchable tanks differ from their type
+  //   dry, cap, cda dry mass (kg), fuel capacity (kg) and front drag area, scaled with volume
+  //   fill          how full the tanks start (0..1)
+  //   skin          a tank's look: white, gold, foam, roll, steel
+  //   limit         an engine's thrust limit (0..1); gimbal its gimbal range (0..1)
+  //   crossfeed     a decoupler lets fuel flow across it
+  //   chuteAlt      height above ground at which a parachute opens fully (m)
+  //   stage         custom staging: the stage it fires in (-1 = not staged); absent = automatic
+  FS.TANK_WIDTHS = [0.625, 1.25, 1.875, 2.5, 3.75, 5];
+  FS.TANK_SKINS = ['white', 'gold', 'foam', 'roll', 'steel'];
+  FS.LEN_STEP = 0.25;
+  FS.MAX_TANK_LEN = 24;
   let uid = 1;
-  FS.newPart = (id) => {
+  FS.newPart = (id, opts = {}) => {
     const d = FS.PART[id];
     if (!d) return null;
-    return {
+    const p = {
       uid: uid++, def: d, parent: null, node: 'bottom',
       pos: { x: 0, y: 0 }, rot: 0, flip: false,
-      fuel: d.fuel || 0, solid: d.solid || 0, lit: false, chute: d.chute ? 'stowed' : null,
+      fuel: 0, solid: d.solid || 0, lit: false, chute: d.chute ? 'stowed' : null,
+      len: d.len, size: d.w === 'auto' ? null : d.w, fill: 1,
     };
+    if (d.fuel) p.skin = d.foam ? 'foam' : 'white';
+    if (d.engine) { p.limit = 1; p.gimbal = 1; }
+    if (d.chute) p.chuteAlt = 1000;
+    for (const k of ['len', 'size', 'fill', 'skin', 'limit', 'gimbal', 'crossfeed', 'chuteAlt', 'stage']) if (opts[k] !== undefined) p[k] = opts[k];
+    FS.applySize(p, true);
+    return p;
   };
+
+  // Work out a part's mass, fuel capacity and drag from its size. A stretched tank keeps its
+  // type's density: fuel and dry mass scale with length × width², front drag with width².
+  // refill: set the fuel to capacity × fill (the editor does this after any change).
+  FS.applySize = (p, refill = true) => {
+    const d = p.def;
+    if (d.stretch) {
+      p.len = FS.clamp(Math.round(p.len / FS.LEN_STEP) * FS.LEN_STEP, FS.LEN_STEP, FS.MAX_TANK_LEN);
+      if (!FS.TANK_WIDTHS.includes(p.size)) p.size = d.w;
+    } else {
+      p.len = d.len;
+      if (d.w !== 'auto') p.size = d.w;
+    }
+    const wr = d.stretch ? p.size / d.w : 1;
+    const k = d.stretch ? (p.len / d.len) * wr * wr : 1;
+    p.dry = d.mass * k;
+    p.cap = (d.fuel || 0) * k;
+    p.cda = d.cda * wr * wr;
+    if (refill) p.fuel = p.cap * FS.clamp(p.fill ?? 1, 0, 1);
+    return p;
+  };
+
+  // Thrust and mass flow of an engine part, with its thrust limit.
+  FS.partThrust = (q, pressure, throttle = 1) => FS.engineThrust(q.def.engine, pressure, throttle * (q.limit ?? 1));
 
   // A straight stack of part ids (top to bottom): each part hangs below the one above.
   FS.stackToParts = (ids) => {
@@ -68,13 +113,23 @@
       if (p.rot) s.rot = r3(p.rot);
       if (p.flip) s.flip = true;
       if (p.sym) s.sym = p.sym;
+      const d = p.def;
+      if (d.stretch && p.len !== d.len) s.len = p.len;
+      if (d.stretch && p.size !== d.w) s.size = p.size;
+      if (p.skin && p.skin !== (d.foam ? 'foam' : 'white')) s.skin = p.skin;
+      if (p.fill !== undefined && p.fill < 1) s.fill = r3(p.fill);
+      if (p.limit !== undefined && p.limit < 1) s.limit = r3(p.limit);
+      if (p.gimbal !== undefined && p.gimbal < 1) s.gimbal = r3(p.gimbal);
+      if (p.crossfeed) s.crossfeed = true;
+      if (p.chuteAlt !== undefined && p.chuteAlt !== 1000) s.chuteAlt = p.chuteAlt;
+      if (typeof p.stage === 'number') s.stage = p.stage;
       return s;
     });
   };
 
   FS.partsFromSerial = (list) => {
     const parts = list.map((s) => {
-      const p = FS.newPart(s.id);
+      const p = FS.newPart(s.id, s);
       if (p) Object.assign(p, { pos: { x: s.x || 0, y: s.y || 0 }, rot: s.rot || 0, flip: !!s.flip, node: s.node || 'bottom' });
       if (p && s.sym) p.sym = s.sym;
       return p;
@@ -122,12 +177,12 @@
   FS.relayout = (parts) => {
     const kids = FS.childrenOf(parts);
     const set = new Set(parts);
-    for (const p of parts) if (p.def.w !== 'auto') p.w = p.def.w;
+    for (const p of parts) if (p.def.w !== 'auto') p.w = p.size || p.def.w;
     for (const p of parts) {
       if (p.def.w !== 'auto') continue;
       const widths = [];
-      if (p.parent && set.has(p.parent) && p.node !== 'srf' && p.parent.def.w !== 'auto') widths.push(p.parent.def.w);
-      for (const c of kids.get(p)) if (c.node !== 'srf' && c.def.w !== 'auto') widths.push(c.def.topW || c.def.w);
+      if (p.parent && set.has(p.parent) && p.node !== 'srf' && p.parent.def.w !== 'auto') widths.push(p.parent.w);
+      for (const c of kids.get(p)) if (c.node !== 'srf' && c.def.w !== 'auto') widths.push(c.def.topW || c.w);
       p.w = Math.max(0.625, ...widths);
     }
     for (const p of parts) p.tw = p.def.topW || p.w;
@@ -139,7 +194,7 @@
           c.pos = V.add(p.pos, rotV(c.srfOff, p.rot));
           c.rot = p.rot + (c.rel || 0);
         } else {
-          const d = (c.node === 'top' ? 1 : -1) * (p.def.len / 2 + c.def.len / 2);
+          const d = (c.node === 'top' ? 1 : -1) * (p.len / 2 + c.len / 2);
           c.rot = p.rot;
           c.pos = V.add(p.pos, V.scale(FS.partAxis(p.rot), d));
         }
@@ -152,9 +207,9 @@
 
   // The outline of a part in its own frame (centre at 0,0, +y up), before rotation.
   FS.partHull = (p) => {
-    const d = p.def, hl = d.len / 2, hw = p.w / 2, ht = p.tw / 2;
+    const d = p.def, hl = p.len / 2, hw = p.w / 2, ht = p.tw / 2;
     // a side fin: the root edge (left, x = -hw) is fixed to the parent, the tip is swept back
-    if (d.fin && d.radial) return [{ x: -hw, y: hl }, { x: hw, y: hl - d.len * 0.55 }, { x: hw, y: -hl }, { x: -hw, y: -hl }];
+    if (d.fin && d.radial) return [{ x: -hw, y: hl }, { x: hw, y: hl - p.len * 0.55 }, { x: hw, y: -hl }, { x: -hw, y: -hl }];
     const pts = [{ x: -ht, y: hl }, { x: ht, y: hl }, { x: hw, y: -hl }, { x: -hw, y: -hl }];
     if (d.fin) pts.push({ x: hw + 0.75, y: -hl - 0.15 }, { x: -hw - 0.75, y: -hl - 0.15 });
     return pts;
@@ -175,7 +230,7 @@
       const m = FS.partMass(p);
       p.c = V.sub(p.pos, com);
       p.axis = FS.partAxis(p.rot);
-      I += m * (V.dot(p.c, p.c) + (p.def.len * p.def.len + p.w * p.w) / 12);
+      I += m * (V.dot(p.c, p.c) + (p.len * p.len + p.w * p.w) / 12);
       const cs = Math.cos(p.rot), sn = Math.sin(p.rot);
       p.hullC = FS.partHull(p).map((h) => {
         const x = p.flip ? -h.x : h.x;
@@ -206,9 +261,9 @@
     const cosA = Math.abs(ca);
     const across = V.sub(u, V.scale(a, ca)); // the part of the flow that crosses the part
     const sinA = V.len(across);
-    let F = V.scale(u, -(p.def.cda * cosA + extra));
+    let F = V.scale(u, -(p.cda * cosA + extra));
     if (sinA > 1e-9) {
-      const body = 0.3 * p.def.len * p.w;
+      const body = 0.3 * p.len * p.w;
       const fin = p.def.fin || 0;
       const N = body * sinA * sinA + fin * (2 * sinA * cosA + sinA * sinA);
       F = V.add(F, V.scale(across, -N / sinA));
@@ -250,14 +305,14 @@
   };
 
   // ---------- Fuel flow ----------
-  // Groups of parts that share fuel: the tree cut wherever a decoupler meets its parent.
-  // (A decoupler belongs to the side that falls away with it.)
+  // Groups of parts that share fuel: the tree cut wherever a decoupler meets its parent,
+  // unless the decoupler has crossfeed on. (A decoupler belongs to the side that falls away with it.)
   FS.flowGroups = (parts) => {
     const idx = new Map(parts.map((p, i) => [p, i]));
     const up = parts.map((_, i) => i);
     const find = (i) => (up[i] === i ? i : (up[i] = find(up[i])));
     for (const p of parts) {
-      if (p.parent && idx.has(p.parent) && !p.def.decoupler) up[find(idx.get(p))] = find(idx.get(p.parent));
+      if (p.parent && idx.has(p.parent) && (!p.def.decoupler || p.crossfeed)) up[find(idx.get(p))] = find(idx.get(p.parent));
     }
     const groups = new Map();
     parts.forEach((p, i) => {
@@ -273,7 +328,39 @@
   // them from the root. The deepest groups light first; side boosters (on radial
   // decouplers) light together with the group they hang from, and drop first.
   // Each event: { decouple, ignite, chutes, decouplers, engines, chuteParts, parts }.
+  // Parts that do something when staged.
+  FS.stageable = (p) => !!(p.def.engine || p.def.decoupler || p.def.chute);
+  // Whether the player has edited the staging (any part carries a stage number).
+  FS.customStaging = (parts) => parts.some((p) => typeof p.stage === 'number');
+
+  // Stage events from custom staging: stage k fires every part with stage === k.
+  // keepEmpty keeps stages with no parts (the editor shows them; flight skips them).
+  FS.customStages = (parts, keepEmpty = false) => {
+    const n = Math.max(-1, ...parts.map((p) => (typeof p.stage === 'number' ? p.stage : -1))) + 1;
+    const events = [];
+    for (let k = 0; k < n; k++) {
+      const inStage = parts.filter((p) => p.stage === k && FS.stageable(p));
+      const decouplers = inStage.filter((p) => p.def.decoupler);
+      const engines = inStage.filter((p) => p.def.engine);
+      const chuteParts = inStage.filter((p) => p.def.chute);
+      if (!inStage.length && !keepEmpty) continue;
+      events.push({ decouple: decouplers.length > 0, ignite: engines.length > 0, chutes: chuteParts.length > 0, decouplers, engines, chuteParts, parts: inStage, index: k });
+    }
+    return events;
+  };
+
+  // Turn the automatic stage list into custom staging (the editor does this when the player
+  // first edits a stage), so the craft keeps exactly the stages it had.
+  FS.freezeStaging = (parts) => {
+    const auto = FS.stagesOf(parts);
+    for (const p of parts) if (FS.stageable(p)) p.stage = -1;
+    auto.forEach((ev, k) => ev.parts.forEach((p) => (p.stage = k)));
+    return parts;
+  };
+  FS.resetStaging = (parts) => { for (const p of parts) delete p.stage; return parts; };
+
   FS.stagesOf = (parts) => {
+    if (FS.customStaging(parts)) return FS.customStages(parts);
     const groups = FS.flowGroups(parts);
     const gOf = new Map();
     groups.forEach((g, i) => g.forEach((p) => gOf.set(p, i)));
@@ -315,7 +402,7 @@
     const st = new Map(parts.map((q) => [q, { fuel: q.fuel, solid: q.solid }]));
     let attached = parts.slice();
     const lit = new Set(parts.filter((q) => q.lit && q.def.engine));
-    const massNow = () => attached.reduce((s, q) => s + q.def.mass + st.get(q).fuel + st.get(q).solid, 0);
+    const massNow = () => attached.reduce((s, q) => s + q.dry + st.get(q).fuel + st.get(q).solid, 0);
     const dropOf = (ev) => {
       if (!ev || !ev.decouple) return null;
       const set = new Set();
@@ -336,12 +423,12 @@
           const fuel = tanks.reduce((s, q) => s + st.get(q).fuel, 0);
           if (liq.length && fuel > 1e-6) {
             let md = 0, f = 0;
-            for (const q of liq) { const t = FS.engineThrust(q.def.engine, pressure); md += t.mdot; f += t.F; }
+            for (const q of liq) { const t = FS.partThrust(q, pressure); md += t.mdot; f += t.F; }
             active.push({ md, f, fuel, tanks, members: gr });
           }
           for (const q of gr) {
             if (lit.has(q) && q.def.engine.solid && st.get(q).solid > 1e-6) {
-              const t = FS.engineThrust(q.def.engine, pressure);
+              const t = FS.partThrust(q, pressure);
               active.push({ md: t.mdot, f: t.F, fuel: st.get(q).solid, solidPart: q, members: [q] });
             }
           }

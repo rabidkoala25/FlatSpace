@@ -36,6 +36,7 @@ html = html.replace(/<script src="[^"]+"><\/script>/g, '').replace(/<link[^>]*>/
 
 const errors = [];
 const dom = new JSDOM(html, {
+  url: 'http://localhost/', // so the page has browser storage, like the real site
   runScripts: 'outside-only',
   pretendToBeVisual: true,
   beforeParse(w) {
@@ -210,6 +211,53 @@ const key = (k) => {
   const od = E.overlayData(E.parts);
   check(od.cot && od.cop && Math.abs(od.miss) < 1e-4 && Math.abs(od.cot.dir.x) < 1e-9, `overlays: thrust on the centre line, centre of pressure ${od.cop.ahead.toFixed(2)} m from the centre of mass`);
   key('x');
+
+  // ---- Step A4: stretch a tank to 9 m, give it a look, custom staging, save, export, import ----
+  loadSample('Orbiter I');
+  const tank = E.parts.filter((p) => p.def.id === 't800')[1];
+  const tc = E.toScreen(tank.pos);
+  const ctxEv = new w.Event('contextmenu', { bubbles: true, cancelable: true });
+  Object.assign(ctxEv, { clientX: tc.x, clientY: tc.y });
+  cv.dispatchEvent(ctxEv);
+  check(E.sel === tank && !doc.getElementById('partPanel').hidden && /Length/.test(doc.getElementById('partPanel').textContent), 'right-clicking a tank opens its settings');
+  // drag its stretch handle (at the free bottom end) down by 5 m
+  const hp = E.toScreen({ x: tank.pos.x, y: tank.pos.y - tank.len / 2 - 10 / E.cam.s });
+  fire(cv, 'pointerdown', { pointerId: 40, clientX: hp.x, clientY: hp.y });
+  fire(cv, 'pointermove', { pointerId: 40, clientX: hp.x, clientY: hp.y + E.cam.s * 5 });
+  fire(cv, 'pointerup', { pointerId: 40, clientX: hp.x, clientY: hp.y + E.cam.s * 5 });
+  check(tank.len === 9 && tank.cap === 9000, `dragging the stretch handle makes a 9 m tank with 9 t of fuel (${tank.len} m)`);
+  [...doc.querySelectorAll('#partPanel .pp-choice')].find((b) => /Gold foil/.test(b.textContent)).click();
+  check(tank.skin === 'gold', 'the Look buttons change the tank to gold foil');
+  // custom staging: give the Wren its own stage, with the keyboard on its chip
+  const wrenChip = [...doc.querySelectorAll('#stageList .stg-chip')].find((c) => /Wren/.test(c.textContent));
+  wrenChip.dispatchEvent(new w.KeyboardEvent('keydown', { key: ']', bubbles: true }));
+  const order = () => FS.stagesOf(E.parts).map((e) => e.parts.map((p) => p.def.id).sort().join('+')).join(' | ');
+  check(order() === 'kestrel | decoupler | decoupler+wren | canopy' && doc.getElementById('stageMode').textContent === 'Custom', `] on a stage chip moves it a stage later (${order()})`);
+  const configured = JSON.stringify(FS.serialParts(E.parts));
+  // save, load something else, load it back
+  doc.getElementById('craftName').value = 'Long Gold';
+  doc.getElementById('craftName').dispatchEvent(new w.Event('input'));
+  doc.getElementById('btnSave').click();
+  loadSample('Hopper');
+  const sel = doc.getElementById('craftLoad');
+  sel.value = 'saved::Long Gold';
+  sel.dispatchEvent(new w.Event('change'));
+  check(JSON.stringify(FS.serialParts(E.parts)) === configured, 'the saved craft reloads with its 9 m gold tank and custom staging');
+  // export as text, load another craft, paste the text back in
+  doc.getElementById('btnFiles').click();
+  check(!doc.getElementById('craftFiles').hidden, 'Files opens the craft file dialog');
+  doc.getElementById('cfCopy').click();
+  const shared = doc.getElementById('cfText').value;
+  check(/^FLATSPACE-CRAFT-1:/.test(shared), 'Copy as text gives the share text');
+  loadSample('Hopper');
+  doc.getElementById('cfText').value = shared;
+  doc.getElementById('cfPaste').click();
+  check(E.name === 'Long Gold' && JSON.stringify(FS.serialParts(E.parts)) === configured, 'pasting the text back loads the same craft');
+  const fv = new FS.Vessel('Long Gold', FS.serialParts(E.parts), FS.root, {});
+  check(fv.parts.some((p) => p.len === 9 && p.skin === 'gold') && fv.stages.length === 4 && fv.stages[2].engines[0].def.id === 'wren', 'and it goes to the pad as configured');
+  doc.getElementById('cfClose').click();
+  FS.PartPanel.close();
+
   loadSample('Hopper');
 
   FS.Editor.launch();

@@ -17,7 +17,7 @@
   B.canSurface = (d) => !d.chute;
   B.takesSurface = (d) => !d.chute;
 
-  B.nodePos = (p, node) => V.add(p.pos, V.scale(FS.partAxis(p.rot), (node === 'top' ? 1 : -1) * p.def.len / 2));
+  B.nodePos = (p, node) => V.add(p.pos, V.scale(FS.partAxis(p.rot), (node === 'top' ? 1 : -1) * p.len / 2));
 
   // A stack node is taken by the parent (for the node facing it) or by a stack child.
   B.nodeFree = (parts, p, node, kids) => {
@@ -41,14 +41,14 @@
 
   // Half width of part p at height ly along its own axis (tapers from w at the bottom to tw at the top).
   const halfAt = (p, ly) => {
-    const t = FS.clamp((ly + p.def.len / 2) / p.def.len, 0, 1);
+    const t = FS.clamp((ly + p.len / 2) / p.len, 0, 1);
     return FS.lerp(p.w, p.tw, t) / 2;
   };
 
   // The outline of a part as four corners in the craft frame, shrunk by eps so parts
   // that merely touch don't count as overlapping.
   B.quad = (p, eps = 0) => {
-    const hl = Math.max(0.01, p.def.len / 2 - eps), hw = Math.max(0.01, p.w / 2 - eps), ht = Math.max(0.01, p.tw / 2 - eps);
+    const hl = Math.max(0.01, p.len / 2 - eps), hw = Math.max(0.01, p.w / 2 - eps), ht = Math.max(0.01, p.tw / 2 - eps);
     const ax = FS.partAxis(p.rot), rx = right(p.rot);
     const at = (x, y) => ({ x: p.pos.x + rx.x * x + ax.x * y, y: p.pos.y + rx.y * x + ax.y * y });
     return [at(-ht, hl), at(ht, hl), at(hw, -hl), at(-hw, -hl)];
@@ -76,12 +76,12 @@
     for (const p of parts) {
       const rel = V.sub(pt, p.pos);
       const lx = V.dot(rel, right(p.rot)), ly = V.dot(rel, FS.partAxis(p.rot));
-      const hl = p.def.len / 2;
+      const hl = p.len / 2;
       if (Math.abs(ly) > hl + tol) continue;
       let hw = halfAt(p, ly);
       if (p.def.fin && !p.def.radial) hw += 0.75;
       if (Math.abs(lx) > hw + tol) continue;
-      const area = p.def.len * Math.max(p.w, p.tw);
+      const area = p.len * Math.max(p.w, p.tw);
       if (area < bestA) { best = p; bestA = area; }
     }
     return best;
@@ -103,9 +103,9 @@
   // The spot on side sd (+1 right, -1 left) of part p, at height ly along it, for the held
   // root turned to rot: its inner edge touches p's surface. Returns { pos, rot, ly }.
   B.surfaceSpot = (p, root, sd, ly, rot) => {
-    const hlP = p.def.len / 2;
+    const hlP = p.len / 2;
     const rr = rot - p.rot;
-    const hl = root.def.len / 2, hw = root.w / 2, ht = root.tw / 2;
+    const hl = root.len / 2, hw = root.w / 2, ht = root.tw / 2;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const c of [{ x: -ht, y: hl }, { x: ht, y: hl }, { x: hw, y: -hl }, { x: -hw, y: -hl }]) {
       const q = FS.rotV(c, rr);
@@ -133,7 +133,7 @@
       return list.find((c) => !B.blocker(placed, held, root, c, mirror)) || list[0];
     };
     const hk = FS.childrenOf(held);
-    const d = root.def, hl = d.len / 2;
+    const d = root.def, hl = root.len / 2;
     // stack nodes: the held root's top node meets a free bottom node, or the other way round
     const stack = [];
     const axH = FS.partAxis(root.spin || 0);
@@ -144,7 +144,7 @@
       const dist = V.len(V.sub(myPos, n.pos));
       if (dist > snap) continue;
       const ax = FS.partAxis(n.part.rot);
-      const pos = V.add(n.part.pos, V.scale(ax, (n.node === 'top' ? 1 : -1) * (n.part.def.len / 2 + hl)));
+      const pos = V.add(n.part.pos, V.scale(ax, (n.node === 'top' ? 1 : -1) * (n.part.len / 2 + hl)));
       stack.push({ kind: n.node, parent: n.part, pos, rot: n.part.rot, dist, node: n });
     }
     const s = pick(stack);
@@ -156,7 +156,7 @@
       const rel = V.sub(freePos, p.pos);
       const lx = V.dot(rel, right(p.rot));
       let ly = V.dot(rel, FS.partAxis(p.rot));
-      const hlP = p.def.len / 2;
+      const hlP = p.len / 2;
       if (Math.abs(ly) > hlP + snap * 0.5) continue;
       if (Math.abs(ly) < snap * 0.35) ly = 0; // snap to the middle of the side
       else ly = Math.round(ly * 20) / 20;

@@ -479,7 +479,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 | A1 | Part tree and vessel physics | ✅ done (v0.3.0) |
 | A2 | Drag-and-drop editor | ✅ done (v0.4.0) |
 | A3 | Editor tools | ✅ done (v0.5.0) |
-| A4 | Staging, tweakables, stretchable tanks, craft files | ☐ |
+| A4 | Staging, tweakables, stretchable tanks, craft files | ✅ done (v0.6.0) |
 | **B** | **Pixel art overhaul** | |
 | B1 | WebGL renderer, palette and sky | ☐ |
 | B2 | Part sprites and lighting | ☐ |
@@ -732,6 +732,33 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 **Stretch:** craft thumbnails in the load menu.
 
 **Done when:** a craft with custom staging, a 9 m stretched tank and custom skins saves, reloads, exports, imports and flies as configured.
+
+**Result (v0.6.0):** done; the stretch goal (thumbnails in the load menu) was not done.
+- **Every part carries its own size and settings:** length, width, dry mass, fuel capacity and drag area, plus fuel level, look, thrust limit, gimbal range, crossfeed, parachute height and stage. Flight, the Δv maths and the overlays all read them.
+- **Stretchable tanks:**
+  - drag the handle at a selected tank's free end, or use its settings, to set the length in 0.25 m steps (up to 24 m) and any of the six widths;
+  - the attached end stays put, side parts stay on the surface, and mirror twins change too;
+  - a change that would make parts overlap is refused.
+- **Tank sizes now share one density** (640 kg of fuel per m of length per m² of width², empty mass an eighth of that), so presets and stretched tanks agree. Every existing tank kept its fuel and mass, so Δv is unchanged, but lengths moved to the 0.25 m grid:
+  - Short 0.5 m (was 0.75);
+  - Medium 2 m (was 1.9);
+  - Long 4 m (was 3.75);
+  - Heavy 4 m (was 7.5, which held only half the fuel its size suggested).
+- **Presets:** the Fuel tab lists 21 tank presets in six widths, covering every stock KSP tank length (the 5 m family brought forward from D5). Each is a stretchable tank.
+- **Looks:** white, gold foil, orange foam, roll pattern and bare steel.
+- **Part settings panel:** right-click a part, tap a selected part again, or press ⚙ on the tool rail. Sliders don't add an undo step until let go.
+  - tanks: length, width, look, fuel at launch;
+  - engines: thrust limit, gimbal range;
+  - decouplers: crossfeed;
+  - parachutes: the height at which they open fully;
+  - every stageable part: "fires in staging".
+- **Staging editor:**
+  - the stage list stays automatic until the first edit, then turns custom, keeping the stages it had;
+  - parts show as chips; drag a chip between stages (or press [ and ] on it), move stages up and down, add and remove stages, drop parts in "Not staged", and reset to automatic;
+  - in custom staging, newly added parts go into a new last stage, with a message;
+  - stage numbers are saved on the parts; subassemblies leave them out.
+- **Craft files (Files button):** download a `.craft.json` file, open one, copy the craft as one line of text, or paste text to load it. Older formats are upgraded on import; unknown parts are left out with everything attached to them, and the dialog says how many.
+- **Tests:** 9 files. A new craft test covers tank scaling and presets, saving every setting, thrust limit, fuel level, crossfeed, custom staging, parachute height and craft files. It also flies the done-when craft (9 m roll-pattern tank, gold upper tank, decouple and ignite as separate stages) from share text to space. The page test does the done-when steps through the real interface: right-click settings, dragging the stretch handle to 9 m, gold foil, moving a stage chip, saving and reloading, then copying as text and pasting it back.
 
 ---
 
@@ -1643,6 +1670,7 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
 - **Plan revision 8**: new step E10, "Terrain detail" (realistic landforms, strata, collidable ground scatter and deep parallax layers, the idea behind the Parallax mod); new section 4.4, which says every new part and feature gets a tech-tree node and contracts of its own, with a "Tech and contracts" step closing each phase (E11, F11, G9, H10) and automated checks; tech nodes and contracts are data that packs can extend; 63 steps in total.
 - **Plan revision 7**: new Phase H, "Beyond KSP" (section 2.8): living astronauts with ragdolls (H1), walkable interiors (H2), hands-on objects and tools (H3), damage and repairs (H4), life on board and spin gravity (H5), self-landing rockets (H6), launch and recovery infrastructure (H7), tethers, solar sails and mass drivers (H8), and a flight recorder with replays (H9); 58 steps in total. Original parts added to `PARTS.md`.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
+- **v0.6.0 (A4)**: stretchable tanks in six widths with handles and 21 presets; one tank density (tank lengths moved to the 0.25 m grid); five tank looks; part settings panel (fuel level, thrust limit, gimbal, crossfeed, parachute height, fires in staging); staging editor with chips, custom staging saved on parts; craft files (download, open, copy and paste as text); `js/staging-editor.js`, `js/part-panel.js`.
 - **v0.5.0 (A3)**: tool rail; mirror symmetry with linked twins; rotate and flip; offset with snap; undo/redo (100 steps); Alt-click copy; subassemblies tab; centre of mass, thrust and pressure overlays with warnings; Swept Fin part; sideways force on parts and wing-like fins (`FS.partAero`), brought forward from C4; Hopper sample uses the short tank.
 - **v0.4.0 fix**: script and style links carry `?v=<version>`, after a browser served a cached old `editor.js` with the new page and the hangar came up blank.
 - **v0.4.0 (A2)**: drag-and-drop hangar: tray with tabs and hover cards, stack and surface snapping, overlap checks, carrying subassemblies, drop on tray to remove, pan and zoom, touch long-press and pinch, live stats while dragging, re-root; `js/build.js`.

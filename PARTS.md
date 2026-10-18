@@ -54,12 +54,12 @@ Every stock KSP part (base game 1.12, Making History and Breaking Ground) mapped
 
 | ✓ | KSP parts | Flatspace equivalent | Step |
 |---|---|---|---|
-| ☐ | FL-T100, FL-T200, FL-T400, FL-T800 | 1.25 m stretchable tank, 4 preset lengths | P / A4 |
-| ☐ | Rockomax X200-8, X200-16, X200-32, Jumbo-64 | 2.5 m stretchable tank, 4 preset lengths | P (one) / A4 |
-| ☐ | Kerbodyne S3-3600, S3-7200, S3-14400 | 3.75 m stretchable tank, 3 preset lengths | A4 / D5 (art) |
-| ☐ | Oscar-B Fuel Tank | 0.625 m tank | A4 / D5 (art) |
-| ☐ | FL-TX220, FL-TX440, FL-TX900, FL-TX1800 (MH) | 1.875 m stretchable tank, 4 preset lengths | A4 / D5 (art) |
-| ☐ | Kerbodyne S4-64, S4-128, S4-256, S4-512 (MH) | 5 m stretchable tank, 4 preset lengths | D5 |
+| ✅ | FL-T100, FL-T200, FL-T400, FL-T800 | 1.25 m stretchable tank, 4 preset lengths (Ferro Short, Small, Medium, Long) | P / A4 |
+| ✅ | Rockomax X200-8, X200-16, X200-32, Jumbo-64 | 2.5 m stretchable tank, 4 preset lengths (Heavy Tank 1, 2, 4, 8 m) | P (one) / A4 |
+| ✅ | Kerbodyne S3-3600, S3-7200, S3-14400 | 3.75 m stretchable tank, 3 preset lengths (Titan Tank 2, 4, 8 m); its own art in D5 | A4 / D5 (art) |
+| ✅ | Oscar-B Fuel Tank | 0.625 m tank (Pip Tank, plus a Pip Long Tank); its own art in D5 | A4 / D5 (art) |
+| ✅ | FL-TX220, FL-TX440, FL-TX900, FL-TX1800 (MH) | 1.875 m stretchable tank, 4 preset lengths (Ferro XL Tank 1, 2, 4, 8 m); its own art in D5 | A4 / D5 (art) |
+| ✅ | Kerbodyne S4-64, S4-128, S4-256, S4-512 (MH) | 5 m stretchable tank, 4 preset lengths (Colossus Tank 2, 4, 8, 16 m, brought forward from D5); its own art in D5 | A4 / D5 (art) |
 | ☐ | FL-C1000 Fuel Tank (MH) | Conical tank | D5 |
 | ☐ | R-4 'Dumpling', R-11 'Baguette', R-12 'Doughnut' External Tanks | Small radial and toroidal tanks | D5 |
 | ☐ | Mk0 Liquid Fuel Fuselage, Mk1 Liquid Fuel Fuselage | Small plane fuselage tanks | F7 |

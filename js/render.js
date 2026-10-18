@@ -390,7 +390,7 @@
     if (chutes.length) {
       const full = chutes.some((p) => p.chute === 'full');
       const cp = chutes[0];
-      const tip = V.add(cp.c, V.scale(cp.axis, cp.def.len / 2));
+      const tip = V.add(cp.c, V.scale(cp.axis, cp.len / 2));
       ctx.save();
       ctx.translate(tip.x, -tip.y);
       const top = 0;
@@ -424,7 +424,7 @@
       ctx.translate(p.c.x, -p.c.y);
       ctx.rotate(-p.rot);
       if (p.flip) ctx.scale(-1, 1);
-      FS.drawPart(ctx, p, -p.def.len / 2, px, { glow: glowMap.get(p) || 0 });
+      FS.drawPart(ctx, p, -p.len / 2, px, { glow: glowMap.get(p) || 0 });
       ctx.restore();
     }
     ctx.restore();
@@ -499,9 +499,9 @@
       // each engine pushes along its own axis; exhaust leaves from the bottom of its nozzle
       const n = ves.toWorld(q.axis);
       const side = V.perp(n);
-      const pos = V.add(ves.r, ves.toWorld(V.sub(q.c, V.scale(q.axis, d.len / 2))));
+      const pos = V.add(ves.r, ves.toWorld(V.sub(q.c, V.scale(q.axis, q.len / 2))));
       const power = nz.power;
-      const count = Math.ceil(dt * 120 * power * (d.w > 2 ? 2 : 1));
+      const count = Math.ceil(dt * 120 * power * (q.w > 2 ? 2 : 1));
       const spread = (1 - p) * 0.9 + 0.12;
       for (let k = 0; k < count; k++) {
         const sp = 40 + Math.random() * 40;
@@ -510,13 +510,13 @@
         const jitter = Math.random() * dt;
         R.particles.push({
           x: pos.x + vel.x * jitter - ves.v.x * jitter, y: pos.y + vel.y * jitter - ves.v.y * jitter,
-          vx: vel.x, vy: vel.y, life: 0, max: 0.25 + Math.random() * 0.35, size: d.w * (0.7 + Math.random() * 0.5),
+          vx: vel.x, vy: vel.y, life: 0, max: 0.25 + Math.random() * 0.35, size: q.w * (0.7 + Math.random() * 0.5),
           grow: 2.5 + (1 - p) * 4, kind: nz.solid ? 'flame' : (p < 0.05 ? 'blue' : 'flame'),
         });
         if (p > 0.02 && Math.random() < 0.55) {
           R.particles.push({
             x: pos.x, y: pos.y, vx: ves.v.x + (vel.x - ves.v.x) * 0.9 + (Math.random() - 0.5) * 6, vy: ves.v.y + (vel.y - ves.v.y) * 0.9 + (Math.random() - 0.5) * 6,
-            life: 0, max: 1.0 + Math.random() * 1.8 * p, size: d.w * 1.1, grow: 3 + 6 * p, kind: 'smoke',
+            life: 0, max: 1.0 + Math.random() * 1.8 * p, size: q.w * 1.1, grow: 3 + 6 * p, kind: 'smoke',
           });
         }
       }

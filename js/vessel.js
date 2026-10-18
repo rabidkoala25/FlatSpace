@@ -50,7 +50,7 @@
     relayout() {
       this.layout = FS.massLayout(this.parts);
       this.mass = this.layout.mass;
-      this.cda = this.parts.reduce((s, p) => s + p.def.cda + chuteArea(p), 0);
+      this.cda = this.parts.reduce((s, p) => s + p.cda + chuteArea(p), 0);
       this.torqueWheel = this.parts.reduce((s, p) => s + (p.def.torque || 0), 0);
       this.hasCommand = this.parts.some((p) => p.def.command);
     }
@@ -158,7 +158,7 @@
         thrust = V.add(thrust, F);
         torque += V.cross(q.c, F);
         total += f;
-        if (q.def.engine.gimbal) gimbal += f * Math.sin((q.def.engine.gimbal * Math.PI) / 180) * Math.abs(V.dot(q.c, q.axis));
+        if (q.def.engine.gimbal) gimbal += f * Math.sin((q.def.engine.gimbal * (q.gimbal ?? 1) * Math.PI) / 180) * Math.abs(V.dot(q.c, q.axis));
         this.nozzles.push({ part: q, power, solid });
         flame = true;
       };
@@ -169,7 +169,7 @@
         if (liq.length) anyLit = true;
         if (liq.length && fuel > 0 && this.throttle > 0) {
           let mdot = 0;
-          const each = liq.map((q) => { const t = FS.engineThrust(q.def.engine, p, this.throttle); mdot += t.mdot; return t.F; });
+          const each = liq.map((q) => { const t = FS.partThrust(q, p, this.throttle); mdot += t.mdot; return t.F; });
           let frac = 1;
           if (dt > 0) {
             const want = mdot * dt;
@@ -181,7 +181,7 @@
         }
         for (const q of g) {
           if (q.lit && q.def.engine && q.def.engine.solid && q.solid > 0) {
-            const t = FS.engineThrust(q.def.engine, p, 1);
+            const t = FS.partThrust(q, p, 1);
             let frac = 1;
             if (dt > 0) { frac = Math.min(1, q.solid / (t.mdot * dt)); q.solid = Math.max(0, q.solid - t.mdot * dt * frac); }
             push(q, t.F * frac, frac, true);
@@ -215,7 +215,7 @@
         if (!g.some((q) => engines.has(q))) continue;
         for (const q of g) {
           now += q.fuel + (engines.has(q) ? q.solid : 0);
-          max += (q.def.fuel || 0) + (engines.has(q) ? q.def.solid || 0 : 0);
+          max += (q.cap || 0) + (engines.has(q) ? q.def.solid || 0 : 0);
         }
       }
       return { now, max };
@@ -278,7 +278,7 @@
       const agl = this.altitude - FS.surfaceHeight(b, FS.lonAt(b, V.angle(this.r), t));
       for (const q of this.parts) {
         if (q.chute === 'armed' && p > 0.04 && V.len(V.sub(this.v, FS.airVel(b, this.r))) < 300) { q.chute = 'semi'; q.deploy = 0; }
-        if (q.chute === 'semi' && agl < 1000) { q.chute = 'full'; q.deploy = 0; }
+        if (q.chute === 'semi' && agl < (q.chuteAlt ?? 1000)) { q.chute = 'full'; q.deploy = 0; }
         if ((q.chute === 'semi' || q.chute === 'full') && q.deploy < 1) q.deploy = Math.min(1, q.deploy + dt * 0.4);
       }
 

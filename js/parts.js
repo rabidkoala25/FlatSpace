@@ -10,7 +10,7 @@
   FS.PART = BY_ID;
   FS.PART_CATS = ['Command', 'Fuel', 'Engines', 'Structural', 'Utility'];
 
-  FS.partMass = (p) => p.def.mass + p.fuel + p.solid;
+  FS.partMass = (p) => (p.dry ?? p.def.mass) + p.fuel + p.solid;
 
   // Engine thrust and mass flow at a given pressure (atm).
   FS.engineThrust = (eng, p, throttle = 1) => {
@@ -32,7 +32,7 @@
     const d = p.def;
     const w = p.w || (d.w === 'auto' ? 1.25 : d.w);
     const tw = p.tw || d.topW || w;
-    const h = d.len;
+    const h = p.len || d.len;
     const hw = w / 2, thw = tw / 2;
     ctx.lineWidth = px * 1.2;
     ctx.strokeStyle = 'rgba(10,14,22,0.75)';
@@ -64,17 +64,44 @@
       ctx.fill(); ctx.stroke();
       ctx.fillStyle = '#f2efe8'; ctx.fillRect(-hw * 0.25, y + h * 0.15, hw * 0.5, h * 0.85);
     } else if (d.fuel) {
-      ctx.beginPath(); ctx.rect(-hw, y, w, h);
-      if (d.foam) ctx.fillStyle = cyl(ctx, -hw, hw, '#c46a2c', '#e8995b', '#7a3c14');
-      else ctx.fillStyle = cyl(ctx, -hw, hw, '#d9d6cc', '#fbfaf5', '#8e8b82');
-      ctx.fill(); ctx.stroke();
+      // tank looks (step A4): white, gold foil, orange foam, roll pattern, bare steel
+      const skin = p.skin || (d.foam ? 'foam' : 'white');
       const band = Math.min(0.14, h * 0.12);
-      ctx.fillStyle = d.foam ? 'rgba(80,40,15,0.6)' : '#c8692b';
+      ctx.beginPath(); ctx.rect(-hw, y, w, h);
+      if (skin === 'foam') ctx.fillStyle = cyl(ctx, -hw, hw, '#c46a2c', '#e8995b', '#7a3c14');
+      else if (skin === 'gold') ctx.fillStyle = cyl(ctx, -hw, hw, '#c99a2e', '#f6dc7a', '#7a5718');
+      else if (skin === 'steel') ctx.fillStyle = cyl(ctx, -hw, hw, '#8f969e', '#c9ced4', '#545a61');
+      else ctx.fillStyle = cyl(ctx, -hw, hw, '#d9d6cc', '#fbfaf5', '#8e8b82');
+      ctx.fill();
+      ctx.save();
+      ctx.beginPath(); ctx.rect(-hw, y, w, h); ctx.clip();
+      if (skin === 'roll') {
+        // black and white quarters, repeating along the tank, so a roll shows on camera
+        const cell = Math.max(0.6, Math.min(w, 1.25));
+        for (let k = 0, yy = y + band; yy < y + h - band; k++, yy += cell) {
+          ctx.fillStyle = 'rgba(20,22,26,0.88)';
+          ctx.fillRect(k % 2 ? 0 : -hw, yy, hw, Math.min(cell, y + h - band - yy));
+        }
+      } else if (skin === 'gold') {
+        // crinkled foil: soft diagonal creases
+        ctx.strokeStyle = 'rgba(110,70,10,0.35)'; ctx.lineWidth = px;
+        for (let k = -w; k < h + w; k += 0.35) { ctx.beginPath(); ctx.moveTo(-hw, y + k); ctx.lineTo(hw, y + k - w * 0.6); ctx.stroke(); }
+        ctx.fillStyle = 'rgba(255,250,210,0.25)';
+        for (let k = 0.2; k < h; k += 0.9) ctx.fillRect(-hw * 0.6, y + k, hw * 0.4, 0.12);
+      } else if (skin === 'steel') {
+        // weld seams and rivet lines
+        ctx.fillStyle = 'rgba(40,44,50,0.5)';
+        for (let k = 1; k < h; k += 1) ctx.fillRect(-hw, y + k, w, Math.max(px, 0.03));
+        for (let k = 0.5; k < h; k += 1) for (let xx = -hw + 0.12; xx < hw; xx += 0.25) ctx.fillRect(xx, y + k, 0.04, 0.04);
+      }
+      ctx.restore();
+      ctx.beginPath(); ctx.rect(-hw, y, w, h); ctx.stroke();
+      ctx.fillStyle = skin === 'foam' ? 'rgba(80,40,15,0.6)' : skin === 'gold' ? '#8a6418' : skin === 'steel' ? '#4b5057' : skin === 'roll' ? '#1c1e22' : '#c8692b';
       ctx.fillRect(-hw, y, w, band); ctx.fillRect(-hw, y + h - band, w, band);
-      if (!d.foam && h > 1) { ctx.fillStyle = 'rgba(40,50,70,0.55)'; ctx.fillRect(-hw * 0.15, y + h * 0.3, hw * 0.3, h * 0.4); }
+      if (skin === 'white' && h > 1) { ctx.fillStyle = 'rgba(40,50,70,0.55)'; ctx.fillRect(-hw * 0.15, y + h * 0.3, hw * 0.3, h * 0.4); }
       // fuel gauge overlay
       if (opts.showFuel && d.fuel) {
-        const f = p.fuel / d.fuel;
+        const f = p.fuel / (p.cap || d.fuel);
         ctx.fillStyle = 'rgba(255,190,80,0.18)';
         ctx.fillRect(-hw, y + h * (1 - f), w, h * f);
       }
