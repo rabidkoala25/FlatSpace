@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1172" height="734" viewBox="0 0 1172 734" role="img" aria-labelledby="t d">
 <title id="t">Flatspace Program roadmap</title>
-<desc id="d">5 of 64 roadmap steps done. Next: B1 WebGL renderer, palette and sky.</desc>
+<desc id="d">6 of 64 roadmap steps done. Next: B2 Part sprites and lighting.</desc>
 <rect width="1172" height="734" rx="14" fill="#0b1222"/>
 <text x="28" y="44" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#e6edf7">Flatspace Program roadmap</text>
-<text x="28" y="70" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#9aa8c2">v0.6.1 · 5 of 64 steps done · next: B1 WebGL renderer, palette and sky</text>
+<text x="28" y="70" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#9aa8c2">v0.7.0 · 6 of 64 steps done · next: B2 Part sprites and lighting</text>
 <rect x="792" y="52" width="352" height="8" rx="4" fill="#141d33" stroke="#2c3a5a"/>
-<rect x="792" y="52" width="27.5" height="8" rx="4" fill="#3fb68b"/>
-<text x="1144" y="44" text-anchor="end" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" fill="#9aa8c2">8%</text>
+<rect x="792" y="52" width="33.0" height="8" rx="4" fill="#3fb68b"/>
+<text x="1144" y="44" text-anchor="end" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" fill="#9aa8c2">9%</text>
 <line x1="44" y1="135" x2="44" y2="631" stroke="#26324d" stroke-width="2"/>
 <circle cx="44" cy="135" r="15" fill="#3fb68b" stroke="#3fb68b" stroke-width="2"/>
 <text x="44" y="140" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#062317">P</text>
@@ -55,17 +55,18 @@
 <circle cx="44" cy="259" r="15" fill="#111a2f" stroke="#ffb547" stroke-width="2"/>
 <text x="44" y="264" text-anchor="middle" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#ffb547">B</text>
 <text x="70" y="255" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#e6edf7">Pixel art</text>
-<text x="70" y="273" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">0 of 5 done</text>
+<text x="70" y="273" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7a96">1 of 5 done</text>
 <g><title>B1 · WebGL renderer, palette and sky</title>
-<rect x="204" y="236" width="80" height="46" rx="7" fill="#141d33" stroke="#ffb547" stroke-width="2"/>
-<text x="213" y="255" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#ffb547">B1</text>
-<text x="276" y="254" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" letter-spacing="0.6" fill="#ffb547">NEXT</text>
-<text x="213" y="272" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#e6edf7">WebGL</text>
+<rect x="204" y="236" width="80" height="46" rx="7" fill="#3fb68b" stroke="#3fb68b" stroke-width="2"/>
+<text x="213" y="255" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#062317">B1</text>
+<path d="M263 249 l4 4 l8 -8" fill="none" stroke="#062317" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="213" y="272" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#062317">WebGL</text>
 </g>
 <g><title>B2 · Part sprites and lighting</title>
-<rect x="290" y="236" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>
-<text x="299" y="255" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#9aa8c2">B2</text>
-<text x="299" y="272" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#6c7a96">Part sprites</text>
+<rect x="290" y="236" width="80" height="46" rx="7" fill="#141d33" stroke="#ffb547" stroke-width="2"/>
+<text x="299" y="255" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#ffb547">B2</text>
+<text x="362" y="254" text-anchor="end" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9.5" font-weight="700" letter-spacing="0.6" fill="#ffb547">NEXT</text>
+<text x="299" y="272" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" fill="#e6edf7">Part sprites</text>
 </g>
 <g><title>B3 · The world up close</title>
 <rect x="376" y="236" width="80" height="46" rx="7" fill="#141d33" stroke="#2c3a5a" stroke-width="1"/>

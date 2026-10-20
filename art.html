@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flatspace Art Gallery</title>
+<style>
+  :root { --bg: #090c1c; --panel: #111a33; --ink: #e6ecf8; --dim: #8e9ab8; --line: #1c2a4f; --accent: #f0c84a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, sans-serif; }
+  header { padding: 20px 16px 8px; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: 0.02em; }
+  h2 { font-size: 16px; margin: 28px 0 10px; color: var(--accent); letter-spacing: 0.04em; text-transform: uppercase; }
+  p { margin: 0 0 8px; color: var(--dim); max-width: 70ch; }
+  main { padding: 0 16px 40px; max-width: 1100px; margin: 0 auto; }
+  .ramp { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+  .ramp b { width: 64px; font: 600 12px ui-monospace, monospace; color: var(--dim); }
+  .ramp span { width: 34px; height: 26px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, 0.06); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+  .controls button { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font: inherit; cursor: pointer; }
+  .controls button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  canvas { display: block; width: 100%; background: #04050c; border-radius: 8px; border: 1px solid var(--line); }
+  .note { font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Flatspace art gallery</h1>
+  <p>Every colour the game uses, and every sprite turning slowly, drawn by the same WebGL sharp-pixel shader as the game. Use it to check that art pixels stay crisp squares at any angle and don't shimmer as they turn.</p>
+</header>
+<main>
+  <h2>Palette</h2>
+  <div id="palette"></div>
+  <p class="note" id="count"></p>
+
+  <h2>Sprites</h2>
+  <p>The parts are still the prototype's drawings, baked into pixel art at 16 pixels per metre and snapped to the palette. Step B2 replaces them with hand-made sprites.</p>
+  <div class="controls" role="group" aria-label="Scale">
+    <button type="button" data-scale="1" aria-pressed="false">1×</button>
+    <button type="button" data-scale="2" aria-pressed="false">2×</button>
+    <button type="button" data-scale="4" aria-pressed="true">4×</button>
+    <button type="button" id="spin" aria-pressed="true">Turning</button>
+  </div>
+  <canvas id="gal" height="560" aria-label="All part sprites, turning"></canvas>
+  <p class="note" id="msg"></p>
+</main>
+<script src="js/util.js?v=0.7.0"></script>
+<script src="data/parts.js?v=0.7.0"></script>
+<script src="js/parts.js?v=0.7.0"></script>
+<script src="js/partgraph.js?v=0.7.0"></script>
+<script src="art/palette.js?v=0.7.0"></script>
+<script src="js/gl.js?v=0.7.0"></script>
+<script>
+(function () {
+  const P = FS.Palette;
+  // ---- palette swatches ----
+  const host = document.getElementById('palette');
+  for (const [name, list] of Object.entries(P.hex)) {
+    const row = document.createElement('div');
+    row.className = 'ramp';
+    row.innerHTML = `<b>${name}</b>` + list.map((h) => `<span style="background:${h}" title="${h}"></span>`).join('');
+    host.appendChild(row);
+  }
+  document.getElementById('count').textContent = P.all.length + ' colours in ' + Object.keys(P.hex).length + ' ramps.';
+
+  // ---- sprites ----
+  const cv = document.getElementById('gal');
+  const gl = cv.getContext('webgl2', { antialias: false, premultipliedAlpha: true, alpha: false });
+  if (!gl) { document.getElementById('msg').textContent = 'This browser has no WebGL2, so the sprites can’t be shown.'; return; }
+  const sprites = new FS.GL.Sprites(gl, 2048);
+  const L = 16;
+  const ids = Object.keys(FS.PART);
+  const parts = ids.map((id) => {
+    const p = FS.newPart(id);
+    FS.relayout([p]);
+    return p;
+  });
+  // one stretched tank in each look, to show the skins
+  for (const skin of FS.TANK_SKINS) { const p = FS.newPart('t400', { skin }); FS.relayout([p]); parts.push(p); }
+  const bake = (p) => {
+    const d = p.def, w = p.w || 1.25, tw = p.tw || d.topW || w, len = p.len || d.len;
+    const key = `${d.id}|${p.skin || ''}`;
+    let e = sprites.atlas.get(key);
+    if (e) return e;
+    const halfW = Math.max(w, tw) / 2 + (d.fin ? 0.9 : 0.1);
+    const hx = Math.ceil(halfW * L), top = Math.ceil(0.6 * L);
+    const img = FS.GL.bake(hx * 2, top + Math.ceil((len + 0.3) * L), (g) => { g.setTransform(L, 0, 0, L, hx, top); FS.drawPart(g, p, 0, 1 / L, {}); });
+    e = sprites.atlas.add(key, img);
+    e.ox = hx; e.oy = top + (len / 2) * L;
+    return e;
+  };
+  let scale = 4, spin = true, ang = 0, last = performance.now();
+  for (const b of document.querySelectorAll('[data-scale]')) {
+    b.addEventListener('click', () => {
+      scale = +b.dataset.scale;
+      for (const o of document.querySelectorAll('[data-scale]')) o.setAttribute('aria-pressed', String(o === b));
+    });
+  }
+  const sb = document.getElementById('spin');
+  sb.addEventListener('click', () => { spin = !spin; sb.setAttribute('aria-pressed', String(spin)); });
+
+  function frame(now) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const Wc = cv.clientWidth, Hc = cv.clientHeight;
+    if (cv.width !== Math.round(Wc * dpr) || cv.height !== Math.round(Hc * dpr)) { cv.width = Math.round(Wc * dpr); cv.height = Math.round(Hc * dpr); }
+    if (spin) ang += (now - last) * 0.00012; // very slow: the hardest case for shimmer
+    last = now;
+    gl.viewport(0, 0, cv.width, cv.height);
+    const bg = P.ramps.night[1];
+    gl.clearColor(bg[0] / 255, bg[1] / 255, bg[2] / 255, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    sprites.begin(cv.width, cv.height);
+    const cell = scale * dpr; // device px per art pixel
+    // flow layout: each sprite gets a square slot as wide as its turning circle
+    let x = 0, y = 0, rowH = 0;
+    const gap = 16 * dpr;
+    const placed = parts.map((p, i) => {
+      const e = bake(p);
+      if (!e) return null;
+      const r = Math.hypot(Math.max(e.ox, e.w - e.ox), Math.max(e.oy, e.h - e.oy)) * cell;
+      const size = r * 2 + gap;
+      if (x + size > cv.width && x > 0) { x = 0; y += rowH; rowH = 0; }
+      const at = { e, cx: x + size / 2, cy: y + size / 2, i };
+      x += size; rowH = Math.max(rowH, size);
+      return at;
+    });
+    const needH = Math.ceil((y + rowH) / dpr);
+    if (Math.abs(cv.clientHeight - needH) > 2) { cv.style.height = needH + 'px'; requestAnimationFrame(frame); return; }
+    for (const at of placed) if (at) sprites.sprite(at.e, at.cx, at.cy, cell, ang + at.i * 0.37, at.e.ox, at.e.oy, null);
+    sprites.flush();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  FS.Gallery = { setAngle: (a) => { ang = a; spin = false; }, setScale: (s) => { scale = s; } };
+})();
+</script>
+</body>
+</html>

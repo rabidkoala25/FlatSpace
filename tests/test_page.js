@@ -40,7 +40,9 @@ const dom = new JSDOM(html, {
   runScripts: 'outside-only',
   pretendToBeVisual: true,
   beforeParse(w) {
-    w.HTMLCanvasElement.prototype.getContext = () => fakeContext();
+    // no WebGL in jsdom: the page falls back to the Canvas 2D renderer (the WebGL one is
+    // tested in a real browser by test_gl.js)
+    w.HTMLCanvasElement.prototype.getContext = (type) => (/webgl/.test(type) ? null : fakeContext());
     w.Element.prototype.setPointerCapture = () => {}; // not in jsdom
     Object.defineProperty(w.HTMLElement.prototype, 'clientWidth', { get: () => 1280 });
     Object.defineProperty(w.HTMLElement.prototype, 'clientHeight', { get: () => 800 });
@@ -371,6 +373,7 @@ const key = (k) => {
   await sleep(100);
   check(!w.document.getElementById('dialog').hidden && /v\d/.test(w.document.getElementById('dlgBody').textContent), 'Esc opens the menu with the version number');
 
+  check(FS.Renderer === FS.Render && doc.querySelector('.gl-notice') && /WebGL2/.test(doc.querySelector('.gl-notice').textContent), 'without WebGL2 the game uses the Canvas 2D renderer and says so');
   check(errors.length === 0, 'no script errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   done();
 })();

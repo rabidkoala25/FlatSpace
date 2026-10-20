@@ -1,7 +1,9 @@
 // render.js — the Canvas 2D renderer: flight view, map view, particles and effects.
+// Since step B1 the game draws with the WebGL2 renderer (render-gl.js); this one is the
+// fallback for browsers without WebGL2. The particle simulation here is shared by both.
 //
 // Renderer interface. The rest of the game only talks to FS.Renderer through these
-// methods, so step B1 can swap in a WebGL renderer with the same shape:
+// methods, so renderers can be swapped:
 //   init(canvas, game)         set up, and subscribe to game events (explosions, SOI changes)
 //   resize()                   the canvas changed size
 //   size() -> {W, H}           canvas size in CSS pixels
@@ -487,6 +489,7 @@
   R.stats = () => ({ particles: R.particles.length });
 
   // Visual reactions to simulation events.
+  R.subscribe = (game) => subscribe(game);
   function subscribe(game) {
     game.on('exploded', ({ vessel }) => {
       const active = game.vessel;
@@ -817,6 +820,6 @@
     ctx.fillText(txt, s.x + 11, s.y - 4);
   }
 
-  // The active renderer. B1 replaces this with the WebGL renderer.
+  // The active renderer until main.js picks one (WebGL2 when available).
   FS.Renderer = R;
 })();

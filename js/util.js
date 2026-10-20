@@ -4,7 +4,7 @@
 window.FS = window.FS || {};
 
 // Game version, shown in the hangar and the flight menu. Bump it with each roadmap step.
-FS.VERSION = '0.6.2';
+FS.VERSION = '0.7.0';
 
 FS.G0 = 9.80665;          // standard gravity, used for specific impulse
 FS.TAU = Math.PI * 2;

@@ -482,7 +482,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 | A3 | Editor tools | ✅ done (v0.5.0) |
 | A4 | Staging, tweakables, stretchable tanks, craft files | ✅ done (v0.6.0; follow-up v0.6.1) |
 | **B** | **Pixel art overhaul** | |
-| B1 | WebGL renderer, palette and sky | ☐ |
+| B1 | WebGL renderer, palette and sky | ✅ done (v0.7.0) |
 | B2 | Part sprites and lighting | ☐ |
 | B3 | The world up close | ☐ |
 | B4 | Effects and motion | ☐ |
@@ -809,6 +809,27 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 **Stretch:** a pixel-size setting.
 
 **Done when:** a slow-rotation recording at two zoom levels shows crisp, shimmer-free squares, and nothing in the game view is blurred.
+
+**Result (v0.7.0):** done, including the stretch (a pixel-size setting).
+- **One pixel grid:** world art pixels are (1/16)·2^k m. k is the smallest value that keeps an art pixel at least the chosen pixel size on screen, and parts, terrain, planets and particles all share it, so pixels of different sizes never sit side by side. The setting is in the Esc menu: Fine (1.5 CSS px, the default), Medium (2) or Chunky (3). It is saved under a new versioned key, `flatspace.settings`.
+- **WebGL2 renderer (`js/render-gl.js`)**, behind the same `FS.Renderer` interface:
+  - **sprite batcher and sharp-pixel shader (`js/gl.js`):** a 2048² atlas filled on demand. Each art pixel is a flat colour, smoothed over exactly one screen pixel at its edges, at any angle. Sprites fade by Bayer dither, not transparency;
+  - **planet meshes:** a full-screen shader per body, limited to its screen area, works out each art pixel's height and depth. It draws ocean (with a foam line), the surface layer (grass with tufts, sand, rock, snow), soil, rock strata, the deep interior seen from afar, the atmosphere rim, and a dithered night side. Heights come from a 4096-sample texture for each body, or, close to the ground, a 1024-sample window around the camera refreshed every frame, worked out in the ground's own frame so nothing jitters far from the planet's centre;
+  - **particle buffer:** exhaust, smoke and explosions are pixel puffs coloured from palette ramps. The particle simulation stays in `render.js` and is shared by both renderers;
+  - **lighting uniforms:** sun direction for planets; sprites dim in a planet's shadow and towards dusk. This dimming tints the palette colours; B2 replaces it with proper lit ramps;
+  - **overlay canvas** for orbit lines, Ap/Pe and encounter markers, the node and labels;
+  - **fallback:** without WebGL2 the game uses the Canvas 2D renderer and says so in a notice. `?canvas2d` forces it.
+- **Palette (`art/palette.js`):** 53 colours in 10 hue-shifted ramps (metal, orange, gold, green, blue, night, dusk, earth, teal, red). It has a Bayer dither helper and nearest-colour snapping. Shaders step between palette entries: solid for most of the way, dithered only near each change.
+- **Sky:** palette bands chosen by altitude, sun angle and sunset. There are 700 pixel stars, a few twinkling, plus a dithered galaxy band; stars and galaxy fade out in daylight.
+- **Planets from afar:** each body's own pixel texture turns with it, in flight and on the map. Aster shows islands in a blue sea with a dithered atmosphere rim; Mira is grey and Pell teal.
+- **Temporary art:** the prototype's vector parts, parachute canopies and space-centre buildings are baked at the current art-pixel size, cut to fully opaque or clear pixels and snapped to the palette. The space centre is baked in 32 m tiles, only where visible.
+- **Gallery (`art.html`):** the palette, and every part plus each tank look turning slowly at 1×, 2× or 4×.
+- **Checked:** a recording turning the craft 0.5° a frame at 8 and 16 art pixels per metre. In a finer check (0.05° steps), no screen pixel jumped colour between frames; edges move smoothly. Close up, 84% of the craft's screen pixels are exact palette colours, and the rest are one-pixel edge blends.
+- **Tests:** 10 files. The new `tests/test_gl.js` runs the game in Chromium through Playwright (skipped if Playwright isn't installed). It checks the WebGL renderer is used, palette crispness, no colour jumps while turning at two zoom levels, the pixel-size setting, the map, `?canvas2d`, and the gallery. The page test checks the Canvas 2D fallback and its notice.
+- **Not done, left for later steps:**
+  - the editor still draws with Canvas 2D (B2 moves it to the same sprites);
+  - the soft glow at the bottom of the screen that showed where the ground was when it was out of view (B3);
+  - particle shapes and timing (B4).
 
 #### B2 · Part sprites and lighting
 **Goal:** every existing part redrawn as pixel art and lit by the sun as the rocket turns.
@@ -1748,6 +1769,7 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
 - **Plan revision 8**: new step E10, "Terrain detail" (realistic landforms, strata, collidable ground scatter and deep parallax layers, the idea behind the Parallax mod); new section 4.4, which says every new part and feature gets a tech-tree node and contracts of its own, with a "Tech and contracts" step closing each phase (E11, F11, G9, H10) and automated checks; tech nodes and contracts are data that packs can extend; 63 steps in total.
 - **Plan revision 7**: new Phase H, "Beyond KSP" (section 2.8): living astronauts with ragdolls (H1), walkable interiors (H2), hands-on objects and tools (H3), damage and repairs (H4), life on board and spin gravity (H5), self-landing rockets (H6), launch and recovery infrastructure (H7), tethers, solar sails and mass drivers (H8), and a flight recorder with replays (H9); 58 steps in total. Original parts added to `PARTS.md`.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
+- **v0.7.0 (B1)**: WebGL2 renderer with one shared art-pixel grid, sharp-pixel sprite shader, atlas and batcher (`js/gl.js`, `js/render-gl.js`); 53-colour palette with dithering (`art/palette.js`); banded, dithered sky with pixel stars and galaxy band; per-pixel planet shader (ocean, surface, soil, strata, atmosphere rim, night side) for flight and map; temporary art baked to palette pixels; pixel puffs for particles; overlay canvas for orbits and labels; Canvas 2D fallback with notice; pixel-size setting (`flatspace.settings`); `art.html` gallery; `tests/test_gl.js`.
 - **v0.6.2 fix**: engines that turn a craft sitting on the ground now tip it over once their turning effect beats what its weight can hold (before, a landed craft ignored turning completely unless it had enough thrust to lift off). While it turns on the ground, a simple contact model lets it pivot, roll and bounce, a part hitting the ground too fast breaks the craft, and it comes to rest at whatever angle it ends up. C1 replaces this with full rigid-body contact.
 - **v0.6.1 (A4 follow-up)**: side parts line up with sloped faces; floating parts in the hangar (left behind, or launched beside the craft); part pop-ups that open on select, pin, drag and point at their part, in the hangar and in flight; settings and actions mid-flight (thrust limit, gimbal, engine on/off, crossfeed, decouple, chute height and arming); `partToScreen` / `screenToPart` in the renderer; `Vessel.act`. Later parts of this request added to B5, C3, D2, D3, D5 and E5.
 - **v0.6.0 (A4)**: stretchable tanks in six widths with handles and 21 presets; one tank density (tank lengths moved to the 0.25 m grid); five tank looks; part settings panel (fuel level, thrust limit, gimbal, crossfeed, parachute height, fires in staging); staging editor with chips, custom staging saved on parts; craft files (download, open, copy and paste as text); `js/staging-editor.js`, `js/part-panel.js`.

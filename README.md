@@ -70,6 +70,14 @@ The switches in the top corner show where your rocket's centre of mass (yellow),
 
 Click or tap a part of your rocket in flight to open its pop-up. You can change an engine's thrust limit, shut it down or restart it, fire a decoupler, turn crossfeed on or off, or arm a parachute without staging everything else.
 
+## Pixel size
+
+Everything is drawn as pixel art, and the pixels stay the same size across the whole screen as you zoom. If you'd like bigger, chunkier pixels, open the menu (Esc) and pick **Fine**, **Medium** or **Chunky**.
+
+The game needs a browser with WebGL2, which is almost every browser from the last few years. On one without it, the game still runs with simpler drawing and tells you so. `art.html` shows every colour and sprite in the game, turning slowly.
+
 ## Running it yourself
 
 It's just HTML, CSS and JavaScript with nothing to install. Download the folder and open `index.html`. If your browser won't run it from a file, start a local server in the folder (for example `python3 -m http.server`) and open `http://localhost:8000`.
+
+To run the tests, use `npm install` then `node tests/run.js`. The WebGL test also needs Playwright (`npm install playwright` and `npx playwright install chromium`); without it, that test is skipped.

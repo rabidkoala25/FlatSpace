@@ -156,13 +156,26 @@
     ]);
   };
 
+  const PIXEL_SIZES = [[1.5, 'Fine'], [2, 'Medium'], [3, 'Chunky']];
   UI.menu = () => {
-    UI.showDialog('Flight menu', '<p>Time is paused. Flatspace Program v' + FS.VERSION + '</p>', [
+    const gl = FS.Renderer === FS.RenderGL;
+    const px = gl
+      ? `<div class="menu-row"><span>Pixel size</span><div class="pp-choices" role="group" aria-label="Pixel size">${PIXEL_SIZES.map(([n, label]) => `<button type="button" class="pp-choice" data-px="${n}" aria-pressed="${G.settings.pixelSize === n}">${label}</button>`).join('')}</div></div>`
+      : '<p class="menu-note">Simple drawing mode: this browser has no WebGL2.</p>';
+    UI.showDialog('Flight menu', '<p>Time is paused. Flatspace Program v' + FS.VERSION + '</p>' + px, [
       ['Resume', () => {}, 'primary'],
       ['Revert to launch', G.revert, 'ghost'],
       ['Back to hangar', G.toHangar, 'ghost'],
       ['Controls', () => ($('help').hidden = false), 'ghost'],
     ]);
+    for (const b of $('dlgBody').querySelectorAll('[data-px]')) {
+      b.addEventListener('click', () => {
+        G.settings.pixelSize = +b.dataset.px;
+        FS.RenderGL.setPixelSize(G.settings.pixelSize);
+        UI.saveSettings();
+        for (const o of $('dlgBody').querySelectorAll('[data-px]')) o.setAttribute('aria-pressed', String(o === b));
+      });
+    }
   };
 
   // ---------- Map ----------
@@ -232,6 +245,10 @@
       'frame      ' + ms.toFixed(1) + ' ms (' + (1000 / ms).toFixed(0) + ' fps)\n' +
       'physics    ' + steps + (typeof steps === 'number' ? ' steps/frame' : '') + '\n' +
       'particles  ' + FS.Renderer.stats().particles + '\n' +
+      (FS.Renderer === FS.RenderGL
+        ? 'renderer   WebGL2, ' + FS.Renderer.stats().draws + ' sprite draws, atlas ' + FS.Renderer.stats().atlas + '\n' +
+          'pixel      ' + (16 / Math.pow(2, FS.Renderer.stats().level)) + ' per metre\n'
+        : 'renderer   Canvas 2D\n') +
       'debris     ' + G.debris.length;
   }
 
@@ -278,10 +295,42 @@
   // ---------- Start ----------
   const RENDERER_METHODS = ['init', 'resize', 'size', 'update', 'drawFlight', 'drawMap', 'worldToScreen', 'partToScreen', 'screenToPart', 'stats'];
 
+  G.settings = Object.assign({ pixelSize: 1.5 }, FS.store.load('flatspace.settings', {}) || {});
+  UI.saveSettings = () => FS.store.save('flatspace.settings', G.settings);
+
+  // WebGL2 pixel-art renderer when the browser has it (add ?canvas2d to the address to
+  // force the simple one); otherwise the Canvas 2D renderer, with a notice saying so.
+  function pickRenderer() {
+    if (FS.RenderGL && FS.GL.supported() && !/[?&]canvas2d\b/.test(location.search)) {
+      try {
+        FS.RenderGL.setPixelSize(G.settings.pixelSize);
+        FS.RenderGL.init($('view'), G);
+        return FS.RenderGL;
+      } catch (e) {
+        console.warn('WebGL renderer failed, using Canvas 2D: ' + e.message);
+        // a canvas keeps the first kind of context it gave out, so start from a fresh one
+        const old = $('view'), fresh = old.cloneNode(false);
+        old.replaceWith(fresh);
+        document.querySelectorAll('.view-overlay').forEach((o) => o.remove());
+      }
+    }
+    FS.Render.init($('view'), G);
+    if (!/[?&]canvas2d\b/.test(location.search)) glNotice();
+    return FS.Render;
+  }
+  function glNotice() {
+    const n = document.createElement('div');
+    n.className = 'gl-notice';
+    n.setAttribute('role', 'status');
+    n.innerHTML = '<span>This browser doesn\'t support WebGL2, so the game is using its simpler drawing mode (no pixel art).</span><button type="button" aria-label="Dismiss">×</button>';
+    n.querySelector('button').addEventListener('click', () => n.remove());
+    document.body.appendChild(n);
+  }
+
   function init() {
+    FS.Renderer = pickRenderer();
     const missing = RENDERER_METHODS.filter((m) => typeof FS.Renderer[m] !== 'function');
     if (missing.length) console.error('Renderer is missing: ' + missing.join(', '));
-    FS.Renderer.init($('view'), G);
     FS.HUD.init();
     FS.Editor.init(G);
     FS.Input.init();

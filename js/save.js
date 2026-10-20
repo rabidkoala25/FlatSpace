@@ -9,6 +9,7 @@
     'flatspace.crafts': 3,     // saved craft: { [name]: [saved parts] }
     'flatspace.milestones': 1, // milestone keys: [string]
     'flatspace.subassemblies': 1, // saved subassemblies: [{ name, parts: [saved parts] }]
+    'flatspace.settings': 1,  // game settings: { pixelSize }
   };
 
   // Part ids that were renamed. Step 1 → 2 applies these.
@@ -40,6 +41,7 @@
     ],
     'flatspace.milestones': [(d) => d],
     'flatspace.subassemblies': [(d) => d],
+    'flatspace.settings': [(d) => d],
   };
 
   // Upgrade stored data to the current version. Returns undefined if it can't be read.
