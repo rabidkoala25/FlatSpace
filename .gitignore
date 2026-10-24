@@ -1,2 +1,6 @@
 node_modules/
 guides/
+# drawing and coding guides (kept on this computer only)
+sprite-guide.html
+art/sprite-notes.js
+tests/test_sprite_notes.js
