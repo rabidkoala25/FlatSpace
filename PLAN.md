@@ -449,7 +449,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
    - runs `node tools/roadmap.js` to redraw the roadmap graphic in the README;
    - republishes the playable page and hands back the updated project.
 4. If a session runs short, unfinished Must items move to the top of the next step. The game must run at the end of every session, so nothing is left half-built.
-5. **While the user takes part in Hack Club Terra (from step B2):** the user writes the code, so their hours count. Sessions explain the step, give commented code to follow and review what the user wrote, rather than writing files into the folder, unless the user asks. Sprites are drawn by the user in Pixilart (see `sprite-guide.html`). The README and devlogs are written by the user, because Hack Club doesn't allow AI-written ones.
+5. **While the user takes part in Hack Club Terra (from step B2):** the user writes the code, so their hours count. Sessions explain the step, give commented code to follow and review what the user wrote, rather than writing files into the folder, unless the user asks. Sprites are drawn by the user in Pixilart (see `sprite-guide.html`). The README and devlogs are written by the user, because Hack Club doesn't allow AI-written ones. The user's coding guide for B2 is `guides/b2-coding-guide.md` (kept out of git); keep it in step when the plan for B2 changes.
 
 ### 4.3 Why this order
 
