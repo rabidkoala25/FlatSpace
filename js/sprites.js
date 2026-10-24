@@ -61,7 +61,7 @@ FS.SPRITES = FS.SPRITES || {};
                 const [name, t] = entry;
                 const i = entry;
                 const r = rampIndex(name);
-                if (r<0) throw new Error(`sprite with id ${id} has ramp `${name}` which i dont recognise at all bruv`);
+                if (r<0) throw new Error(`sprite with id ${id} has ramp ${name} which i dont recognise at all bruv`);
                 if (t<0 || t>=rampLength(r)) throw new Error(`sprite with id ${id} doesnt have tone ${t}`);
 
 
@@ -86,7 +86,7 @@ FS.SPRITES = FS.SPRITES || {};
             const c = FS.Palette.ramps[RAMP_NAMES[s.ramp[i]]][s.tone[i]];
             data[i*4] = c[0];
             data[i*4+1] = c[1];
-            data[i*4+2] = c{2};
+            data[i*4+2] = c[2];
             data[i*4+3] = 255;
 
         }
