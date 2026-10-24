@@ -8,6 +8,7 @@ Every stock KSP part (base game 1.12, Making History and Breaking Ground) mapped
 - One KSP part gets one Flatspace part, with matching role, size and rough stats. Where a Flatspace part has size or length variants (for example a stretchable tank), each KSP part it replaces is still listed and checked one by one.
 - Parts that only make sense in 3D still get a 2D equivalent. For example, tri- and quad-couplers show their attach nodes in a row.
 - Step numbers refer to the roadmap in `PLAN.md`. "P" means the prototype already has an equivalent; it still gets pixel art in B2.
+- Every part also gets drawing notes in `art/sprite-notes.js` (shown in `sprite-guide.html`), added in the same step as the part. `tests/test_sprite_notes.js` fails for a part without them.
 
 **Accuracy note.** The official KSP wiki blocked automated reading, so this list was compiled from secondary sources and prior knowledge. Some names may be spelled differently in the game, and a few expansion parts may be missing or marked with the wrong expansion. The first task of step D5 is to check this list against the in-game part list (or the wiki in a browser) and add anything missing. Tags: (MH) = Making History, (BG) = Breaking Ground; untagged = base game.
 

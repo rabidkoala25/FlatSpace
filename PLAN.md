@@ -66,7 +66,11 @@ Added by the roadmap:
 ```
 js/gl/                          B1  WebGL2 renderer: sprite batch, meshes, shaders
 art/palette.js                  B1  the master palette
-art/sprites/*.js                B2  palette-indexed sprites written as text grids
+art/sprites/*.js                B2  sprites as palette-indexed text grids, made from art/png/ by tools/png2sprite.js
+art/png/*.png                   B2  sprites as drawn in Pixilart (16 px per metre, palette colours only)
+art/sprite-notes.js             B2  drawing notes for every part, shown in sprite-guide.html
+sprite-guide.html               B2  Pixilart drawing guide: size, current art, starter PNG, profile and ideas per part
+tools/png2sprite.js             B2  turns a Pixilart PNG into a sprite file
 art/overrides/                  B2  hand-made PNGs that replace generated sprites
 art.html                        B1  sprite gallery for reviewing art
 lib/planck.min.js, js/physics.js   C1  rigid-body engine and its integration
@@ -192,7 +196,8 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 | Hand-timed animation | Small details on few frames: blinking pad beacons, drifting clouds, wave foam, tower arms swinging away at launch, parachute sway. |
 
 **How sprites are made.**
-- Sprites are written as palette-indexed text grids in `art/sprites/`. They are readable, editable by hand, and diffs show what changed.
+- Sprites are drawn in Pixilart at 16 px per metre, using only the palette, and exported as PNG at 1× into `art/png/`. `tools/png2sprite.js` turns each one into a palette-indexed text grid in `art/sprites/`, which the game reads. The grids are readable and diffs show what changed.
+- `sprite-guide.html` gives the drawing guidance for every part: its size in pixels, the current art, a starter PNG, its outline from top to bottom, what to draw and ideas for later. It reads the game's own files, and its notes live in `art/sprite-notes.js`. Every part needs an entry there (`tests/test_sprite_notes.js` checks), so **a step that adds or changes a part also adds or updates its notes**.
 - Most parts are cylinders and cones, so they are generated from a profile (width along the length) plus hand-drawn decals: windows, hatches, rivets, stripes and logos. This keeps every part consistent and lets stretched tanks stay crisp at any length. Each tank is a top cap, a repeating body slice and a bottom cap. Skins are palette swaps.
 - `art.html` shows every sprite at 1× and 4×, rotating, under several sun angles, for review.
 - Any generated sprite can be replaced by dropping a PNG with the same name and size into `art/overrides/`. If you, or a pixel artist you work with, want to hand-draw sprites later, it needs no code changes.
@@ -438,11 +443,13 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
 3. Before finishing, it:
    - runs `node tests/run.js` and takes screenshots;
    - ticks the step in the status table below, ticks any finished rows in `PARTS.md`, and adds a line to the changelog at the end of this file;
+   - if the step added or changed a part: adds or updates its entry in `art/sprite-notes.js`, so `sprite-guide.html` covers it (`tests/test_sprite_notes.js` fails otherwise);
    - from E4 on, if the step added parts or features: notes in its Result which tech node each belongs in and ideas for contracts that use it, for the next "Tech and contracts" step (section 4.4);
    - bumps `FS.VERSION` in `js/util.js` and the matching `?v=` tags on every script and style link in `index.html` (so browsers never mix cached old files with new ones; the page test checks they match);
    - runs `node tools/roadmap.js` to redraw the roadmap graphic in the README;
    - republishes the playable page and hands back the updated project.
 4. If a session runs short, unfinished Must items move to the top of the next step. The game must run at the end of every session, so nothing is left half-built.
+5. **While the user takes part in Hack Club Terra (from step B2):** the user writes the code, so their hours count. Sessions explain the step, give commented code to follow and review what the user wrote, rather than writing files into the folder, unless the user asks. Sprites are drawn by the user in Pixilart (see `sprite-guide.html`). The README and devlogs are written by the user, because Hack Club doesn't allow AI-written ones.
 
 ### 4.3 Why this order
 
@@ -846,6 +853,8 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 **Stretch:** damage and scorch states.
 
 **Done when:** the gallery shows every part rotating under 4 sun angles. **Checkpoint:** you review the gallery and give direction before B3 starts.
+
+**How B2 is being done (Oct 2026):** the user is coding it from a session-by-session guide (sprite format and converter, profile generator and tank caps, lighting from the sun, then the rest over half term), drawing the sprites in Pixilart. One change from the Must list: lighting is worked out in JavaScript when a sprite is made, one lit copy per sun angle (32 steps), not in the shader; moving it into the shader is optional later.
 
 #### B3 · The world up close
 **Goal:** ground, sea and the launch site look as good as the rockets.
@@ -1766,6 +1775,7 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
   - added a performance pass (C5), IndexedDB saves (D3) and an installable offline web app (E9);
   - centre of pressure overlay (A3), centre of lift indicator and plane controls (F6), and rover driving (F8) made explicit.
 - **Plan revision 9**: new step D8, "Competition mode (physics club)": shared rules and budgets as a competition code, challenges (highest apogee, predict then fly, egg drop, precision landing, payload to orbit), entries re-run from their flight logs to check the scores, leaderboard and projector view with ghosts, flight data graphs with CSV export, and model rocket motors (A–G); 64 steps in total.
+- **Plan revision 10**: sprites are drawn in Pixilart and converted by `tools/png2sprite.js`; new `sprite-guide.html` and `art/sprite-notes.js` give drawing guidance for every part and are kept up to date whenever a part is added or changed (`tests/test_sprite_notes.js`); B2 lighting is done in JavaScript per sun angle; while the user takes part in Hack Club Terra, they write the code and sessions guide (section 4.2).
 - **Plan revision 8**: new step E10, "Terrain detail" (realistic landforms, strata, collidable ground scatter and deep parallax layers, the idea behind the Parallax mod); new section 4.4, which says every new part and feature gets a tech-tree node and contracts of its own, with a "Tech and contracts" step closing each phase (E11, F11, G9, H10) and automated checks; tech nodes and contracts are data that packs can extend; 63 steps in total.
 - **Plan revision 7**: new Phase H, "Beyond KSP" (section 2.8): living astronauts with ragdolls (H1), walkable interiors (H2), hands-on objects and tools (H3), damage and repairs (H4), life on board and spin gravity (H5), self-landing rockets (H6), launch and recovery infrastructure (H7), tethers, solar sails and mass drivers (H8), and a flight recorder with replays (H9); 58 steps in total. Original parts added to `PARTS.md`.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
