@@ -99,6 +99,7 @@ check(tank1.ny.every((v) => v === 0), "a cylinder's sides are vertical");
 
 
 // im so done bro
+// --------- tank tests
 
 FS.SPRITES['tank-125'] = FS.SPRITES['tank-125'] || {
     legend: {'.': null, K: ['metal', 1], S: ['skin', 0], s: ['skin', -1]},
@@ -131,6 +132,39 @@ check(white.ramp.every((r) => r !== 255), 'no skin placeholder is left after the
 check(S.tank(0.7, 2, 'white') === null, "no width is null so old art is used");
 
  
+
+// ------ lighting tests
+
+
+const cyl = S.profile({ id: 'cyl', len: 0.25, maxHalf: 0.625, halfWidthAt: () => 0.625, ramp: 'metal', tone: 4});
+
+//which metal tone a pixel is
+const toneAt = (im, x, y) => P.ramps.metal.findIndex((x) => c[0] === pixel(im, x, y)[0] && c[1] === pixel(im, x, y)[1] && c[2] === pixel(im, x, y)[2]);
+
+const fromRight = S.light(cyl, 1, 0, 1);
+check(toneAt(fromRight, cyl.w -2, 1) > toneAt(fromRight, 1, 1), 'with the sun on the right the right side is brighter');
+const fromNose = S.light(cyl, 0, 1, 1);
+
+let symmetric = true;
+for (let x=0; x<cyl.w; x++) if (toneAt(fromNose, x, 1) !== toneAt(fromNose, cyl.w -1 -x, 1)) symmetric = false;
+check(symmetrick, ' with sun at nose the lights are symmetric')
+
+const dark = S.light(cyl, 1, 0, 0);
+let allDark = true;
+for (let x=0; x<cyl.w; x++) if (toneAt(dark,x,1)!==2) allDark = false;
+check(allDark, "in a planet's shadow all pixels are darker")
+
+const goldBar = S.profile({ id: 'g', len: 0.25, maxHalf: 0.625, halfWidthAt: () => 0.625, ramp: 'gold', tone: 2});
+const goldLit = S.light(goldBar, 0, 0.0001, 1);
+let goldTop = false;
+for (let x =0; x<goldBar.w; x++) if (same(pixel(goldLit, x, 1).slice(0,3), P.ramps.gold[4])) goldTop = true;
+check(!goldTop, 'shiny highlight only visible on shiny surface (ie. metal)');
+
+const engine = S.profile({ id: 'e', len: 1, maxHalf: 0.625, halfWidthAt: () => 0.625, ramp: 'metal', tone: 4});
+check(same(pixel(firing, 10, 15).slice(0,3), P.ramps.orange[5]), "a burning engine's nozzle glows orange");
+check(!same(pixel(firing, 10, 2).slice(0,3), P.ramps.orange[5]), 'the rest of the engine doesnt glow');
+
+
 //das it 
 
 

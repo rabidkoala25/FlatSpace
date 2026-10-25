@@ -217,6 +217,48 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
         return {width: s.w, height: s.h, data};
 
     }
-    FS.Sprites = {PX, RAMP_NAMES, SKINS, parse, profile, tank, applySkin, toImage};
+
+    // Here lies lighting
+    // sun actually light stuff now (yipeeee) 
+    // the andgle at which this light occurs is calculated using mafematics (:nerd-emoji:)
+
+    function light(s, sx, sy, shade, glow = 0) {
+        
+        const n = Math.hypot(sx, sy, 0.35);
+
+        const lx = sx / n, ly = sy / n, lz = 0.35 / n;
+        const metal = rampIndex('metal');
+        const orange = rampIndex('orange');
+        const nozzleFrom = Math.floor(s.h * 0.75);
+        const ramp = s.ramp.slice();
+        const tone = s.tone.slice();
+
+        for (let y=0; y< s.h; y++) {
+            for (let x = 0; x < s.w; x++) {
+                const i = y* s.w + x;
+                if (!s.solid[i]) continue;
+                if (glow > 0 && y >= nozzleFrom) {
+                    // tip of engine nozzle glows
+                    ramp[i] = orange;
+                    tone[i] = Math.min(rampLength(orange) - 1, 2+ Math.round(glow *3)); // change for glow brightness
+                    continue;
+                }
+
+                // surface direction at a given pixel as a 3d unit vector
+                const nx = s.nx[i] / 127, ny = s.ny[i] / 127;
+                const nz = Math.sqrt(Math.max(0, 1-nx*nx - ny*ny));
+
+                //how much sun this pixel gets
+                const lit = shade * Math.max(0, nx * lx + ny * ly + nz * lz);
+                const top = rampLength(ramp[i]) -1;
+                let t = tone[i] + Math.round(-2 + 3 * lit); //-2 and 3 set the contrast (min max brightness type)
+                if (ramp[i] === metal && lit > 0.93) t = top; //0.93 is like the tolerance of the shine
+                tone[i] = FS.clamp(t, 0, top);
+            }
+        }
+        return toImage({ e: s.w, h: s.h, solid: s.solid, ramp, tone});
+    }
+
+    FS.Sprites = {PX, RAMP_NAMES, SKINS, parse, profile, tank, applySkin, toImage, light };
 
 })();
