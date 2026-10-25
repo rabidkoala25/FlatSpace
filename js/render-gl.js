@@ -512,7 +512,7 @@
 
   // ---------- Baked sprites (temporary art) ----------
   // Parts: the vector drawing from parts.js at L art pixels per metre, snapped to the palette.
-  function partSprite(p, L, glow) {
+  function partSprite(p, L, glow, sunStep = 8, shade = 1) {
     const d = p.def;
     const w = p.w || (d.w === 'auto' ? 1.25 : d.w);
     const tw = p.tw || d.topW || w;
@@ -522,15 +522,23 @@
     // ugh have to edit this
 
     if (L === 16) {
-      const ns = newSprite(P, W, tw, len);
+      const ns = newSprite(p, w, tw, len);
       if (ns) {
-        const key = ns.key + '|flat';
-        let e = sprites.atlas.get(key);
+        const g = d.engine ? glow : 0; //only engines glow
+        const flip = !!P.flip;
+        const lkey = `${ns.key}|${sunStep}|${shade}|${g}|${flip}`;
+        let e = sprites.atlas.get(lkey);
         if (e) return e;
-        e = sprites.atlas.add(key, FS.Sprites.toImager(ns.s));
+
+        const ang = sunStep * (FS>TAU / 32);
+        let sx = Math.sin(ang);
+        const sy = Math.cos(ang);
+        if (flip) sx = -sx;
+        e = sprites.atlas.add(lkey, FS.Sprites.light(ns.s, sx, sy, shade, g));
         if (e) {
-          e.ox = ns.s.w / 2; //checking the sprite's center lines up with the part's cente
-          e.oy = ns.s.h /2;
+          e.ox = ns.s.w / 2;
+          e.oy = ns.s.h / 2;
+          e.lit - true;
         }
         return e;
       }
