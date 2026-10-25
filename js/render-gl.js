@@ -497,8 +497,18 @@
         ramp: 'metal', tone: 3, //decoupler color
 
       });
-    }
+    } 
+    if (!key) return null;
+    
+    if (!parsedCache.has(key)) parsedCache.set(key, make());
+    const s = parsedCache.get(key);
+    if (!s) return null;
+    return {key, s};
+      
+    
   }
+
+  
 
   // ---------- Baked sprites (temporary art) ----------
   // Parts: the vector drawing from parts.js at L art pixels per metre, snapped to the palette.
