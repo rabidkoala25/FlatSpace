@@ -473,6 +473,22 @@
     const w = p.w || (d.w === 'auto' ? 1.25 : d.w);
     const tw = p.tw || d.topW || w;
     const len = p.len || d.len;
+
+    //is me now :)
+    if (L === 16 && glow === 0 && FS.SPRITES[d.id]) {
+      const hkey = 'hand|' + d.id;
+      let e = sprites.atlas.get(hkey);
+      if (e) return e;
+      const s = FS.Sprites.parse(d.id, FS.SPRITES[d.id]);
+      e = sprites.atlas.add(hkey, FS.Sprites.toImage(s));
+      if (e) {
+        e.ox = s.w / 2;
+        e.oy = s.h / 2;
+
+      }
+      return e;
+    }
+
     const key = `p|${d.id}|${w}|${tw}|${len}|${p.skin || ''}|${glow}|${L}`;
     let s = sprites.atlas.get(key);
     if (s) return s;

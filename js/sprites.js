@@ -6,6 +6,7 @@
 // pixel matching (done)
 
 window.FS = window.FS || {};
+FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
 (function () {
     const PX = 16; // pixels per metre
     

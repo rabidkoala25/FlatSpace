@@ -9,7 +9,7 @@ const ROOT = path.join(__dirname, '..');
 //load palette
 global.window = global;
 vm.runInThisContext(fs.readFileSync(path.join(ROOT, 'art/palette.js'), 'utf8'), { filename: 'art/palette.js' });
-const P = fs.Palette;
+const P = FS.Palette;
 
 //skin markers are magenta and allow for scaling and easy development of part styles that can stretch
 
@@ -62,7 +62,7 @@ function readRows(file, legend, used) {
 // writes art/sprites/<id>.js
 function write(id, sprite) {
     const out = path.join(ROOT, 'art/sprites', id + '.js');
-    const text = `// thy will hath been done. edit thy png then run thy code once more. \n` + `FS.SPRITES = FS.SPRITES || {};\n` + `FS.SPRITES['${id}'] ${JSON.stringify(sprite, null, 2)};\n`;
+    const text = `// thy will hath been done. edit thy png then run thy code once more. \n` + `FS.SPRITES = FS.SPRITES || {};\n` + `FS.SPRITES['${id}'] = ${JSON.stringify(sprite, null, 2)};\n`;
     fs.mkdirSync(path.dirname(out), { recursive: true});
     fs.writeFileSync(out, text);
     console.log('wrote ' + path.relative(ROOT, out));
@@ -79,7 +79,7 @@ if (!arg) {
 if (arg === '--palette') {
     for (const [name, list] of Object.entries(P.hex)) console.log(name.padEnd(7) + list.join(' '));
     console.log('skin   ' + Object.keys(SKIN_MARKERS).map((h)=> '#' + h).join('') + '   (tanks only: lighter . . . darker)');
-    pricess.exit(0)
+    process.exit(0)
 
 }
 
