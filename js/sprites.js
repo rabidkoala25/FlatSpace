@@ -6,7 +6,6 @@
 // pixel matching (done)
 
 window.FS = window.FS || {};
-FS.SPRITES = FS.SPRITES || {};
 (function () {
     const PX = 16; // pixels per metre
     
@@ -43,15 +42,15 @@ FS.SPRITES = FS.SPRITES || {};
         // checking all the rows line up
 
         for (let i = 0; i < h; i++) {
-            const row = rows[y];
+            const row = rows[i];
             if (row.length !==w) {
-                throw new Error(`sprite with id ${id} was expected to have row ${y} equal ${w}, but it is ${row.length}`);
+                throw new Error(`sprite with id ${id} was expected to have row ${i} equal ${w}, but it is ${row.length}`);
     
             }
             for (let j = 0; j<w; j++) {
-                const ch = row[x];
+                const ch = row[j];
                 if (!(ch in def.legend)) {
-                    throw new Error(`sprite with id ${id} on row ${y} uses ${ch} which isn't logged in the legend`)
+                    throw new Error(`sprite with id ${id} on row ${i} uses ${ch} which isn't logged in the legend`)
                 }
 
 
@@ -59,15 +58,15 @@ FS.SPRITES = FS.SPRITES || {};
                 if (entry == null) continue; // leaves pixel transparent if empy
 
                 const [name, t] = entry;
-                const i = entry;
+                const k = i * w + j; // where this pixel sits in the flat arrays
                 const r = rampIndex(name);
                 if (r<0) throw new Error(`sprite with id ${id} has ramp ${name} which i dont recognise at all bruv`);
                 if (t<0 || t>=rampLength(r)) throw new Error(`sprite with id ${id} doesnt have tone ${t}`);
 
 
-                s.ramp[i] = r;
-                s.tone[i] = t;
-                s.solid[i] = 1;
+                s.ramp[k] = r;
+                s.tone[k] = t;
+                s.solid[k] = 1;
 
             }
         }
@@ -99,4 +98,3 @@ FS.SPRITES = FS.SPRITES || {};
     FS.Sprites = {PX, RAMP_NAMES, parse, toImage};
 
 })();
-

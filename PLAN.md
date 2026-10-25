@@ -175,7 +175,7 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 **The goal.** Pixel art that looks genuinely beautiful and deliberate, in the league of Hyper Light Drifter, Celeste, Eastward or Sea of Stars, not a Flash game. Every sprite is drawn on a pixel grid, but objects rotate freely: **when a rocket turns, its pixels turn with it as crisp squares.** The world is never re-pixelated to the screen grid. This keeps motion smooth, which matters in a game where the rocket is always making small SAS corrections and the flight camera turns as you orbit. The alternative, redrawing everything onto a fixed screen grid each frame, makes edges crawl ("pixel boil") during slow rotation.
 
 **What separates this from a Flash game.**
-- No soft vector gradients or glossy "plastic" shading.
+- No soft vector gradients or glossy "plastic" shading on sprites.
 - No pixels of different sizes side by side, such as a part scaled 2× next to parts at 1×.
 - No blurry, smoothed-out bitmaps.
 - No particles drawn as soft blobs.
@@ -189,7 +189,7 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 | Crisp squares at any angle | Rendering moves to WebGL2 in step B1. Sprites are drawn with a "sharp pixel" shader: each art pixel is a solid square, with a blend one screen pixel wide only along its edges. Squares stay crisp at any angle and don't shimmer when an object moves by a fraction of a pixel or turns slowly. |
 | Smooth zoom | Zoom is continuous. When art pixels shrink below about one screen pixel, the renderer switches to prepared ½ and ¼ versions (downscaled with pixel-art rules), then to a pixel icon. |
 | A limited palette | About 48 colours in `art/palette.js`, built as hue-shifted ramps (shadows lean cool and purple, highlights warm). Effects and UI use the same palette. |
-| No smooth gradients | Sky, atmosphere rims, night-side terminators and smoke use banded colours with ordered dithering, at the same pixel size as the art. |
+| Painted, not blocky, backgrounds | Sprites and terrain stay strict pixel art, but the sky, haze and distant layers aim for the Starbound look (below): smooth gradients between palette colours with a fine blue-noise dither at the art-pixel size, so no hard bands show. Banding is kept only where it reads as deliberate, such as sunset streaks. Smoke still fades by dither. |
 | Consistent light | Each part has a colour layer and a "shape" layer (the surface direction at each pixel). The shader lights it from the real sun direction with 4–5 tone ramps and a specular pixel. The lit side moves as the rocket turns, the craft goes dark in a planet's shadow, and engine fire lights nearby parts. |
 | Ground and planets in the same style | Terrain is a mesh textured with pixel-art material tiles (grass, soil strata, rock, sand, snow) that follow the curve of the ground. Planets seen from orbit are pixel-art textures that turn with the planet. |
 | Pixel effects | Particles are single art pixels or small clusters, coloured from palette ramps, fading by dither pattern instead of transparency. |
@@ -201,6 +201,13 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 - Most parts are cylinders and cones, so they are generated from a profile (width along the length) plus hand-drawn decals: windows, hatches, rivets, stripes and logos. This keeps every part consistent and lets stretched tanks stay crisp at any length. Each tank is a top cap, a repeating body slice and a bottom cap. Skins are palette swaps.
 - `art.html` shows every sprite at 1× and 4×, rotating, under several sun angles, for review.
 - Any generated sprite can be replaced by dropping a PNG with the same name and size into `art/overrides/`. If you, or a pixel artist you work with, want to hand-draw sprites later, it needs no code changes.
+
+**The Starbound look for the world (B3, B6).** The reference for skies, backgrounds and weather is Starbound.
+- A chunky pixel foreground, and behind it several painted-looking parallax layers that get lighter, bluer and lower in contrast with distance; soft, glowing skies; a sun with a halo.
+- **Hand-drawn but procedural.** Shapes come from noise (ridgelines, hills, cloud density), but their surfaces are finished with small hand-drawn pixel "brushes" made in Pixilart (rim-light strips, cracks, grass edges, rock clumps, tree silhouettes), stamped along the generated shapes by seed. No two hills are the same, yet everything looks drawn.
+- Foreground ground gets a Starbound-style edge: a dark outline and a lit top edge along the surface, and blended borders where materials meet.
+- Clouds are lit density fields (B6), not flat sprites.
+- Brushes are drawn and converted like part sprites, and get entries in the drawing guide.
 
 **An honest note.** Art quality is the riskiest part of this plan, because sprites made in code can look mechanical. The rules above keep them consistent. Step B2 ends with a checkpoint where you review the gallery and give direction before the world and effects are drawn.
 
@@ -380,6 +387,8 @@ Features neither game has in stock, which a 2D game is well placed to do: interi
 | Tethers, sails and mass drivers | Rotating momentum-exchange tethers, solar sails, an electromagnetic launch track, fuel depots | H8 |
 | Flight recorder and replays | Every flight recorded; scrub, slow-mo, follow any vessel, cinematic cameras, GIF export, race your own ghost | H9 |
 
+**Later, as a themed DLC:** planetary exploration and construction in the spirit of Starbound (land, step out, dig, gather and build bases). See "DLC — Planetfall" after Phase H.
+
 ---
 
 ## 3. Popular mods and what to build in
@@ -494,6 +503,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 | B3 | The world up close | ☐ |
 | B4 | Effects and motion | ☐ |
 | B5 | Interface reskin and title screen | ☐ |
+| B6 | Clouds, weather and rain | ☐ |
 | **C** | **Physics upgrade** | |
 | C1 | Rigid bodies, collisions, floating origin | ☐ |
 | C2 | Joints, articulated parts and breaking | ☐ |
@@ -554,8 +564,15 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 | H8 | Tethers, sails and mass drivers | ☐ |
 | H9 | Flight recorder, replays and photo mode | ☐ |
 | H10 | Tech and contracts: beyond KSP | ☐ |
+| **DLC** | **Planetfall: exploration and construction (optional)** | |
+| DLC1 | On foot | ☐ |
+| DLC2 | Diggable ground | ☐ |
+| DLC3 | Gathering and crafting | ☐ |
+| DLC4 | Building bases | ☐ |
+| DLC5 | Living worlds | ☐ |
+| DLC6 | Planetfall missions and themed pack | ☐ |
 
-64 steps after the prototype.
+65 steps after the prototype, plus the optional DLC.
 
 ### Prototype (done)
 
@@ -863,13 +880,17 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 - **Terrain mesh:** textured with pixel-art material tiles (soil and rock strata, cliffs, beaches, snow above 2.5 km, crater rims on moons) that follow the ground's curve.
 - **Surface details:** grass tufts, rocks and boulders, scattered by seed.
 - **Ocean:** animated waves, a foam line on beaches, sun glint, darker deep water.
-- **Depth:** two parallax layers of distant hills; a drifting cloud layer you fly through between 2 and 8 km.
+- **Sky (replaces B1's banded sky):** smooth palette gradients by altitude and sun angle with a fine blue-noise dither; a sun disc with a soft halo; warm horizon haze at sunset; stars fading in through it.
+- **Depth, Starbound style:** four to six parallax layers (far mountains, hills, near ridges, tree lines). Each is a noise silhouette finished with hand-drawn brushes (section 1.5), fades into haze with distance and is lit from the sun's side.
+- **Hand-drawn brushes:** a small set drawn in Pixilart (rim light, cracks, grass edge, rock clumps, tree silhouettes), stamped by seed, each with an entry in the sprite guide.
+- **Foreground edges:** a dark outline and lit top edge along the ground surface, and blended borders between materials.
+- **Clouds:** a simple placeholder layer until B6.
 - **Launch site:** pad with flame trench, lattice tower whose arms swing away at launch, assembly building, tracking dish, blinking beacons.
 - **Day and night:** sunlit terrain by day; lit windows at night.
 
 **Stretch:** birds, or steam vents on the pad before launch.
 
-**Done when:** screenshots of the launch, flight through clouds, a beach landing, the mountains, and Mira's craters each look finished.
+**Done when:** screenshots of the launch, a beach landing, the mountains, and Mira's craters each look finished, and the sky and backgrounds pass a side-by-side check against Starbound screenshots (painted, not blocky).
 
 #### B4 · Effects and motion
 **Goal:** fire, smoke and explosions that feel alive, with no soft blobs.
@@ -902,6 +923,23 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 **Stretch:** a short animated logo.
 
 **Done when:** title, editor, flight, map and dialogs share one visual language and work on a phone.
+
+#### B6 · Clouds, weather and rain
+**Goal:** a sky that is alive: volumetric-looking clouds that move with the weather, and rain and storms you can fly through (section 1.5, the Starbound look).
+
+**Must:**
+- **Volumetric 2D clouds:** each cloud layer is a 2D density field (layered noise, drifting with the wind) drawn in a shader. Light is marched towards the sun through the density, so clouds shade themselves: bright sunlit tops, dark undersides, glowing edges when backlit, orange and pink at sunset. The result is snapped to palette ramps with fine dither at the art-pixel size.
+- **Cloud types by altitude:** low cumulus (1–3 km), flat stratus and fog banks, high cirrus (6–10 km), and towering storm clouds.
+- **Flying through:** haze thickens inside a cloud, the craft is lit more dimly, and wisps stream past.
+- **Weather patterns:** each body with an atmosphere has a weather map along its longitude (humidity, pressure, wind) that drifts and changes over game time. It decides cloud cover, rain and storms where you are. It is seeded, so the same time always gives the same weather.
+- **Rain:** pixel streaks slanted by the wind; splashes on the ground, the sea and the craft; wet ground darkens.
+- **Storms:** lightning that lights the clouds and the craft for a frame; thunder once sound exists (E9).
+- **From orbit:** the planet's texture shows the same cloud cover and storms as the weather map.
+- **Performance:** clouds are drawn into a buffer at the art-pixel grid, within the 60 fps budget (section 1.7).
+
+**Stretch:** snow on cold worlds; a rainbow opposite a low sun; wind pushing craft (needs C4).
+
+**Done when:** a recording climbing through rain, a storm and a cloud deck at sunset looks finished, and the same storm can be seen from orbit.
 
 ---
 
@@ -1306,7 +1344,7 @@ H9's flight recorder builds on the flight log from this step.
 - **Ground scatter:** rocks, boulders, grass, shrubs, trees and ice spikes, chosen by biome and slope.
   - Large boulders are collidable (C1), so landers and rovers must avoid them.
   - Small scatter sways in the wind and is flattened by engine blast.
-- **Parallax depth:** three to five layers of distant terrain (far ranges, middle hills, near ridges), taken from the same terrain further along the surface, with haze between them, each moving at the right speed for its distance.
+- **Parallax depth:** extends B3's painted layers: three to five layers of distant terrain (far ranges, middle hills, near ridges), taken from the same terrain further along the surface, with haze between them, each moving at the right speed for its distance.
 - **Marks that stay:** footprints, wheel tracks, scorch marks and small blast craters from landing engines.
 - **Performance:** terrain built and cached in chunks (in a Web Worker if needed), within the 60 fps budget (section 1.7).
 
@@ -1686,6 +1724,44 @@ Features that neither KSP nor Spaceflight Simulator has in stock (section 2.8). 
 
 **Done when:** the checks pass, and a Career save can reach and complete each new kind of contract.
 
+### DLC — Planetfall: exploration and construction (working title)
+
+An optional themed expansion after Phase H, in the spirit of Starbound: land anywhere, step out, then explore, dig and build on the surface. It is not counted in the 65 steps and stays part of the same static site. It builds on E7 (EVA), E10 (terrain), F5 (resources), G3 (construction), G7 (bases), H1–H3 (astronauts and hands-on) and B6 (weather).
+
+#### DLC1 · On foot
+- Side-scrolling astronaut control on any landed body: walk, run, jump, jetpack and climb, with a platformer camera.
+- Gravity, air and temperature come from the body; the suit has power and oxygen.
+
+**Done when:** you can land on Mira, step out and walk to the crater rim and back.
+
+#### DLC2 · Diggable ground
+- Near the astronaut, the height-function terrain becomes a grid of material tiles in chunks that can be mined and placed; further away it stays the height function. Edits are saved per site.
+- Caves, ore veins, ice and buried features by biome (uses E10's density-field stretch).
+
+**Done when:** you dig into a crater wall, the hole is still there after reloading, and the far terrain is unchanged.
+
+#### DLC3 · Gathering and crafting
+- Tools (drill, scanner, cutter), resources from F5, a crafting bench and recipes for blocks, base modules and rocket fuel.
+
+**Done when:** ore you mined becomes fuel in a rocket's tank.
+
+#### DLC4 · Building bases
+- Place blocks and modules (habitat, greenhouse, power, refinery, landing pad, launch pad) on a grid. Rooms must be sealed to hold air; power and air form networks.
+- A pad built on site can launch rockets built on site (ties to G7 and H7).
+
+**Done when:** you build a sealed base, refuel and fly home from it.
+
+#### DLC5 · Living worlds
+- Procedural plants and creatures per biome (simple and non-hostile by default); day, night and B6 weather on the surface.
+- Points of interest: wrecks, anomalies, old probes.
+
+**Done when:** two biomes on Aster feel clearly different on foot.
+
+#### DLC6 · Planetfall missions and themed pack
+- Contracts and a short story arc, plus a themed set of parts, tiles and art.
+
+**Done when:** the arc can be played from first landing to a working base.
+
 ---
 
 ## 5. Controls
@@ -1776,6 +1852,7 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
   - centre of pressure overlay (A3), centre of lift indicator and plane controls (F6), and rover driving (F8) made explicit.
 - **Plan revision 9**: new step D8, "Competition mode (physics club)": shared rules and budgets as a competition code, challenges (highest apogee, predict then fly, egg drop, precision landing, payload to orbit), entries re-run from their flight logs to check the scores, leaderboard and projector view with ghosts, flight data graphs with CSV export, and model rocket motors (A–G); 64 steps in total.
 - **Plan revision 10**: sprites are drawn in Pixilart and converted by `tools/png2sprite.js`; new `sprite-guide.html` and `art/sprite-notes.js` give drawing guidance for every part and are kept up to date whenever a part is added or changed (`tests/test_sprite_notes.js`); B2 lighting is done in JavaScript per sun angle; while the user takes part in Hack Club Terra, they write the code and sessions guide (section 4.2).
+- **Plan revision 11**: the Starbound look for skies and backgrounds (smooth dithered sky, painted parallax layers, hand-drawn brushes on procedural shapes) added to the art rules (1.5) and B3; new step B6 for volumetric 2D clouds, weather patterns, rain and storms; an optional Starbound-style exploration and construction DLC ("Planetfall", working title) after Phase H.
 - **Plan revision 8**: new step E10, "Terrain detail" (realistic landforms, strata, collidable ground scatter and deep parallax layers, the idea behind the Parallax mod); new section 4.4, which says every new part and feature gets a tech-tree node and contracts of its own, with a "Tech and contracts" step closing each phase (E11, F11, G9, H10) and automated checks; tech nodes and contracts are data that packs can extend; 63 steps in total.
 - **Plan revision 7**: new Phase H, "Beyond KSP" (section 2.8): living astronauts with ragdolls (H1), walkable interiors (H2), hands-on objects and tools (H3), damage and repairs (H4), life on board and spin gravity (H5), self-landing rockets (H6), launch and recovery infrastructure (H7), tethers, solar sails and mass drivers (H8), and a flight recorder with replays (H9); 58 steps in total. Original parts added to `PARTS.md`.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
