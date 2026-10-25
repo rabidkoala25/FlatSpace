@@ -1,146 +1,180 @@
 // bodies.js — planets and moons: orbits on rails, rotation, terrain, atmosphere.
 (function () {
-  const TAU = FS.TAU;
+  const FULL_TURN = FS.TAU;
 
   // Body definitions live in data/bodies.js.
   const defs = FS.DATA.bodies;
 
-  const bodies = defs.map((d) => Object.assign({}, d));
+  const bodies = defs.map((bodyData) => Object.assign({}, bodyData));
   const byName = {};
-  bodies.forEach((b) => (byName[b.name] = b));
-  bodies.forEach((b) => {
-    b.parent = b.parent ? byName[b.parent] : null;
-    b.children = [];
+  bodies.forEach((body) => (byName[body.name] = body));
+  bodies.forEach((body) => {
+    body.parent = body.parent ? byName[body.parent] : null;
+    body.children = [];
   });
-  bodies.forEach((b) => {
-    if (b.parent) {
-      b.parent.children.push(b);
+  bodies.forEach((body) => {
+    if (body.parent) {
+      body.parent.children.push(body);
       // Everything in this system turns clockwise (negative angular rates), so
       // prograde/east points to the right of the screen when you launch.
-      b.n = -Math.sqrt(b.parent.mu / (b.a * b.a * b.a)); // mean motion (rad/s)
-      b.period = TAU / Math.abs(b.n);
-      b.soi = b.a * Math.pow(b.mu / b.parent.mu, 0.4);
-      if (!b.rotPeriod) b.rotPeriod = -b.period; // tidally locked
+      body.n = -Math.sqrt(body.parent.mu / (body.a * body.a * body.a)); // mean motion (rad/s)
+      body.period = FULL_TURN / Math.abs(body.n);
+      body.soi = body.a * Math.pow(body.mu / body.parent.mu, 0.4);
+      if (!body.rotPeriod) {
+        body.rotPeriod = -body.period;
+      } // tidally locked
     } else {
-      b.soi = Infinity;
+      body.soi = Infinity;
     }
-    b.omega = TAU / b.rotPeriod;
+    body.omega = FULL_TURN / body.rotPeriod;
     // Craters: precomputed random bowls (angular centre, angular radius, depth)
-    if (b.terrain.craters) {
-      const r = FS.rng(b.terrain.seed * 977);
-      b.craterList = [];
-      for (let i = 0; i < b.terrain.craters; i++) {
-        const rad = 0.004 + Math.pow(r(), 2.2) * 0.07;
-        b.craterList.push({ lon: r() * TAU, rad, depth: rad * b.R * (0.05 + r() * 0.06) });
+    if (body.terrain.craters) {
+      const random = FS.rng(body.terrain.seed * 977);
+      body.craterList = [];
+      for (let craterNumber = 0; craterNumber < body.terrain.craters; craterNumber++) {
+        const craterRadius = 0.004 + Math.pow(random(), 2.2) * 0.07;
+        body.craterList.push({
+          lon: random() * FULL_TURN,
+          rad: craterRadius,
+          depth: craterRadius * body.R * (0.05 + random() * 0.06),
+        });
       }
     }
   });
 
   FS.bodies = bodies;
   FS.bodyByName = byName;
-  FS.root = bodies.find((b) => !b.parent);
+  FS.root = bodies.find((body) => !body.parent);
 
   // Position of a body relative to its parent at time t (circular orbit, CCW).
-  FS.bodyPos = (b, t) => {
-    if (!b.parent) return { x: 0, y: 0 };
-    const ang = b.phase0 + b.n * t;
-    return { x: Math.cos(ang) * b.a, y: Math.sin(ang) * b.a };
+  FS.bodyPos = (body, time) => {
+    if (!body.parent) {
+      return { x: 0, y: 0 };
+    }
+    const angle = body.phase0 + body.n * time;
+    return { x: Math.cos(angle) * body.a, y: Math.sin(angle) * body.a };
   };
-  FS.bodyVel = (b, t) => {
-    if (!b.parent) return { x: 0, y: 0 };
-    const ang = b.phase0 + b.n * t;
-    const s = b.a * b.n;
-    return { x: -Math.sin(ang) * s, y: Math.cos(ang) * s };
+  FS.bodyVel = (body, time) => {
+    if (!body.parent) {
+      return { x: 0, y: 0 };
+    }
+    const angle = body.phase0 + body.n * time;
+    const speed = body.a * body.n;
+    return { x: -Math.sin(angle) * speed, y: Math.cos(angle) * speed };
   };
   // Absolute position (root frame).
-  FS.bodyAbs = (b, t) => {
-    let p = { x: 0, y: 0 };
-    for (let c = b; c && c.parent; c = c.parent) p = FS.vec.add(p, FS.bodyPos(c, t));
-    return p;
+  FS.bodyAbs = (body, time) => {
+    let position = { x: 0, y: 0 };
+    for (let current = body; current && current.parent; current = current.parent) {
+      position = FS.vec.add(position, FS.bodyPos(current, time));
+    }
+    return position;
   };
-  FS.bodyAbsVel = (b, t) => {
-    let v = { x: 0, y: 0 };
-    for (let c = b; c && c.parent; c = c.parent) v = FS.vec.add(v, FS.bodyVel(c, t));
-    return v;
+  FS.bodyAbsVel = (body, time) => {
+    let velocity = { x: 0, y: 0 };
+    for (let current = body; current && current.parent; current = current.parent) {
+      velocity = FS.vec.add(velocity, FS.bodyVel(current, time));
+    }
+    return velocity;
   };
   // Rotation angle of the body's surface at time t.
-  FS.bodyRot = (b, t) => b.rot0 + b.omega * t;
+  FS.bodyRot = (body, time) => body.rot0 + body.omega * time;
 
   // ---- Terrain ----
   // Periodic 1D value noise: x in [0, period), wraps around the planet seamlessly.
   function noise1(x, period, seed) {
-    const i0 = Math.floor(x);
-    const f = x - i0;
-    const a = FS.hash(((i0 % period) + period) % period, seed);
-    const b = FS.hash((((i0 + 1) % period) + period) % period, seed);
-    const t = f * f * (3 - 2 * f);
-    return a + (b - a) * t;
+    const cell = Math.floor(x);
+    const fraction = x - cell;
+    const leftValue = FS.hash(((cell % period) + period) % period, seed);
+    const rightValue = FS.hash((((cell + 1) % period) + period) % period, seed);
+    const smooth = fraction * fraction * (3 - 2 * fraction);
+    return leftValue + (rightValue - leftValue) * smooth;
   }
 
   // Height above datum (sea level) in metres for body-fixed longitude lon (radians).
-  FS.terrainHeight = (b, lon) => {
-    const T = b.terrain;
-    let u = (lon / TAU) % 1;
-    if (u < 0) u += 1;
-    let h = 0, amp = T.amp, freq = T.base;
-    for (let k = 0; k < T.octaves; k++) {
+  FS.terrainHeight = (body, longitude) => {
+    const terrain = body.terrain;
+    let around = (longitude / FULL_TURN) % 1;
+    if (around < 0) {
+      around += 1;
+    }
+    let height = 0;
+    let amplitude = terrain.amp;
+    let freq = terrain.base;
+    for (let octave = 0; octave < terrain.octaves; octave++) {
       // Ridged on the first octaves for mountain shapes, smooth for the rest
-      let n = noise1(u * freq, freq, T.seed + k * 101) * 2 - 1;
-      if (k === 1 || k === 2) n = (1 - Math.abs(n)) * 1.6 - 0.8;
-      h += n * amp;
-      amp *= T.persist;
+      let noise = noise1(around * freq, freq, terrain.seed + octave * 101) * 2 - 1;
+      if (octave === 1 || octave === 2) {
+        noise = (1 - Math.abs(noise)) * 1.6 - 0.8;
+      }
+      height += noise * amplitude;
+      amplitude *= terrain.persist;
       freq *= 2;
     }
-    h += T.bias;
-    if (T.flats && h < 0) h *= 0.12;
-    if (b.craterList) {
-      for (const c of b.craterList) {
-        let d = Math.abs(FS.wrapAngle(lon - c.lon));
-        if (d > c.rad * 1.6) continue;
-        const x = d / c.rad;
-        if (x < 1) h += c.depth * (x * x - 1);
-        h += c.depth * 0.3 * Math.exp(-Math.pow((x - 1) / 0.22, 2));
+    height += terrain.bias;
+    if (terrain.flats && height < 0) {
+      height *= 0.12;
+    }
+    if (body.craterList) {
+      for (const crater of body.craterList) {
+        let distance = Math.abs(FS.wrapAngle(longitude - crater.lon));
+        if (distance > crater.rad * 1.6) {
+          continue;
+        }
+        const craterFraction = distance / crater.rad;
+        if (craterFraction < 1) {
+          height += crater.depth * (craterFraction * craterFraction - 1);
+        }
+        height += crater.depth * 0.3 * Math.exp(-Math.pow((craterFraction - 1) / 0.22, 2));
       }
     }
-    if (b.pad) {
-      const d = Math.abs(FS.wrapAngle(lon - b.pad.lon));
-      const w = FS.smoothstep(0.022, 0.006, d); // 1 near the pad, 0 far away
-      h = FS.lerp(h, b.pad.height, w);
+    if (body.pad) {
+      const distance = Math.abs(FS.wrapAngle(longitude - body.pad.lon));
+      const padWeight = FS.smoothstep(0.022, 0.006, distance); // 1 near the pad, 0 far away
+      height = FS.lerp(height, body.pad.height, padWeight);
     }
-    return h;
+    return height;
   };
 
   // Height of whatever you'd land on: ocean surface or ground.
-  FS.surfaceHeight = (b, lon) => {
-    const h = FS.terrainHeight(b, lon);
-    return b.ocean ? Math.max(h, 0) : h;
+  FS.surfaceHeight = (body, longitude) => {
+    const height = FS.terrainHeight(body, longitude);
+    return body.ocean ? Math.max(height, 0) : height;
   };
 
   // Longitude (body-fixed) under an inertial direction angle at time t.
-  FS.lonAt = (b, inertialAngle, t) => FS.wrapAngle(inertialAngle - FS.bodyRot(b, t));
+  FS.lonAt = (body, inertialAngle, time) => FS.wrapAngle(inertialAngle - FS.bodyRot(body, time));
 
   // ---- Atmosphere ----
   // Pressure in atmospheres; reaches exactly 0 at the top of the atmosphere.
-  FS.pressure = (b, alt) => {
-    const A = b.atmo;
-    if (!A || alt >= A.height) return 0;
-    alt = Math.max(alt, -1000);
-    const top = Math.exp(-A.height / A.H);
-    return (A.p0 * (Math.exp(-alt / A.H) - top)) / (1 - top);
+  FS.pressure = (body, altitude) => {
+    const atmosphere = body.atmo;
+    if (!atmosphere || altitude >= atmosphere.height) {
+      return 0;
+    }
+    altitude = Math.max(altitude, -1000);
+    const top = Math.exp(-atmosphere.height / atmosphere.H);
+    return (atmosphere.p0 * (Math.exp(-altitude / atmosphere.H) - top)) / (1 - top);
   };
-  FS.density = (b, alt) => {
-    const A = b.atmo;
-    if (!A) return 0;
-    return (FS.pressure(b, alt) / A.p0) * A.rho0;
+  FS.density = (body, altitude) => {
+    const atmosphere = body.atmo;
+    if (!atmosphere) {
+      return 0;
+    }
+    return (FS.pressure(body, altitude) / atmosphere.p0) * atmosphere.rho0;
   };
 
   // Velocity of the air (co-rotating atmosphere) at position r relative to the body.
-  FS.airVel = (b, r) => ({ x: -b.omega * r.y, y: b.omega * r.x });
+  FS.airVel = (body, position) => ({ x: -body.omega * position.y, y: body.omega * position.x });
 
   // Highest time-warp level allowed at this altitude.
-  FS.maxWarpIndex = (b, alt) => {
-    let idx = 0;
-    for (let i = 0; i < b.warpAlt.length; i++) if (alt >= b.warpAlt[i]) idx = i;
-    return idx;
+  FS.maxWarpIndex = (body, altitude) => {
+    let warpIndex = 0;
+    for (let index = 0; index < body.warpAlt.length; index++) {
+      if (altitude >= body.warpAlt[index]) {
+        warpIndex = index;
+      }
+    }
+    return warpIndex;
   };
 })();

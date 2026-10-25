@@ -5,15 +5,23 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const dir = __dirname;
-const files = fs.readdirSync(dir).filter((f) => /^test_.*\.js$/.test(f)).sort();
+const testFolder = __dirname;
+const files = fs
+  .readdirSync(testFolder)
+  .filter((fileName) => /^test_.*\.js$/.test(fileName))
+  .sort();
 let failed = 0;
 const started = Date.now();
 
-for (const f of files) {
-  console.log('\n' + f);
-  const r = spawnSync(process.execPath, [path.join(dir, f)], { stdio: 'inherit', timeout: 180000 });
-  if (r.status !== 0) failed++;
+for (const fileName of files) {
+  console.log('\n' + fileName);
+  const result = spawnSync(process.execPath, [path.join(testFolder, fileName)], {
+    stdio: 'inherit',
+    timeout: 180000,
+  });
+  if (result.status !== 0) {
+    failed++;
+  }
 }
 
 const secs = ((Date.now() - started) / 1000).toFixed(1);

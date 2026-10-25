@@ -1,69 +1,93 @@
 // The simulation through FS.game (sim.js, warp.js, nodes.js), with no page around it.
 const { loadGame, check, near, done } = require('./lib');
 const FS = loadGame();
-const V = FS.vec;
-const G = FS.game;
+const Vector = FS.vec;
+const game = FS.game;
 
 const seen = [];
-for (const type of ['flight-start', 'staged', 'soi', 'message']) G.on(type, (d) => seen.push(type));
+for (const type of ['flight-start', 'staged', 'soi', 'message']) {
+  game.on(type, (data) => seen.push(type));
+}
 
-const orbiter = FS.SAMPLE_CRAFT.find((c) => c.name === 'Orbiter I');
+const orbiter = FS.SAMPLE_CRAFT.find((craft) => craft.name === 'Orbiter I');
 
 // --- Events, and staged debris kept through time warp ---
 {
-  G.newFlight({ name: orbiter.name, parts: orbiter.parts.slice() });
+  game.newFlight({ name: orbiter.name, parts: orbiter.parts.slice() });
   check(seen.includes('flight-start'), 'starting a flight emits "flight-start"');
-  G.debugOrbit(100000);
-  const v = G.vessel;
-  v.stage(G); // ignite
-  v.stage(G); // drop the first stage
-  check(seen.includes('staged') && G.debris.length === 1, 'staging emits "staged" and the dropped stage becomes debris');
+  game.debugOrbit(100000);
+  const vessel = game.vessel;
+  vessel.stage(game); // ignite
+  vessel.stage(game); // drop the first stage
+  check(
+    seen.includes('staged') && game.debris.length === 1,
+    'staging emits "staged" and the dropped stage becomes debris',
+  );
 
-  G.update(0.05); // one physics frame with the throttle closed
-  G.warpIdx = 3;  // 50×, on rails
-  for (let i = 0; i < 20; i++) G.update(0.05);
-  check(G.onRails, 'time warp puts the craft on rails');
-  check(G.debris.length === 1 && G.debris[0].rails, 'debris stays, and goes on rails too');
-  const gap = V.len(V.sub(G.debris[0].r, v.r));
+  game.update(0.05); // one physics frame with the throttle closed
+  game.warpIdx = 3; // 50×, on rails
+  for (let step = 0; step < 20; step++) {
+    game.update(0.05);
+  }
+  check(game.onRails, 'time warp puts the craft on rails');
+  check(game.debris.length === 1 && game.debris[0].rails, 'debris stays, and goes on rails too');
+  const gap = Vector.len(Vector.sub(game.debris[0].r, vessel.r));
   check(gap > 1 && gap < 1000, `debris keeps flying nearby on rails (${gap.toFixed(1)} m away)`);
-  G.stopWarp();
-  G.update(0.05);
-  check(!G.onRails && !G.debris[0].rails, 'stopping warp takes craft and debris off rails');
+  game.stopWarp();
+  game.update(0.05);
+  check(!game.onRails && !game.debris[0].rails, 'stopping warp takes craft and debris off rails');
 }
 
 // --- A node placed beyond a Mira encounter survives the SOI change ---
 {
-  G.newFlight({ name: 'Probe', parts: ['sparrow', 't100', 'gnat'] });
-  G.debugOrbit(100000);
-  const v = G.vessel;
-  const R0 = V.len(v.r);
+  game.newFlight({ name: 'Probe', parts: ['sparrow', 't100', 'gnat'] });
+  game.debugOrbit(100000);
+  const vessel = game.vessel;
+  const orbitRadius = Vector.len(vessel.r);
   let found = false;
-  for (let ang = 0; ang < FS.TAU && !found; ang += 0.05) {
-    const r = V.fromAngle(ang, R0);
-    const sp = Math.sqrt(FS.root.mu / R0) + 860;
-    const vel = { x: Math.sin(ang) * sp, y: -Math.cos(ang) * sp };
-    const p = FS.predictPatches(FS.root, r, vel, G.t, 3);
-    if (p[0].end === 'encounter') { v.r = r; v.v = vel; found = true; }
+  for (let angle = 0; angle < FS.TAU && !found; angle += 0.05) {
+    const position = Vector.fromAngle(angle, orbitRadius);
+    const speed = Math.sqrt(FS.root.mu / orbitRadius) + 860;
+    const velocity = { x: Math.sin(angle) * speed, y: -Math.cos(angle) * speed };
+    const patches = FS.predictPatches(FS.root, position, velocity, game.t, 3);
+    if (patches[0].end === 'encounter') {
+      vessel.r = position;
+      vessel.v = velocity;
+      found = true;
+    }
   }
   check(found, 'set up a transfer orbit that meets Mira');
-  G.patchTimer = 0;
-  G.update(0.02);
-  const p1 = G.patches[1];
-  check(p1 && p1.body.name === 'Mira', 'the predicted path has a Mira patch');
+  game.patchTimer = 0;
+  game.update(0.02);
+  const secondPatch = game.patches[1];
+  check(secondPatch && secondPatch.body.name === 'Mira', 'the predicted path has a Mira patch');
 
-  const tNode = p1.tStart + 0.3 * (Math.min(p1.tEnd, p1.tStart + 20000) - p1.tStart);
-  const nd = G.createNode(tNode);
-  check(nd && nd.body.name === 'Mira' && nd.patchIndex === 1, 'a node can be placed on the Mira patch');
-  check(nd && nd.originT === p1.tStart, 'that node is drawn relative to Mira at the start of the patch');
-  G.editNode('pro', -50);
-  check(G.nodePatches && G.nodePatches[0].body.name === 'Mira', 'the planned path after the node starts at Mira');
+  const tNode =
+    secondPatch.tStart + 0.3 * (Math.min(secondPatch.tEnd, secondPatch.tStart + 20000) - secondPatch.tStart);
+  const node = game.createNode(tNode);
+  check(node && node.body.name === 'Mira' && node.patchIndex === 1, 'a node can be placed on the Mira patch');
+  check(
+    node && node.originT === secondPatch.tStart,
+    'that node is drawn relative to Mira at the start of the patch',
+  );
+  game.editNode('pro', -50);
+  check(
+    game.nodePatches && game.nodePatches[0].body.name === 'Mira',
+    'the planned path after the node starts at Mira',
+  );
 
   // Warp until the craft enters Mira's sphere of influence
-  for (let i = 0; i < 4000 && v.body === FS.root; i++) { G.changeWarp(7); G.update(0.1); }
-  check(v.body.name === 'Mira', 'warping carries the craft into Mira\'s sphere of influence');
-  check(!!G.node, 'the node survives the SOI change');
-  check(G.node && G.node.body.name === 'Mira' && G.node.patchIndex === 0, 'the node is now on the current (Mira) patch');
-  near(G.node ? G.node.t : 0, tNode, 0.001, 'the node keeps its time');
+  for (let step = 0; step < 4000 && vessel.body === FS.root; step++) {
+    game.changeWarp(7);
+    game.update(0.1);
+  }
+  check(vessel.body.name === 'Mira', "warping carries the craft into Mira's sphere of influence");
+  check(!!game.node, 'the node survives the SOI change');
+  check(
+    game.node && game.node.body.name === 'Mira' && game.node.patchIndex === 0,
+    'the node is now on the current (Mira) patch',
+  );
+  near(game.node ? game.node.t : 0, tNode, 0.001, 'the node keeps its time');
 }
 
 done();

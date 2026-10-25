@@ -1,173 +1,290 @@
 // parts.js — part lookup, engine maths and how parts are drawn.
 // The part stats live in data/parts.js; the part tree, staging and Δv are in partgraph.js.
 (function () {
-  const G0 = FS.G0;
+  const STANDARD_GRAVITY = FS.G0;
 
   const PARTS = FS.DATA.parts; // stats live in data/parts.js
   const BY_ID = {};
-  PARTS.forEach((p) => (BY_ID[p.id] = p));
+  PARTS.forEach((partType) => (BY_ID[partType.id] = partType));
   FS.PARTS = PARTS;
   FS.PART = BY_ID;
   FS.PART_CATS = ['Command', 'Fuel', 'Engines', 'Structural', 'Utility'];
 
-  FS.partMass = (p) => (p.dry ?? p.def.mass) + p.fuel + p.solid;
+  FS.partMass = (part) => (part.dry ?? part.def.mass) + part.fuel + part.solid;
 
   // Engine thrust and mass flow at a given pressure (atm).
-  FS.engineThrust = (eng, p, throttle = 1) => {
-    const mdot = (eng.vac / (eng.ispVac * G0)) * throttle;
-    const isp = Math.max(0, eng.ispVac - (eng.ispVac - eng.ispAsl) * p);
-    return { F: mdot * isp * G0, mdot, isp };
+  FS.engineThrust = (engine, pressure, throttle = 1) => {
+    const mdot = (engine.vac / (engine.ispVac * STANDARD_GRAVITY)) * throttle;
+    const specificImpulse = Math.max(0, engine.ispVac - (engine.ispVac - engine.ispAsl) * pressure);
+    return { F: mdot * specificImpulse * STANDARD_GRAVITY, mdot, isp: specificImpulse };
   };
 
   // ---- Drawing ----
-  function cyl(ctx, x0, x1, base, light, dark) {
-    const g = ctx.createLinearGradient(x0, 0, x1, 0);
-    g.addColorStop(0, dark); g.addColorStop(0.35, light); g.addColorStop(0.55, base); g.addColorStop(1, dark);
-    return g;
+  function cylinderGradient(context, leftX, rightX, base, light, dark) {
+    const gradient = context.createLinearGradient(leftX, 0, rightX, 0);
+    gradient.addColorStop(0, dark);
+    gradient.addColorStop(0.35, light);
+    gradient.addColorStop(0.55, base);
+    gradient.addColorStop(1, dark);
+    return gradient;
   }
 
   // Draw part p with its top at y, its axis along +y pointing down the rocket, centred on x = 0.
   // Widths come from FS.relayout (p.w, p.tw). px = size of one screen pixel in metres.
-  FS.drawPart = (ctx, p, y, px, opts = {}) => {
-    const d = p.def;
-    const w = p.w || (d.w === 'auto' ? 1.25 : d.w);
-    const tw = p.tw || d.topW || w;
-    const h = p.len || d.len;
-    const hw = w / 2, thw = tw / 2;
-    ctx.lineWidth = px * 1.2;
-    ctx.strokeStyle = 'rgba(10,14,22,0.75)';
-    ctx.lineJoin = 'round';
+  FS.drawPart = (context, part, y, pixelSize, opts = {}) => {
+    const partType = part.def;
+    const width = part.w || (partType.w === 'auto' ? 1.25 : partType.w);
+    const topWidth = part.tw || partType.topW || width;
+    const height = part.len || partType.len;
+    const halfWidth = width / 2;
+    const topHalfWidth = topWidth / 2;
+    context.lineWidth = pixelSize * 1.2;
+    context.strokeStyle = 'rgba(10,14,22,0.75)';
+    context.lineJoin = 'round';
 
-    const trap = (topHalf, botHalf, yy, hh) => {
-      ctx.beginPath();
-      ctx.moveTo(-topHalf, yy); ctx.lineTo(topHalf, yy); ctx.lineTo(botHalf, yy + hh); ctx.lineTo(-botHalf, yy + hh); ctx.closePath();
+    const trap = (topHalf, botHalf, topY, bandHeight) => {
+      context.beginPath();
+      context.moveTo(-topHalf, topY);
+      context.lineTo(topHalf, topY);
+      context.lineTo(botHalf, topY + bandHeight);
+      context.lineTo(-botHalf, topY + bandHeight);
+      context.closePath();
     };
 
-    if (d.id === 'lark') {
-      trap(thw, hw, y, h);
-      ctx.fillStyle = cyl(ctx, -hw, hw, '#6d737c', '#a7adb6', '#3a3f46'); ctx.fill(); ctx.stroke();
+    if (partType.id === 'lark') {
+      trap(topHalfWidth, halfWidth, y, height);
+      context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#6d737c', '#a7adb6', '#3a3f46');
+      context.fill();
+      context.stroke();
       // heat shield lip
-      ctx.fillStyle = '#5a3d2a'; ctx.fillRect(-hw, y + h - 0.12, w, 0.12);
+      context.fillStyle = '#5a3d2a';
+      context.fillRect(-halfWidth, y + height - 0.12, width, 0.12);
       // window
-      ctx.beginPath(); ctx.arc(-0.08, y + h * 0.45, 0.15, 0, FS.TAU);
-      ctx.fillStyle = '#9fd8ff'; ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#e9edf2'; ctx.fillRect(-thw * 0.6, y - 0.08, thw * 1.2, 0.1);
-    } else if (d.id === 'sparrow') {
-      trap(hw * 0.8, hw, y, h);
-      ctx.fillStyle = cyl(ctx, -hw, hw, '#c9a24a', '#f0d690', '#7a5d22'); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(hw * 0.4, y); ctx.lineTo(hw * 0.4, y - 0.5); ctx.strokeStyle = '#ccc'; ctx.lineWidth = px * 1.5; ctx.stroke();
-      ctx.fillStyle = '#5ec6ff'; ctx.fillRect(-0.12, y + h * 0.35, 0.24, 0.1);
-    } else if (d.id === 'canopy') {
-      ctx.beginPath();
-      ctx.moveTo(-hw, y + h); ctx.quadraticCurveTo(-hw, y, 0, y); ctx.quadraticCurveTo(hw, y, hw, y + h); ctx.closePath();
-      ctx.fillStyle = cyl(ctx, -hw, hw, '#d8642b', '#f0955c', '#8d3a15');
-      ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#f2efe8'; ctx.fillRect(-hw * 0.25, y + h * 0.15, hw * 0.5, h * 0.85);
-    } else if (d.fuel) {
+      context.beginPath();
+      context.arc(-0.08, y + height * 0.45, 0.15, 0, FS.TAU);
+      context.fillStyle = '#9fd8ff';
+      context.fill();
+      context.stroke();
+      context.fillStyle = '#e9edf2';
+      context.fillRect(-topHalfWidth * 0.6, y - 0.08, topHalfWidth * 1.2, 0.1);
+    } else if (partType.id === 'sparrow') {
+      trap(halfWidth * 0.8, halfWidth, y, height);
+      context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#c9a24a', '#f0d690', '#7a5d22');
+      context.fill();
+      context.stroke();
+      context.beginPath();
+      context.moveTo(halfWidth * 0.4, y);
+      context.lineTo(halfWidth * 0.4, y - 0.5);
+      context.strokeStyle = '#ccc';
+      context.lineWidth = pixelSize * 1.5;
+      context.stroke();
+      context.fillStyle = '#5ec6ff';
+      context.fillRect(-0.12, y + height * 0.35, 0.24, 0.1);
+    } else if (partType.id === 'canopy') {
+      context.beginPath();
+      context.moveTo(-halfWidth, y + height);
+      context.quadraticCurveTo(-halfWidth, y, 0, y);
+      context.quadraticCurveTo(halfWidth, y, halfWidth, y + height);
+      context.closePath();
+      context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#d8642b', '#f0955c', '#8d3a15');
+      context.fill();
+      context.stroke();
+      context.fillStyle = '#f2efe8';
+      context.fillRect(-halfWidth * 0.25, y + height * 0.15, halfWidth * 0.5, height * 0.85);
+    } else if (partType.fuel) {
       // tank looks (step A4): white, gold foil, orange foam, roll pattern, bare steel
-      const skin = p.skin || (d.foam ? 'foam' : 'white');
-      const band = Math.min(0.14, h * 0.12);
-      ctx.beginPath(); ctx.rect(-hw, y, w, h);
-      if (skin === 'foam') ctx.fillStyle = cyl(ctx, -hw, hw, '#c46a2c', '#e8995b', '#7a3c14');
-      else if (skin === 'gold') ctx.fillStyle = cyl(ctx, -hw, hw, '#c99a2e', '#f6dc7a', '#7a5718');
-      else if (skin === 'steel') ctx.fillStyle = cyl(ctx, -hw, hw, '#8f969e', '#c9ced4', '#545a61');
-      else ctx.fillStyle = cyl(ctx, -hw, hw, '#d9d6cc', '#fbfaf5', '#8e8b82');
-      ctx.fill();
-      ctx.save();
-      ctx.beginPath(); ctx.rect(-hw, y, w, h); ctx.clip();
+      const skin = part.skin || (partType.foam ? 'foam' : 'white');
+      const band = Math.min(0.14, height * 0.12);
+      context.beginPath();
+      context.rect(-halfWidth, y, width, height);
+      if (skin === 'foam') {
+        context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#c46a2c', '#e8995b', '#7a3c14');
+      } else if (skin === 'gold') {
+        context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#c99a2e', '#f6dc7a', '#7a5718');
+      } else if (skin === 'steel') {
+        context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#8f969e', '#c9ced4', '#545a61');
+      } else {
+        context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#d9d6cc', '#fbfaf5', '#8e8b82');
+      }
+      context.fill();
+      context.save();
+      context.beginPath();
+      context.rect(-halfWidth, y, width, height);
+      context.clip();
       if (skin === 'roll') {
         // black and white quarters, repeating along the tank, so a roll shows on camera
-        const cell = Math.max(0.6, Math.min(w, 1.25));
-        for (let k = 0, yy = y + band; yy < y + h - band; k++, yy += cell) {
-          ctx.fillStyle = 'rgba(20,22,26,0.88)';
-          ctx.fillRect(k % 2 ? 0 : -hw, yy, hw, Math.min(cell, y + h - band - yy));
+        const cell = Math.max(0.6, Math.min(width, 1.25));
+        for (let rowIndex = 0, rowY = y + band; rowY < y + height - band; rowIndex++, rowY += cell) {
+          context.fillStyle = 'rgba(20,22,26,0.88)';
+          context.fillRect(
+            rowIndex % 2 ? 0 : -halfWidth,
+            rowY,
+            halfWidth,
+            Math.min(cell, y + height - band - rowY),
+          );
         }
       } else if (skin === 'gold') {
         // crinkled foil: soft diagonal creases
-        ctx.strokeStyle = 'rgba(110,70,10,0.35)'; ctx.lineWidth = px;
-        for (let k = -w; k < h + w; k += 0.35) { ctx.beginPath(); ctx.moveTo(-hw, y + k); ctx.lineTo(hw, y + k - w * 0.6); ctx.stroke(); }
-        ctx.fillStyle = 'rgba(255,250,210,0.25)';
-        for (let k = 0.2; k < h; k += 0.9) ctx.fillRect(-hw * 0.6, y + k, hw * 0.4, 0.12);
+        context.strokeStyle = 'rgba(110,70,10,0.35)';
+        context.lineWidth = pixelSize;
+        for (let offset = -width; offset < height + width; offset += 0.35) {
+          context.beginPath();
+          context.moveTo(-halfWidth, y + offset);
+          context.lineTo(halfWidth, y + offset - width * 0.6);
+          context.stroke();
+        }
+        context.fillStyle = 'rgba(255,250,210,0.25)';
+        for (let offset = 0.2; offset < height; offset += 0.9) {
+          context.fillRect(-halfWidth * 0.6, y + offset, halfWidth * 0.4, 0.12);
+        }
       } else if (skin === 'steel') {
         // weld seams and rivet lines
-        ctx.fillStyle = 'rgba(40,44,50,0.5)';
-        for (let k = 1; k < h; k += 1) ctx.fillRect(-hw, y + k, w, Math.max(px, 0.03));
-        for (let k = 0.5; k < h; k += 1) for (let xx = -hw + 0.12; xx < hw; xx += 0.25) ctx.fillRect(xx, y + k, 0.04, 0.04);
+        context.fillStyle = 'rgba(40,44,50,0.5)';
+        for (let offset = 1; offset < height; offset += 1) {
+          context.fillRect(-halfWidth, y + offset, width, Math.max(pixelSize, 0.03));
+        }
+        for (let offset = 0.5; offset < height; offset += 1) {
+          for (let rivetX = -halfWidth + 0.12; rivetX < halfWidth; rivetX += 0.25) {
+            context.fillRect(rivetX, y + offset, 0.04, 0.04);
+          }
+        }
       }
-      ctx.restore();
-      ctx.beginPath(); ctx.rect(-hw, y, w, h); ctx.stroke();
-      ctx.fillStyle = skin === 'foam' ? 'rgba(80,40,15,0.6)' : skin === 'gold' ? '#8a6418' : skin === 'steel' ? '#4b5057' : skin === 'roll' ? '#1c1e22' : '#c8692b';
-      ctx.fillRect(-hw, y, w, band); ctx.fillRect(-hw, y + h - band, w, band);
-      if (skin === 'white' && h > 1) { ctx.fillStyle = 'rgba(40,50,70,0.55)'; ctx.fillRect(-hw * 0.15, y + h * 0.3, hw * 0.3, h * 0.4); }
+      context.restore();
+      context.beginPath();
+      context.rect(-halfWidth, y, width, height);
+      context.stroke();
+      context.fillStyle =
+        skin === 'foam'
+          ? 'rgba(80,40,15,0.6)'
+          : skin === 'gold'
+            ? '#8a6418'
+            : skin === 'steel'
+              ? '#4b5057'
+              : skin === 'roll'
+                ? '#1c1e22'
+                : '#c8692b';
+      context.fillRect(-halfWidth, y, width, band);
+      context.fillRect(-halfWidth, y + height - band, width, band);
+      if (skin === 'white' && height > 1) {
+        context.fillStyle = 'rgba(40,50,70,0.55)';
+        context.fillRect(-halfWidth * 0.15, y + height * 0.3, halfWidth * 0.3, height * 0.4);
+      }
       // fuel gauge overlay
-      if (opts.showFuel && d.fuel) {
-        const f = p.fuel / (p.cap || d.fuel);
-        ctx.fillStyle = 'rgba(255,190,80,0.18)';
-        ctx.fillRect(-hw, y + h * (1 - f), w, h * f);
+      if (opts.showFuel && partType.fuel) {
+        const fuelFraction = part.fuel / (part.cap || partType.fuel);
+        context.fillStyle = 'rgba(255,190,80,0.18)';
+        context.fillRect(-halfWidth, y + height * (1 - fuelFraction), width, height * fuelFraction);
       }
-    } else if (d.engine && d.engine.solid) {
-      ctx.beginPath(); ctx.rect(-hw, y, w, h * 0.88);
-      ctx.fillStyle = cyl(ctx, -hw, hw, '#e6e3db', '#ffffff', '#8f8c85'); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#b8342a';
-      for (let k = 0; k < 3; k++) ctx.fillRect(-hw, y + h * (0.12 + k * 0.28), w, 0.12);
-      trap(hw * 0.35, hw * 0.55, y + h * 0.88, h * 0.12);
-      ctx.fillStyle = '#3b3e44'; ctx.fill(); ctx.stroke();
-    } else if (d.engine) {
-      const mountH = h * (d.vacuum ? 0.25 : 0.32);
-      trap(thw, hw * 0.75, y, mountH);
-      ctx.fillStyle = cyl(ctx, -hw, hw, '#50555d', '#848a93', '#2c2f34'); ctx.fill(); ctx.stroke();
-      const nTop = d.vacuum ? hw * 0.22 : hw * 0.32;
-      const nBot = d.vacuum ? hw * 0.8 : hw * 0.85;
-      ctx.beginPath();
-      ctx.moveTo(-nTop, y + mountH);
-      ctx.lineTo(nTop, y + mountH);
-      ctx.quadraticCurveTo(nTop * 1.05, y + h * 0.7, nBot, y + h);
-      ctx.lineTo(-nBot, y + h);
-      ctx.quadraticCurveTo(-nTop * 1.05, y + h * 0.7, -nTop, y + mountH);
-      ctx.closePath();
-      ctx.fillStyle = cyl(ctx, -nBot, nBot, '#3d4046', '#9aa0a8', '#202226'); ctx.fill(); ctx.stroke();
+    } else if (partType.engine && partType.engine.solid) {
+      context.beginPath();
+      context.rect(-halfWidth, y, width, height * 0.88);
+      context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#e6e3db', '#ffffff', '#8f8c85');
+      context.fill();
+      context.stroke();
+      context.fillStyle = '#b8342a';
+      for (let bandIndex = 0; bandIndex < 3; bandIndex++) {
+        context.fillRect(-halfWidth, y + height * (0.12 + bandIndex * 0.28), width, 0.12);
+      }
+      trap(halfWidth * 0.35, halfWidth * 0.55, y + height * 0.88, height * 0.12);
+      context.fillStyle = '#3b3e44';
+      context.fill();
+      context.stroke();
+    } else if (partType.engine) {
+      const mountH = height * (partType.vacuum ? 0.25 : 0.32);
+      trap(topHalfWidth, halfWidth * 0.75, y, mountH);
+      context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#50555d', '#848a93', '#2c2f34');
+      context.fill();
+      context.stroke();
+      const nTop = partType.vacuum ? halfWidth * 0.22 : halfWidth * 0.32;
+      const nBot = partType.vacuum ? halfWidth * 0.8 : halfWidth * 0.85;
+      context.beginPath();
+      context.moveTo(-nTop, y + mountH);
+      context.lineTo(nTop, y + mountH);
+      context.quadraticCurveTo(nTop * 1.05, y + height * 0.7, nBot, y + height);
+      context.lineTo(-nBot, y + height);
+      context.quadraticCurveTo(-nTop * 1.05, y + height * 0.7, -nTop, y + mountH);
+      context.closePath();
+      context.fillStyle = cylinderGradient(context, -nBot, nBot, '#3d4046', '#9aa0a8', '#202226');
+      context.fill();
+      context.stroke();
       if (opts.glow > 0) {
-        ctx.fillStyle = `rgba(255,150,60,${0.5 * opts.glow})`;
-        ctx.fillRect(-nBot * 0.8, y + h - 0.12, nBot * 1.6, 0.1);
+        context.fillStyle = `rgba(255,150,60,${0.5 * opts.glow})`;
+        context.fillRect(-nBot * 0.8, y + height - 0.12, nBot * 1.6, 0.1);
       }
-    } else if (d.decoupler) {
-      ctx.save();
-      ctx.beginPath(); ctx.rect(-hw, y, w, h); ctx.clip();
-      ctx.fillStyle = '#e8c33a'; ctx.fillRect(-hw, y, w, h);
-      ctx.fillStyle = '#23252a';
-      for (let x = -hw - h; x < hw; x += 0.3) {
-        ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + 0.15, y + h); ctx.lineTo(x + 0.15 + h, y); ctx.lineTo(x + h, y); ctx.fill();
+    } else if (partType.decoupler) {
+      context.save();
+      context.beginPath();
+      context.rect(-halfWidth, y, width, height);
+      context.clip();
+      context.fillStyle = '#e8c33a';
+      context.fillRect(-halfWidth, y, width, height);
+      context.fillStyle = '#23252a';
+      for (let stripeX = -halfWidth - height; stripeX < halfWidth; stripeX += 0.3) {
+        context.beginPath();
+        context.moveTo(stripeX, y + height);
+        context.lineTo(stripeX + 0.15, y + height);
+        context.lineTo(stripeX + 0.15 + height, y);
+        context.lineTo(stripeX + height, y);
+        context.fill();
       }
-      ctx.restore();
-      ctx.beginPath(); ctx.rect(-hw, y, w, h); ctx.stroke();
-    } else if (d.id === 'adapter') {
-      trap(thw, hw, y, h);
-      ctx.fillStyle = cyl(ctx, -hw, hw, '#a9adb3', '#d9dce0', '#5f646b'); ctx.fill(); ctx.stroke();
-    } else if (d.fin && d.radial) {
+      context.restore();
+      context.beginPath();
+      context.rect(-halfWidth, y, width, height);
+      context.stroke();
+    } else if (partType.id === 'adapter') {
+      trap(topHalfWidth, halfWidth, y, height);
+      context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#a9adb3', '#d9dce0', '#5f646b');
+      context.fill();
+      context.stroke();
+    } else if (partType.fin && partType.radial) {
       // root edge on the left (x = -hw), swept tip on the right
-      ctx.beginPath();
-      ctx.moveTo(-hw, y); ctx.lineTo(hw, y + h * 0.55); ctx.lineTo(hw, y + h); ctx.lineTo(-hw, y + h); ctx.closePath();
-      const g = ctx.createLinearGradient(-hw, 0, hw, 0);
-      g.addColorStop(0, '#24496d'); g.addColorStop(0.5, '#3a6f9f'); g.addColorStop(1, '#2f5d8a');
-      ctx.fillStyle = g; ctx.fill(); ctx.stroke();
-      ctx.fillStyle = 'rgba(220,230,240,0.35)'; ctx.fillRect(-hw, y + h * 0.1, w * 0.12, h * 0.85);
-    } else if (d.fin) {
-      ctx.beginPath(); ctx.rect(-hw, y, w, h);
-      ctx.fillStyle = cyl(ctx, -hw, hw, '#8d939b', '#c3c8ce', '#4b5057'); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#2f5d8a';
-      for (const s of [-1, 1]) {
-        ctx.beginPath();
-        ctx.moveTo(s * hw, y); ctx.lineTo(s * (hw + 0.75), y + h * 0.75); ctx.lineTo(s * (hw + 0.75), y + h + 0.15); ctx.lineTo(s * hw, y + h);
-        ctx.closePath(); ctx.fill(); ctx.stroke();
+      context.beginPath();
+      context.moveTo(-halfWidth, y);
+      context.lineTo(halfWidth, y + height * 0.55);
+      context.lineTo(halfWidth, y + height);
+      context.lineTo(-halfWidth, y + height);
+      context.closePath();
+      const gradient = context.createLinearGradient(-halfWidth, 0, halfWidth, 0);
+      gradient.addColorStop(0, '#24496d');
+      gradient.addColorStop(0.5, '#3a6f9f');
+      gradient.addColorStop(1, '#2f5d8a');
+      context.fillStyle = gradient;
+      context.fill();
+      context.stroke();
+      context.fillStyle = 'rgba(220,230,240,0.35)';
+      context.fillRect(-halfWidth, y + height * 0.1, width * 0.12, height * 0.85);
+    } else if (partType.fin) {
+      context.beginPath();
+      context.rect(-halfWidth, y, width, height);
+      context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#8d939b', '#c3c8ce', '#4b5057');
+      context.fill();
+      context.stroke();
+      context.fillStyle = '#2f5d8a';
+      for (const side of [-1, 1]) {
+        context.beginPath();
+        context.moveTo(side * halfWidth, y);
+        context.lineTo(side * (halfWidth + 0.75), y + height * 0.75);
+        context.lineTo(side * (halfWidth + 0.75), y + height + 0.15);
+        context.lineTo(side * halfWidth, y + height);
+        context.closePath();
+        context.fill();
+        context.stroke();
       }
     } else {
-      ctx.fillStyle = '#888'; ctx.fillRect(-hw, y, w, h);
+      context.fillStyle = '#888';
+      context.fillRect(-halfWidth, y, width, height);
     }
     if (opts.selected) {
-      ctx.strokeStyle = '#ffb547'; ctx.lineWidth = px * 2.5;
-      ctx.setLineDash([px * 6, px * 4]);
-      ctx.strokeRect(-Math.max(hw, thw) - px * 4, y - px * 3, Math.max(w, tw) + px * 8, h + px * 6);
-      ctx.setLineDash([]);
+      context.strokeStyle = '#ffb547';
+      context.lineWidth = pixelSize * 2.5;
+      context.setLineDash([pixelSize * 6, pixelSize * 4]);
+      context.strokeRect(
+        -Math.max(halfWidth, topHalfWidth) - pixelSize * 4,
+        y - pixelSize * 3,
+        Math.max(width, topWidth) + pixelSize * 8,
+        height + pixelSize * 6,
+      );
+      context.setLineDash([]);
     }
   };
 

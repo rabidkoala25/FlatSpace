@@ -30,30 +30,47 @@ window.FS = window.FS || {};
     red: ['#e2402f'],
   };
 
-  const hexRGB = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const hexRGB = (hex) => [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
   const ramps = {};
   const all = [];
   for (const [name, list] of Object.entries(RAMPS)) {
     ramps[name] = list.map(hexRGB);
-    for (const c of ramps[name]) all.push(c);
+    for (const colour of ramps[name]) {
+      all.push(colour);
+    }
   }
 
   // 4×4 Bayer matrix: thresholds in (0, 1) for ordered dithering.
-  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
-  const bayer = (x, y) => BAYER[(((y % 4) + 4) % 4) * 4 + (((x % 4) + 4) % 4)];
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((value) => (value + 0.5) / 16);
+  const bayer = (pixelX, pixelY) => BAYER[(((pixelY % 4) + 4) % 4) * 4 + (((pixelX % 4) + 4) % 4)];
 
   // The palette colour closest to an RGB colour, weighted roughly for the eye; cached.
   const near = new Map();
-  function nearest(r, g, b) {
-    const key = ((r >> 2) << 12) | ((g >> 2) << 6) | (b >> 2);
+  function nearest(red, green, blue) {
+    const key = ((red >> 2) << 12) | ((green >> 2) << 6) | (blue >> 2);
     let hit = near.get(key);
-    if (hit) return hit;
-    let best = all[0], bd = Infinity;
-    for (const c of all) {
-      const rm = (c[0] + r) / 2;
-      const dr = c[0] - r, dg = c[1] - g, db = c[2] - b;
-      const d = (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
-      if (d < bd) { bd = d; best = c; }
+    if (hit) {
+      return hit;
+    }
+    let best = all[0];
+    let bestDistance = Infinity;
+    for (const colour of all) {
+      const meanRed = (colour[0] + red) / 2;
+      const deltaRed = colour[0] - red;
+      const deltaGreen = colour[1] - green;
+      const deltaBlue = colour[2] - blue;
+      const distance =
+        (2 + meanRed / 256) * deltaRed * deltaRed +
+        4 * deltaGreen * deltaGreen +
+        (2 + (255 - meanRed) / 256) * deltaBlue * deltaBlue;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = colour;
+      }
     }
     near.set(key, best);
     return best;
@@ -61,29 +78,41 @@ window.FS = window.FS || {};
 
   // Pick from a ramp at position t in [0, 1], dithering between the two nearest entries
   // with the Bayer threshold at pixel (x, y).
-  function dither(ramp, t, x, y) {
-    const f = Math.min(Math.max(t, 0), 1) * (ramp.length - 1);
-    const i = Math.floor(f);
-    return f - i > bayer(x, y) ? ramp[Math.min(i + 1, ramp.length - 1)] : ramp[i];
+  function dither(ramp, fraction, pixelX, pixelY) {
+    const position = Math.min(Math.max(fraction, 0), 1) * (ramp.length - 1);
+    const index = Math.floor(position);
+    return position - index > bayer(pixelX, pixelY)
+      ? ramp[Math.min(index + 1, ramp.length - 1)]
+      : ramp[index];
   }
 
   // Turn an antialiased drawing into pixel art in place: every pixel becomes either fully
   // transparent or fully opaque, and opaque pixels take the nearest palette colour.
-  function snapImage(img, alphaCut = 0.4) {
-    const d = img.data;
-    const cut = alphaCut * 255;
-    for (let i = 0; i < d.length; i += 4) {
-      const a = d[i + 3];
-      if (a < cut) { d[i] = d[i + 1] = d[i + 2] = d[i + 3] = 0; continue; }
+  function snapImage(image, alphaCut = 0.4) {
+    const pixels = image.data;
+    const alphaLimit = alphaCut * 255;
+    for (let byte = 0; byte < pixels.length; byte += 4) {
+      const alpha = pixels[byte + 3];
+      if (alpha < alphaLimit) {
+        pixels[byte] = pixels[byte + 1] = pixels[byte + 2] = pixels[byte + 3] = 0;
+        continue;
+      }
       // un-premultiply partial pixels so edges keep their colour
-      const k = a < 255 ? 255 / a : 1;
-      const c = nearest(Math.min(255, d[i] * k), Math.min(255, d[i + 1] * k), Math.min(255, d[i + 2] * k));
-      d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+      const unpremultiply = alpha < 255 ? 255 / alpha : 1;
+      const colour = nearest(
+        Math.min(255, pixels[byte] * unpremultiply),
+        Math.min(255, pixels[byte + 1] * unpremultiply),
+        Math.min(255, pixels[byte + 2] * unpremultiply),
+      );
+      pixels[byte] = colour[0];
+      pixels[byte + 1] = colour[1];
+      pixels[byte + 2] = colour[2];
+      pixels[byte + 3] = 255;
     }
-    return img;
+    return image;
   }
 
-  const css = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
+  const toCss = (colour) => `rgb(${colour[0]},${colour[1]},${colour[2]})`;
 
-  FS.Palette = { ramps, all, hex: RAMPS, BAYER, bayer, nearest, dither, snapImage, css };
+  FS.Palette = { ramps, all, hex: RAMPS, BAYER, bayer, nearest, dither, snapImage, css: toCss };
 })();

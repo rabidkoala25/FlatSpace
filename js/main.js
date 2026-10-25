@@ -2,352 +2,486 @@
 // the map camera, and the frame loop that ties sim, renderer and HUD together.
 // The simulation itself lives in sim.js, warp.js and nodes.js; controls in input.js.
 (function () {
-  const V = FS.vec;
-  const $ = (id) => document.getElementById(id);
-  const G = FS.game;
-  const UI = (FS.UI = {});
+  const Vector = FS.vec;
+  const byId = (elementId) => document.getElementById(elementId);
+  const game = FS.game;
+  const ui = (FS.UI = {});
 
-  G.milestones = new Set(FS.store.load('flatspace.milestones', []));
+  game.milestones = new Set(FS.store.load('flatspace.milestones', []));
 
   // ---------- Scenes ----------
-  G.showScene = (name) => {
-    G.scene = name;
+  game.showScene = (name) => {
+    game.scene = name;
     FS.PartPanel.closeAll('flight');
-    $('editor').hidden = name !== 'editor';
-    $('flight').hidden = name !== 'flight';
-    $('help').hidden = true;
-    UI.hideDialog();
+    byId('editor').hidden = name !== 'editor';
+    byId('flight').hidden = name !== 'flight';
+    byId('help').hidden = true;
+    ui.hideDialog();
     requestAnimationFrame(() => {
       FS.Renderer.resize();
       FS.Editor.resize();
     });
   };
 
-  G.launch = (craft) => {
-    const v = G.newFlight(craft);
-    G.mapFocus = 'vessel';
-    G.showScene('flight');
-    UI.setMapMode(false);
-    const r = V.add(FS.bodyAbs(v.body, G.t), v.r);
-    G.cam.x = r.x; G.cam.y = r.y;
-    G.cam.rot = V.angle(v.r) - Math.PI / 2;
+  game.launch = (craft) => {
+    const vessel = game.newFlight(craft);
+    game.mapFocus = 'vessel';
+    game.showScene('flight');
+    ui.setMapMode(false);
+    const position = Vector.add(FS.bodyAbs(vessel.body, game.t), vessel.r);
+    game.cam.x = position.x;
+    game.cam.y = position.y;
+    game.cam.rot = Vector.angle(vessel.r) - Math.PI / 2;
     toast('Press Space to ignite the first stage.', '', 5000);
-    if (!v.hasCommand) toast('This craft has no command part, so it cannot steer.', 'bad', 5000);
+    if (!vessel.hasCommand) {
+      toast('This craft has no command part, so it cannot steer.', 'bad', 5000);
+    }
   };
 
-  G.revert = () => {
-    G.t = G.launchT;
-    G.launch(G.craft);
+  game.revert = () => {
+    game.t = game.launchT;
+    game.launch(game.craft);
   };
 
-  G.toHangar = () => {
-    G.vessel = null;
-    G.showScene('editor');
+  game.toHangar = () => {
+    game.vessel = null;
+    game.showScene('editor');
     FS.Editor.changed();
   };
 
   // ---------- What the player is told about simulation events ----------
-  G.on('message', ({ text, kind, ms }) => toast(text, kind, ms));
+  game.on('message', ({ text, kind, ms: duration }) => toast(text, kind, duration));
 
-  G.on('staged', ({ vessel, event }) => {
-    if (vessel !== G.vessel) return;
-    toast('Stage ' + vessel.stageIdx + (event.decouple ? ': separation' : event.chutes ? ': parachutes armed' : ': ignition'), '', 1500);
+  game.on('staged', ({ vessel, event }) => {
+    if (vessel !== game.vessel) {
+      return;
+    }
+    toast(
+      'Stage ' +
+        vessel.stageIdx +
+        (event.decouple ? ': separation' : event.chutes ? ': parachutes armed' : ': ignition'),
+      '',
+      1500,
+    );
   });
 
-  G.on('part-action', ({ vessel, part, action }) => {
-    if (vessel !== G.vessel) return;
+  game.on('part-action', ({ vessel, part, action }) => {
+    if (vessel !== game.vessel) {
+      return;
+    }
     const what = { decouple: 'separated', ignite: 'lit', shutdown: 'shut down', deploy: 'armed' }[action];
     toast(`${part.def.name} ${what}.`, '', 1500);
   });
 
-  G.on('exploded', ({ vessel }) => {
-    if (vessel !== G.vessel) return;
+  game.on('exploded', ({ vessel }) => {
+    if (vessel !== game.vessel) {
+      return;
+    }
     toast('Vessel destroyed.', 'bad', 4000);
     setTimeout(() => {
-      if (G.vessel !== vessel) return;
-      UI.showDialog('Vessel destroyed', flightSummary(vessel, 'The craft hit the ground too hard.'), [
-        ['Revert to launch', G.revert, 'primary'],
-        ['Back to hangar', G.toHangar, 'ghost'],
+      if (game.vessel !== vessel) {
+        return;
+      }
+      ui.showDialog('Vessel destroyed', flightSummary(vessel, 'The craft hit the ground too hard.'), [
+        ['Revert to launch', game.revert, 'primary'],
+        ['Back to hangar', game.toHangar, 'ghost'],
       ]);
     }, 1600);
   });
 
-  G.on('touchdown', ({ vessel, water }) => {
-    if (vessel !== G.vessel || !vessel.stats.launched) return;
-    const b = vessel.body;
-    toast((water ? 'Splashdown on ' : 'Touchdown on ') + b.name + '.', '', 3500);
-    vessel.landings.push(b.name);
-    if (b !== FS.root) milestone('land-' + b.name, 'First landing on ' + b.name + '!');
-    else if (vessel.visited.size) milestone('return', 'Returned home from ' + [...vessel.visited].join(' and ') + '!');
+  game.on('touchdown', ({ vessel, water }) => {
+    if (vessel !== game.vessel || !vessel.stats.launched) {
+      return;
+    }
+    const body = vessel.body;
+    toast((water ? 'Splashdown on ' : 'Touchdown on ') + body.name + '.', '', 3500);
+    vessel.landings.push(body.name);
+    if (body !== FS.root) {
+      milestone('land-' + body.name, 'First landing on ' + body.name + '!');
+    } else if (vessel.visited.size) {
+      milestone('return', 'Returned home from ' + [...vessel.visited].join(' and ') + '!');
+    }
   });
 
-  G.on('soi', ({ vessel, from }) => {
-    if (vessel !== G.vessel) return;
-    const b = vessel.body;
-    if (b !== FS.root) {
-      vessel.visited.add(b.name);
-      toast('Entering the sphere of influence of ' + b.name + '.', '', 3500);
-      milestone('soi-' + b.name, 'First encounter with ' + b.name + '!');
-    } else toast('Leaving ' + from.name + '.', '', 3000);
+  game.on('soi', ({ vessel, from }) => {
+    if (vessel !== game.vessel) {
+      return;
+    }
+    const body = vessel.body;
+    if (body !== FS.root) {
+      vessel.visited.add(body.name);
+      toast('Entering the sphere of influence of ' + body.name + '.', '', 3500);
+      milestone('soi-' + body.name, 'First encounter with ' + body.name + '!');
+    } else {
+      toast('Leaving ' + from.name + '.', '', 3000);
+    }
   });
 
   function milestone(key, text) {
-    if (G.milestones.has(key)) return;
-    G.milestones.add(key);
-    FS.store.save('flatspace.milestones', [...G.milestones]);
+    if (game.milestones.has(key)) {
+      return;
+    }
+    game.milestones.add(key);
+    FS.store.save('flatspace.milestones', [...game.milestones]);
     toast('Milestone: ' + text, 'milestone', 5000);
   }
 
-  function checkMilestones(v) {
-    if (v.dead || !v.stats.launched) return;
-    const b = v.body;
-    if (!v.landed && b === FS.root && v.altitude > 200) milestone('launch', 'First launch!');
-    if (b === FS.root && v.altitude > b.atmo.height) milestone('space', 'Reached space!');
-    if (v.situation().startsWith('Orbiting')) milestone('orbit-' + b.name, 'First orbit of ' + b.name + '!');
+  function checkMilestones(vessel) {
+    if (vessel.dead || !vessel.stats.launched) {
+      return;
+    }
+    const body = vessel.body;
+    if (!vessel.landed && body === FS.root && vessel.altitude > 200) {
+      milestone('launch', 'First launch!');
+    }
+    if (body === FS.root && vessel.altitude > body.atmo.height) {
+      milestone('space', 'Reached space!');
+    }
+    if (vessel.situation().startsWith('Orbiting')) {
+      milestone('orbit-' + body.name, 'First orbit of ' + body.name + '!');
+    }
   }
 
   // ---------- Toasts & dialogs ----------
-  function toast(msg, cls = '', ms = 3000) {
-    const host = $('toasts');
-    const el = document.createElement('div');
-    el.className = 'toast ' + cls;
-    el.textContent = msg;
-    host.appendChild(el);
-    while (host.children.length > 4) host.removeChild(host.firstChild);
-    setTimeout(() => el.remove(), ms);
-  }
-  G.toast = toast;
-
-  UI.showDialog = (title, bodyHtml, actions) => {
-    $('dlgTitle').textContent = title;
-    $('dlgBody').innerHTML = bodyHtml;
-    const host = $('dlgActions');
-    host.innerHTML = '';
-    for (const [label, fn, cls] of actions) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'btn ' + (cls || 'ghost');
-      b.textContent = label;
-      b.addEventListener('click', () => { UI.hideDialog(); fn(); });
-      host.appendChild(b);
+  function toast(message, className = '', duration = 3000) {
+    const host = byId('toasts');
+    const toastElement = document.createElement('div');
+    toastElement.className = 'toast ' + className;
+    toastElement.textContent = message;
+    host.appendChild(toastElement);
+    while (host.children.length > 4) {
+      host.removeChild(host.firstChild);
     }
-    $('dialog').hidden = false;
-    G.paused = true;
-    const first = host.querySelector('button');
-    if (first) first.focus();
-  };
-  UI.hideDialog = () => { $('dialog').hidden = true; G.paused = false; };
+    setTimeout(() => toastElement.remove(), duration);
+  }
+  game.toast = toast;
 
-  function flightSummary(v, intro) {
+  ui.showDialog = (title, bodyHtml, actions) => {
+    byId('dlgTitle').textContent = title;
+    byId('dlgBody').innerHTML = bodyHtml;
+    const host = byId('dlgActions');
+    host.innerHTML = '';
+    for (const [label, action, className] of actions) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn ' + (className || 'ghost');
+      button.textContent = label;
+      button.addEventListener('click', () => {
+        ui.hideDialog();
+        action();
+      });
+      host.appendChild(button);
+    }
+    byId('dialog').hidden = false;
+    game.paused = true;
+    const first = host.querySelector('button');
+    if (first) {
+      first.focus();
+    }
+  };
+  ui.hideDialog = () => {
+    byId('dialog').hidden = true;
+    game.paused = false;
+  };
+
+  function flightSummary(vessel, intro) {
     const rows = [
-      ['Craft', v.name],
-      ['Flight time', FS.fmtTime(G.t - G.launchT)],
-      ['Highest altitude', FS.fmtDist(v.stats.maxAlt)],
-      ['Top speed', FS.fmtSpeed(v.stats.maxSpeed)],
-      ['Bodies visited', v.visited.size ? [...v.visited].join(', ') : 'Aster only'],
-      ['Landings', v.landings.length ? v.landings.join(', ') : 'none'],
+      ['Craft', vessel.name],
+      ['Flight time', FS.fmtTime(game.t - game.launchT)],
+      ['Highest altitude', FS.fmtDist(vessel.stats.maxAlt)],
+      ['Top speed', FS.fmtSpeed(vessel.stats.maxSpeed)],
+      ['Bodies visited', vessel.visited.size ? [...vessel.visited].join(', ') : 'Aster only'],
+      ['Landings', vessel.landings.length ? vessel.landings.join(', ') : 'none'],
     ];
-    return `<p>${intro}</p><dl class="fdata">${rows.map(([k, x]) => `<dt>${k}</dt><dd>${String(x).replace(/</g, '&lt;')}</dd>`).join('')}</dl>`;
+    return `<p>${intro}</p><dl class="fdata">${rows.map(([label, value]) => `<dt>${label}</dt><dd>${String(value).replace(/</g, '&lt;')}</dd>`).join('')}</dl>`;
   }
 
-  UI.recover = () => {
-    UI.showDialog('Vessel recovered', flightSummary(G.vessel, 'The crew is home safe.'), [
-      ['Back to hangar', G.toHangar, 'primary'],
+  ui.recover = () => {
+    ui.showDialog('Vessel recovered', flightSummary(game.vessel, 'The crew is home safe.'), [
+      ['Back to hangar', game.toHangar, 'primary'],
     ]);
   };
 
-  const PIXEL_SIZES = [[1.5, 'Fine'], [2, 'Medium'], [3, 'Chunky']];
-  UI.menu = () => {
-    const gl = FS.Renderer === FS.RenderGL;
-    const px = gl
-      ? `<div class="menu-row"><span>Pixel size</span><div class="pp-choices" role="group" aria-label="Pixel size">${PIXEL_SIZES.map(([n, label]) => `<button type="button" class="pp-choice" data-px="${n}" aria-pressed="${G.settings.pixelSize === n}">${label}</button>`).join('')}</div></div>`
+  const PIXEL_SIZES = [
+    [1.5, 'Fine'],
+    [2, 'Medium'],
+    [3, 'Chunky'],
+  ];
+  ui.menu = () => {
+    const usingWebGL = FS.Renderer === FS.RenderGL;
+    const pixelSizeSetting = usingWebGL
+      ? `<div class="menu-row"><span>Pixel size</span><div class="pp-choices" role="group" aria-label="Pixel size">${PIXEL_SIZES.map(([size, label]) => `<button type="button" class="pp-choice" data-px="${size}" aria-pressed="${game.settings.pixelSize === size}">${label}</button>`).join('')}</div></div>`
       : '<p class="menu-note">Simple drawing mode: this browser has no WebGL2.</p>';
-    UI.showDialog('Flight menu', '<p>Time is paused. Flatspace Program v' + FS.VERSION + '</p>' + px, [
-      ['Resume', () => {}, 'primary'],
-      ['Revert to launch', G.revert, 'ghost'],
-      ['Back to hangar', G.toHangar, 'ghost'],
-      ['Controls', () => ($('help').hidden = false), 'ghost'],
-    ]);
-    for (const b of $('dlgBody').querySelectorAll('[data-px]')) {
-      b.addEventListener('click', () => {
-        G.settings.pixelSize = +b.dataset.px;
-        FS.RenderGL.setPixelSize(G.settings.pixelSize);
-        UI.saveSettings();
-        for (const o of $('dlgBody').querySelectorAll('[data-px]')) o.setAttribute('aria-pressed', String(o === b));
+    ui.showDialog(
+      'Flight menu',
+      '<p>Time is paused. Flatspace Program v' + FS.VERSION + '</p>' + pixelSizeSetting,
+      [
+        ['Resume', () => {}, 'primary'],
+        ['Revert to launch', game.revert, 'ghost'],
+        ['Back to hangar', game.toHangar, 'ghost'],
+        ['Controls', () => (byId('help').hidden = false), 'ghost'],
+      ],
+    );
+    for (const button of byId('dlgBody').querySelectorAll('[data-px]')) {
+      button.addEventListener('click', () => {
+        game.settings.pixelSize = +button.dataset.px;
+        FS.RenderGL.setPixelSize(game.settings.pixelSize);
+        ui.saveSettings();
+        for (const option of byId('dlgBody').querySelectorAll('[data-px]')) {
+          option.setAttribute('aria-pressed', String(option === button));
+        }
       });
     }
   };
 
   // ---------- Map ----------
-  UI.setMapMode = (on) => {
-    G.mapMode = on;
-    $('mapHint').hidden = !on;
-    if (on) fitMap();
+  ui.setMapMode = (showMap) => {
+    game.mapMode = showMap;
+    byId('mapHint').hidden = !showMap;
+    if (showMap) {
+      fitMap();
+    }
   };
   function focusPos() {
-    if (G.mapFocus === 'vessel') return V.add(FS.bodyAbs(G.vessel.body, G.t), G.vessel.r);
-    return FS.bodyAbs(G.mapFocus, G.t);
+    if (game.mapFocus === 'vessel') {
+      return Vector.add(FS.bodyAbs(game.vessel.body, game.t), game.vessel.r);
+    }
+    return FS.bodyAbs(game.mapFocus, game.t);
   }
   function fitMap() {
-    const { W, H } = FS.Renderer.size();
-    const m = Math.min(W, H) * 0.42;
+    const { W: viewWidth, H: viewHeight } = FS.Renderer.size();
+    const margin = Math.min(viewWidth, viewHeight) * 0.42;
     let span;
-    if (G.mapFocus === 'vessel') {
-      const v = G.vessel, b = v.body;
-      const o = FS.orbitFromState(v.r, v.v, b.mu, G.t);
-      span = o.e < 1 && o.ap < (isFinite(b.soi) ? b.soi : 1e12) ? o.ap * 1.1 : Math.max(V.len(v.r) * 2.5, b.R * 3);
-      if (b === FS.root && span > 6e7) span = 6e7;
-      span = Math.max(span, b.R * 1.6);
+    if (game.mapFocus === 'vessel') {
+      const vessel = game.vessel;
+      const body = vessel.body;
+      const orbit = FS.orbitFromState(vessel.r, vessel.v, body.mu, game.t);
+      span =
+        orbit.e < 1 && orbit.ap < (isFinite(body.soi) ? body.soi : 1e12)
+          ? orbit.ap * 1.1
+          : Math.max(Vector.len(vessel.r) * 2.5, body.R * 3);
+      if (body === FS.root && span > 6e7) {
+        span = 6e7;
+      }
+      span = Math.max(span, body.R * 1.6);
     } else {
-      const b = G.mapFocus;
-      span = b === FS.root ? b.R * 4 : b.R * 5;
+      const body = game.mapFocus;
+      span = body === FS.root ? body.R * 4 : body.R * 5;
     }
-    G.mapCam.s = m / span;
-    G.mapPan = { x: 0, y: 0 };
+    game.mapCam.s = margin / span;
+    game.mapPan = { x: 0, y: 0 };
   }
-  UI.cycleFocus = () => {
+  ui.cycleFocus = () => {
     const list = ['vessel', ...FS.bodies];
-    const i = list.indexOf(G.mapFocus);
-    G.mapFocus = list[(i + 1) % list.length];
+    const focusIndex = list.indexOf(game.mapFocus);
+    game.mapFocus = list[(focusIndex + 1) % list.length];
     fitMap();
   };
 
   // Click near any part of the predicted path to add a maneuver node there.
-  UI.mapClick = (sx, sy) => {
-    if (!G.patches || G.vessel.landed) return;
-    let best = null, bd = 18;
-    G.patches.forEach((p, i) => {
-      const from = Math.max(p.tStart, G.t);
-      const origin = FS.bodyAbs(p.body, i === 0 ? G.t : p.tStart);
-      for (const q of FS.sampleOrbit(p.orbit, from, p.tEnd, 500)) {
-        const s = FS.Renderer.worldToScreen(G.mapCam, origin.x + q.x, origin.y + q.y);
-        const d = Math.hypot(s.x - sx, s.y - sy);
-        if (d < bd && q.t > G.t + 2) { bd = d; best = q; }
+  ui.mapClick = (screenX, screenY) => {
+    if (!game.patches || game.vessel.landed) {
+      return;
+    }
+    let best = null;
+    let bestDistance = 18;
+    game.patches.forEach((patch, patchIndex) => {
+      const from = Math.max(patch.tStart, game.t);
+      const origin = FS.bodyAbs(patch.body, patchIndex === 0 ? game.t : patch.tStart);
+      for (const sample of FS.sampleOrbit(patch.orbit, from, patch.tEnd, 500)) {
+        const screenPoint = FS.Renderer.worldToScreen(game.mapCam, origin.x + sample.x, origin.y + sample.y);
+        const distance = Math.hypot(screenPoint.x - screenX, screenPoint.y - screenY);
+        if (distance < bestDistance && sample.t > game.t + 2) {
+          bestDistance = distance;
+          best = sample;
+        }
       }
     });
-    if (best && G.createNode(best.t)) toast('Node added. Use the panel to set the burn.', '', 2500);
+    if (best && game.createNode(best.t)) {
+      toast('Node added. Use the panel to set the burn.', '', 2500);
+    }
   };
 
   // ---------- Developer overlay (F3) ----------
   // Shows frame time, physics steps per frame and particle count, to watch performance.
-  let devTimer = 0, devFrames = 0, devTime = 0;
-  function updateDevOverlay(dt) {
-    const el = $('devOverlay');
-    devFrames++; devTime += dt;
-    devTimer -= dt;
-    if (el.hidden || devTimer > 0) return;
+  let devTimer = 0;
+  let devFrames = 0;
+  let devTime = 0;
+  function updateDevOverlay(timeStep) {
+    const overlay = byId('devOverlay');
+    devFrames++;
+    devTime += timeStep;
+    devTimer -= timeStep;
+    if (overlay.hidden || devTimer > 0) {
+      return;
+    }
     devTimer = 0.25;
-    const ms = (devTime / Math.max(1, devFrames)) * 1000;
-    devFrames = 0; devTime = 0;
-    const steps = G.frame.steps;
-    el.textContent =
-      'v' + FS.VERSION + '\n' +
-      'frame      ' + ms.toFixed(1) + ' ms (' + (1000 / ms).toFixed(0) + ' fps)\n' +
-      'physics    ' + steps + (typeof steps === 'number' ? ' steps/frame' : '') + '\n' +
-      'particles  ' + FS.Renderer.stats().particles + '\n' +
+    const frameMs = (devTime / Math.max(1, devFrames)) * 1000;
+    devFrames = 0;
+    devTime = 0;
+    const steps = game.frame.steps;
+    overlay.textContent =
+      'v' +
+      FS.VERSION +
+      '\n' +
+      'frame      ' +
+      frameMs.toFixed(1) +
+      ' ms (' +
+      (1000 / frameMs).toFixed(0) +
+      ' fps)\n' +
+      'physics    ' +
+      steps +
+      (typeof steps === 'number' ? ' steps/frame' : '') +
+      '\n' +
+      'particles  ' +
+      FS.Renderer.stats().particles +
+      '\n' +
       (FS.Renderer === FS.RenderGL
-        ? 'renderer   WebGL2, ' + FS.Renderer.stats().draws + ' sprite draws, atlas ' + FS.Renderer.stats().atlas + '\n' +
-          'pixel      ' + (16 / Math.pow(2, FS.Renderer.stats().level)) + ' per metre\n'
+        ? 'renderer   WebGL2, ' +
+          FS.Renderer.stats().draws +
+          ' sprite draws, atlas ' +
+          FS.Renderer.stats().atlas +
+          '\n' +
+          'pixel      ' +
+          16 / Math.pow(2, FS.Renderer.stats().level) +
+          ' per metre\n'
         : 'renderer   Canvas 2D\n') +
-      'debris     ' + G.debris.length;
+      'debris     ' +
+      game.debris.length;
   }
 
   // ---------- Frame loop ----------
   let last = performance.now();
   function frame(now) {
-    const dt = Math.min(0.1, (now - last) / 1000);
+    const timeStep = Math.min(0.1, (now - last) / 1000);
     last = now;
-    if (G.scene === 'flight' && G.vessel) {
-      if (!G.paused) {
-        FS.Input.apply(dt);
-        G.update(dt);
-        FS.Renderer.update(G);
-        checkMilestones(G.vessel);
+    if (game.scene === 'flight' && game.vessel) {
+      if (!game.paused) {
+        FS.Input.apply(timeStep);
+        game.update(timeStep);
+        FS.Renderer.update(game);
+        checkMilestones(game.vessel);
       }
-      updateCamera(dt);
-      if (G.mapMode) FS.Renderer.drawMap(G); else FS.Renderer.drawFlight(G);
+      updateCamera(timeStep);
+      if (game.mapMode) {
+        FS.Renderer.drawMap(game);
+      } else {
+        FS.Renderer.drawFlight(game);
+      }
       // part pop-ups follow their parts; parts that left the craft close theirs
-      for (const pn of FS.PartPanel.panels('flight')) if (!G.vessel.parts.includes(pn.part)) FS.PartPanel.close(pn);
-      FS.PartPanel.layout('flight', (p) => FS.Renderer.partToScreen(G.cam, G.vessel, G.t, p.c), G.mapMode);
-      FS.HUD.update(G, dt);
-      updateDevOverlay(dt);
+      for (const panel of FS.PartPanel.panels('flight')) {
+        if (!game.vessel.parts.includes(panel.part)) {
+          FS.PartPanel.close(panel);
+        }
+      }
+      FS.PartPanel.layout(
+        'flight',
+        (part) => FS.Renderer.partToScreen(game.cam, game.vessel, game.t, part.c),
+        game.mapMode,
+      );
+      FS.HUD.update(game, timeStep);
+      updateDevOverlay(timeStep);
     }
     requestAnimationFrame(frame);
   }
 
-  function updateCamera(dt) {
-    const ves = G.vessel;
-    const { H } = FS.Renderer.size();
-    const p = V.add(FS.bodyAbs(ves.body, G.t), ves.r);
-    G.cam.x = p.x; G.cam.y = p.y;
-    const want = V.angle(ves.r) - Math.PI / 2;
-    const diff = FS.wrapAngle(want - G.cam.rot);
-    G.cam.rot += Math.abs(diff) > 1 ? diff : diff * Math.min(1, dt * 6);
-    const base = (H * 0.3) / Math.max(ves.layout.height, 6);
-    G.cam.s = FS.clamp(base * G.zoom, 2e-5, 120);
-    if (G.mapMode) {
-      const f = focusPos();
-      G.mapCam.x = f.x + G.mapPan.x;
-      G.mapCam.y = f.y + G.mapPan.y;
+  function updateCamera(timeStep) {
+    const vessel = game.vessel;
+    const { H: viewHeight } = FS.Renderer.size();
+    const position = Vector.add(FS.bodyAbs(vessel.body, game.t), vessel.r);
+    game.cam.x = position.x;
+    game.cam.y = position.y;
+    const want = Vector.angle(vessel.r) - Math.PI / 2;
+    const diff = FS.wrapAngle(want - game.cam.rot);
+    game.cam.rot += Math.abs(diff) > 1 ? diff : diff * Math.min(1, timeStep * 6);
+    const base = (viewHeight * 0.3) / Math.max(vessel.layout.height, 6);
+    game.cam.s = FS.clamp(base * game.zoom, 2e-5, 120);
+    if (game.mapMode) {
+      const focus = focusPos();
+      game.mapCam.x = focus.x + game.mapPan.x;
+      game.mapCam.y = focus.y + game.mapPan.y;
     }
   }
 
   // ---------- Start ----------
-  const RENDERER_METHODS = ['init', 'resize', 'size', 'update', 'drawFlight', 'drawMap', 'worldToScreen', 'partToScreen', 'screenToPart', 'stats'];
+  const RENDERER_METHODS = [
+    'init',
+    'resize',
+    'size',
+    'update',
+    'drawFlight',
+    'drawMap',
+    'worldToScreen',
+    'partToScreen',
+    'screenToPart',
+    'stats',
+  ];
 
-  G.settings = Object.assign({ pixelSize: 1.5 }, FS.store.load('flatspace.settings', {}) || {});
-  UI.saveSettings = () => FS.store.save('flatspace.settings', G.settings);
+  game.settings = Object.assign({ pixelSize: 1.5 }, FS.store.load('flatspace.settings', {}) || {});
+  ui.saveSettings = () => FS.store.save('flatspace.settings', game.settings);
 
   // WebGL2 pixel-art renderer when the browser has it (add ?canvas2d to the address to
   // force the simple one); otherwise the Canvas 2D renderer, with a notice saying so.
   function pickRenderer() {
     if (FS.RenderGL && FS.GL.supported() && !/[?&]canvas2d\b/.test(location.search)) {
       try {
-        FS.RenderGL.setPixelSize(G.settings.pixelSize);
-        FS.RenderGL.init($('view'), G);
+        FS.RenderGL.setPixelSize(game.settings.pixelSize);
+        FS.RenderGL.init(byId('view'), game);
         return FS.RenderGL;
-      } catch (e) {
-        console.warn('WebGL renderer failed, using Canvas 2D: ' + e.message);
+      } catch (error) {
+        console.warn('WebGL renderer failed, using Canvas 2D: ' + error.message);
         // a canvas keeps the first kind of context it gave out, so start from a fresh one
-        const old = $('view'), fresh = old.cloneNode(false);
-        old.replaceWith(fresh);
-        document.querySelectorAll('.view-overlay').forEach((o) => o.remove());
+        const oldView = byId('view');
+        const fresh = oldView.cloneNode(false);
+        oldView.replaceWith(fresh);
+        document.querySelectorAll('.view-overlay').forEach((overlay) => overlay.remove());
       }
     }
-    FS.Render.init($('view'), G);
-    if (!/[?&]canvas2d\b/.test(location.search)) glNotice();
+    FS.Render.init(byId('view'), game);
+    if (!/[?&]canvas2d\b/.test(location.search)) {
+      glNotice();
+    }
     return FS.Render;
   }
   function glNotice() {
-    const n = document.createElement('div');
-    n.className = 'gl-notice';
-    n.setAttribute('role', 'status');
-    n.innerHTML = '<span>This browser doesn\'t support WebGL2, so the game is using its simpler drawing mode (no pixel art).</span><button type="button" aria-label="Dismiss">×</button>';
-    n.querySelector('button').addEventListener('click', () => n.remove());
-    document.body.appendChild(n);
+    const notice = document.createElement('div');
+    notice.className = 'gl-notice';
+    notice.setAttribute('role', 'status');
+    notice.innerHTML =
+      '<span>This browser doesn\'t support WebGL2, so the game is using its simpler drawing mode (no pixel art).</span><button type="button" aria-label="Dismiss">×</button>';
+    notice.querySelector('button').addEventListener('click', () => notice.remove());
+    document.body.appendChild(notice);
   }
 
   function init() {
     FS.Renderer = pickRenderer();
-    const missing = RENDERER_METHODS.filter((m) => typeof FS.Renderer[m] !== 'function');
-    if (missing.length) console.error('Renderer is missing: ' + missing.join(', '));
+    const missing = RENDERER_METHODS.filter((methodName) => typeof FS.Renderer[methodName] !== 'function');
+    if (missing.length) {
+      console.error('Renderer is missing: ' + missing.join(', '));
+    }
     FS.HUD.init();
-    FS.Editor.init(G);
+    FS.Editor.init(game);
     FS.Input.init();
-    window.addEventListener('resize', () => { FS.Renderer.resize(); FS.Editor.resize(); });
+    window.addEventListener('resize', () => {
+      FS.Renderer.resize();
+      FS.Editor.resize();
+    });
 
-    $('version').textContent = 'v' + FS.VERSION;
-    G.showScene('editor');
+    byId('version').textContent = 'v' + FS.VERSION;
+    game.showScene('editor');
 
     // ?debug starts a flight already in a 100 km orbit, to speed up testing.
     if (/[?&]debug\b/.test(location.search)) {
-      G.launch({ name: FS.SAMPLE_CRAFT[1].name, parts: FS.SAMPLE_CRAFT[1].parts.slice() });
-      G.debugOrbit(100000);
+      game.launch({ name: FS.SAMPLE_CRAFT[1].name, parts: FS.SAMPLE_CRAFT[1].parts.slice() });
+      game.debugOrbit(100000);
       toast('Debug start: 100 km orbit.', '', 3000);
     }
     requestAnimationFrame(frame);
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 })();
