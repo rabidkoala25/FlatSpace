@@ -469,41 +469,41 @@
 
   const parsedCache = new Map();
 
-  function newSprite(p, w, tv, len) {
-    const d = P.def;
-    let key = null;
-    let make = null;
-    if (FS.SPRITES[d.id]) {
-      key = 'hand|' + d.id;
-      make = () => FS.Sprites.parse(d.id, FS.SPRITES[d.id]);
+  function newSprite(part, width, topWidth, length) {
+    const partType = part.def;
+    let cacheKey = null;
+    let makeSprite = null;
+    if (FS.SPRITES[partType.id]) {
+      cacheKey = 'hand|' + partType.id;
+      makeSprite = () => FS.Sprites.parse(partType.id, FS.SPRITES[partType.id]);
 
-    } else if (d.stretch) {
-      const skin = P.skin || (d.foam ? 'foam' : 'white');
-      key = `tank|${w}|${len}|${skin}`;
-      make = () => FS.Sprites.tank(W, len, skin);
+    } else if (partType.stretch) {
+      const skinName = part.skin || (partType.foam ? 'foam' : 'white');
+      cacheKey = `tank|${width}|${length}|${skinName}`;
+      makeSprite = () => FS.Sprites.tank(width, length, skinName);
 
-    } else if (d.id === 'adapter') {
-      ley = `adapter|${w}|${tw}|${len}`;
-      make = () => FS.Sprites.profile({
-        id: 'adapter', len, maxHalf: Math.max(W,tx) /2,
-        halfWidthAt: (v) => tw / 2 + (w /2 - tw/2) * v,
-        ramp: 'metal', tone: 5, // adapter colour
+    } else if (partType.id === 'adapter') {
+      cacheKey = `adapter|${width}|${topWidth}|${length}`;
+      makeSprite = () => FS.Sprites.profile({
+        id: 'adapter', length, widestHalfWidth: Math.max(width, topWidth) / 2,
+        halfWidthAt: (howFarDown) => topWidth / 2 + (width / 2 - topWidth / 2) * howFarDown,
+        rampName: 'metal', tone: 5, // adapter colour
       });
-    } else if (d.id === 'decoupler') {
-      key = `decoupler|${w}|${len}`;
-      make = () => FS.Sprites.profile({
-        id: 'decoupler', len, maxHalf: w / 2,
-        halfWidthAt: () => w / 2,
-        ramp: 'metal', tone: 3, //decoupler color
+    } else if (partType.id === 'decoupler') {
+      cacheKey = `decoupler|${width}|${length}`;
+      makeSprite = () => FS.Sprites.profile({
+        id: 'decoupler', length, widestHalfWidth: width / 2,
+        halfWidthAt: () => width / 2,
+        rampName: 'metal', tone: 3, //decoupler color
 
       });
     } 
-    if (!key) return null;
+    if (!cacheKey) return null;
     
-    if (!parsedCache.has(key)) parsedCache.set(key, make());
-    const s = parsedCache.get(key);
-    if (!s) return null;
-    return {key, s};
+    if (!parsedCache.has(cacheKey)) parsedCache.set(cacheKey, makeSprite());
+    const sprite = parsedCache.get(cacheKey);
+    if (!sprite) return null;
+    return {cacheKey, sprite};
       
     
   }
@@ -512,51 +512,51 @@
 
   // ---------- Baked sprites (temporary art) ----------
   // Parts: the vector drawing from parts.js at L art pixels per metre, snapped to the palette.
-  function partSprite(p, L, glow, sunStep = 8, shade = 1) {
-    const d = p.def;
-    const w = p.w || (d.w === 'auto' ? 1.25 : d.w);
-    const tw = p.tw || d.topW || w;
-    const len = p.len || d.len;
+  function partSprite(part, pixelsPerMetre, glow, sunStep = 8, sunlit = 1) {
+    const partType = part.def;
+    const width = part.w || (partType.w === 'auto' ? 1.25 : partType.w);
+    const topWidth = part.tw || partType.topW || width;
+    const length = part.len || partType.len;
 
     //is me now :)
     // ugh have to edit this
 
-    if (L === 16) {
-      const ns = newSprite(p, w, tw, len);
-      if (ns) {
-        const g = d.engine ? glow : 0; //only engines glow
-        const flip = !!P.flip;
-        const lkey = `${ns.key}|${sunStep}|${shade}|${g}|${flip}`;
-        let e = sprites.atlas.get(lkey);
-        if (e) return e;
+    if (pixelsPerMetre === 16) {
+      const newArt = newSprite(part, width, topWidth, length);
+      if (newArt) {
+        const nozzleGlow = partType.engine ? glow : 0; //only engines glow
+        const mirrored = !!part.flip;
+        const litKey = `${newArt.cacheKey}|${sunStep}|${sunlit}|${nozzleGlow}|${mirrored}`;
+        let atlasEntry = sprites.atlas.get(litKey);
+        if (atlasEntry) return atlasEntry;
 
-        const ang = sunStep * (FS>TAU / 32);
-        let sx = Math.sin(ang);
-        const sy = Math.cos(ang);
-        if (flip) sx = -sx;
-        e = sprites.atlas.add(lkey, FS.Sprites.light(ns.s, sx, sy, shade, g));
-        if (e) {
-          e.ox = ns.s.w / 2;
-          e.oy = ns.s.h / 2;
-          e.lit - true;
+        const sunAngle = sunStep * (FS.TAU / 32);
+        let sunAcross = Math.sin(sunAngle);
+        const sunAlong = Math.cos(sunAngle);
+        if (mirrored) sunAcross = -sunAcross;
+        atlasEntry = sprites.atlas.add(litKey, FS.Sprites.light(newArt.sprite, sunAcross, sunAlong, sunlit, nozzleGlow));
+        if (atlasEntry) {
+          atlasEntry.ox = newArt.sprite.width / 2;
+          atlasEntry.oy = newArt.sprite.height / 2;
+          atlasEntry.lit = true;
         }
-        return e;
+        return atlasEntry;
       }
     }
 
-    const key = `p|${d.id}|${w}|${tw}|${len}|${p.skin || ''}|${glow}|${L}`;
-    let s = sprites.atlas.get(key);
-    if (s) return s;
-    const halfW = Math.max(w, tw) / 2 + (d.fin ? 0.9 : 0.1);
-    const hx = Math.ceil(halfW * L), top = Math.ceil(0.6 * L);
-    const cw = hx * 2, ch = top + Math.ceil((len + 0.3) * L);
-    const img = FS.GL.bake(cw, ch, (g) => {
-      g.setTransform(L, 0, 0, L, hx, top);
-      FS.drawPart(g, p, 0, 1 / L, { glow });
+    const cacheKey = `p|${partType.id}|${width}|${topWidth}|${length}|${part.skin || ''}|${glow}|${pixelsPerMetre}`;
+    let atlasEntry = sprites.atlas.get(cacheKey);
+    if (atlasEntry) return atlasEntry;
+    const halfWidth = Math.max(width, topWidth) / 2 + (partType.fin ? 0.9 : 0.1);
+    const halfWidthPixels = Math.ceil(halfWidth * pixelsPerMetre), topMargin = Math.ceil(0.6 * pixelsPerMetre);
+    const canvasWidth = halfWidthPixels * 2, canvasHeight = topMargin + Math.ceil((length + 0.3) * pixelsPerMetre);
+    const image = FS.GL.bake(canvasWidth, canvasHeight, (graphics) => {
+      graphics.setTransform(pixelsPerMetre, 0, 0, pixelsPerMetre, halfWidthPixels, topMargin);
+      FS.drawPart(graphics, part, 0, 1 / pixelsPerMetre, { glow });
     });
-    s = sprites.atlas.add(key, img);
-    if (s) { s.ox = hx; s.oy = top + (len / 2) * L; }
-    return s;
+    atlasEntry = sprites.atlas.add(cacheKey, image);
+    if (atlasEntry) { atlasEntry.ox = halfWidthPixels; atlasEntry.oy = topMargin + (length / 2) * pixelsPerMetre; }
+    return atlasEntry;
   }
 
   // Parachute canopies, in the drawing frame of drawVessel in render.js.

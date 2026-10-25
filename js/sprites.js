@@ -8,116 +8,116 @@
 window.FS = window.FS || {};
 FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
 (function () {
-    const PX = 16; // pixels per metre
-    
+    const PIXELS_PER_METRE = 16; // pixels per metre
+
     const RAMP_NAMES = Object.keys(FS.Palette.ramps);
-    const rampIndex = (name) => RAMP_NAMES.indexOf(name);
-    const rampLength = (r) => FS.Palette.ramps[RAMP_NAMES[r]].length;
-    const SKIN = 255;
+    const rampNumber = (rampName) => RAMP_NAMES.indexOf(rampName);
+    const toneCount = (rampNum) => FS.Palette.ramps[RAMP_NAMES[rampNum]].length;
+    const SKIN_RAMP = 255; // a pixel whose colour comes from the tank's skin later
     //empty sprite template
 
-    function blank(id, w, h) {
-        const n = w * h;
+    function blankSprite(id, width, height) {
+        const pixelCount = width * height;
         return {
-            id, w, h, 
-            ramp: new Uint8Array(n),
-            tone: new Uint8Array(n),
-            solid: new Uint8Array(n),
+            id, width, height,
+            ramp: new Uint8Array(pixelCount),
+            tone: new Uint8Array(pixelCount),
+            solid: new Uint8Array(pixelCount),
             //which was the surface faces
-            nx: new Int8Array(n),
-            ny: new Int8Array(n),
+            normalAcross: new Int8Array(pixelCount),
+            normalAlong: new Int8Array(pixelCount),
 
         };
     }
 
-    // sprite matching - parses the sprite object creation 
-    function parse(id, def) {
-        const rows = def.rows;
+    // sprite matching - parses the sprite object creation
+    function parse(id, drawing) {
+        const rows = drawing.rows;
         if (!rows || !rows.length) throw new Error(`sprite with id ${id} has no rows`);
-        const h = rows.length;
-        const w = rows[0].length;
-        const s = blank(id,w,h);
+        const height = rows.length;
+        const width = rows[0].length;
+        const sprite = blankSprite(id, width, height);
 
-        for (let y=0; y<h; y++) {
-            const row = rows[y];
-            if (row.length !== w) {
-                throw new Error(`sprite with id ${id} was expected to have row ${y} equal ${w}, but it is ${row.length}`);
+        for (let rowNumber = 0; rowNumber < height; rowNumber++) {
+            const rowText = rows[rowNumber];
+            if (rowText.length !== width) {
+                throw new Error(`sprite with id ${id} was expected to have row ${rowNumber} equal ${width}, but it is ${rowText.length}`);
 
             }
-            for (let x = 0; x<w; x++) {
-                const ch = row[x];
-                if (!(ch in def.legend)) {
-                    throw new Error(`sprite with id ${id} on row ${i} uses ${ch} which isn't logged in the legend`)
+            for (let column = 0; column < width; column++) {
+                const character = rowText[column];
+                if (!(character in drawing.legend)) {
+                    throw new Error(`sprite with id ${id} on row ${rowNumber} uses ${character} which isn't logged in the legend`)
                 }
-                const entry = def.legend[ch];
-                if (entry === null) continue;
-                const [name, t] = entry;
-                const i = y*w+x;
-                if (name === 'skin') {
-                    if (t<-4 || t > 4) throw new Error (`sprite with id ${id}: skin offset ${t} is outise -4 . . . 4`);
-                    s.ramp[i] = SKIN;
-                    s.tone[i] = t+4;
+                const colour = drawing.legend[character];
+                if (colour === null) continue;
+                const [rampName, toneNumber] = colour;
+                const pixel = rowNumber * width + column;
+                if (rampName === 'skin') {
+                    if (toneNumber < -4 || toneNumber > 4) throw new Error (`sprite with id ${id}: skin offset ${toneNumber} is outise -4 . . . 4`);
+                    sprite.ramp[pixel] = SKIN_RAMP;
+                    sprite.tone[pixel] = toneNumber + 4;
 
                 } else {
-                    const r = rampIndex(name);
-                    if (r<0) throw new Error(`sprite with id ${id}: unknown ramp '${name}'`);
-                    if (t<0 || t >= rampLength(r)) throw new Error(`sprite with id ${id}: ramp '${name}' has no tone ${t}`);
-                    s.ramp[i] = r;
-                    s.tone[i] = t;
+                    const rampNum = rampNumber(rampName);
+                    if (rampNum < 0) throw new Error(`sprite with id ${id}: unknown ramp '${rampName}'`);
+                    if (toneNumber < 0 || toneNumber >= toneCount(rampNum)) throw new Error(`sprite with id ${id}: ramp '${rampName}' has no tone ${toneNumber}`);
+                    sprite.ramp[pixel] = rampNum;
+                    sprite.tone[pixel] = toneNumber;
 
                 }
-                s.solid[i] = 1;
+                sprite.solid[pixel] = 1;
             }
         }
-        cylinderShape(s);
-        return s;
+        cylinderShape(sprite);
+        return sprite;
     }
 
-    function cylinderShape(s) {
-        for (let y = 0; y<s.h; y++) {
-            let x=0;
-            while (x<s.w) {
-                if (!s.solid[y*s.w+x]) {x++; continue;}
-                const left = x
-                while (x<s.w && s.solid[y*s.w+x]) x++;
-                const right = x-1;
-                const mid = (left+right+1) / 2;
-                const half = (right - left +1) / 2;
-                for (let k = left; k <= right; k++) {
-                    const i = y*s.w+k;
-                    s.nx[i] = Math.round(FS.clamp((k+0.5 - mid) / half, -1, 1) * 127);
-                    s.ny[i] = 0;
+    function cylinderShape(sprite) {
+        for (let rowNumber = 0; rowNumber < sprite.height; rowNumber++) {
+            let column = 0;
+            while (column < sprite.width) {
+                if (!sprite.solid[rowNumber * sprite.width + column]) {column++; continue;}
+                const runStart = column;
+                while (column < sprite.width && sprite.solid[rowNumber * sprite.width + column]) column++;
+                const runEnd = column - 1;
+                const runCentre = (runStart + runEnd + 1) / 2;
+                const runHalfWidth = (runEnd - runStart + 1) / 2;
+                for (let runColumn = runStart; runColumn <= runEnd; runColumn++) {
+                    const pixel = rowNumber * sprite.width + runColumn;
+                    sprite.normalAcross[pixel] = Math.round(FS.clamp((runColumn + 0.5 - runCentre) / runHalfWidth, -1, 1) * 127);
+                    sprite.normalAlong[pixel] = 0;
 
                 }
             }
         }
     }
 
-    function profile({id, len, maxHalf, halfWidthAt, ramp, tone}) {
-        const w = Math.round(2*maxHalf * PS);
-        const h = Math.max(1, Math.round(len * PX));
-        const s = blank(id, w, h);
-        const r = rampIndex(ramp);
-        for (let y=0; y<h; y++){
-            const v = (y+0.5) / h;
-            const half = halfWidthAt(v) * PX;
-            const above = halfWidthAt(Math.max(0, v-1 / h)) *PX;
-            const below = halfWidthAt(Math.max(1, v+1 / h)) *PX;
-            const grow = (below - above) /2;
-            const tilt = gro / Math.sqrt(1+grow*grow);
-            for (let x = 0; x<w; x++) {
-                const dx = x+0.5 - w/2;
-                if (Math.abs(dx) > half) continue;
-                const i = y* w + x;
-                s.solid[i] = 1;
-                s.ramp[o] = r;
-                s.tone[i] = tone;
-                s.nx[i] = Math.round(FS.clamp(dx/half, -1, 1) *127);
-                s.ny[i] = Math.round(tilt * 127);
+    function profile({id, length, widestHalfWidth, halfWidthAt, rampName, tone}) {
+        const width = Math.round(2 * widestHalfWidth * PIXELS_PER_METRE);
+        const height = Math.max(1, Math.round(length * PIXELS_PER_METRE));
+        const sprite = blankSprite(id, width, height);
+        const rampNum = rampNumber(rampName);
+        for (let rowNumber = 0; rowNumber < height; rowNumber++){
+            const howFarDown = (rowNumber + 0.5) / height; // 0 at the top, 1 at the bottom
+            const halfWidthPixels = halfWidthAt(howFarDown) * PIXELS_PER_METRE;
+            const halfWidthAbove = halfWidthAt(Math.max(0, howFarDown - 1 / height)) * PIXELS_PER_METRE;
+            const halfWidthBelow = halfWidthAt(Math.min(1, howFarDown + 1 / height)) * PIXELS_PER_METRE;
+            const widening = (halfWidthBelow - halfWidthAbove) / 2;
+            const tilt = widening / Math.sqrt(1 + widening * widening);
+            for (let column = 0; column < width; column++) {
+                const distanceFromMiddle = column + 0.5 - width / 2;
+                if (Math.abs(distanceFromMiddle) > halfWidthPixels) continue;
+                const pixel = rowNumber * width + column;
+                sprite.solid[pixel] = 1;
+                sprite.ramp[pixel] = rampNum;
+                sprite.tone[pixel] = tone;
+                sprite.normalAcross[pixel] = Math.round(FS.clamp(distanceFromMiddle / halfWidthPixels, -1, 1) * 127);
+                sprite.normalAlong[pixel] = Math.round(tilt * 127);
 
             }
         }
-        return s;
+        return sprite;
     }
 
     // -------- Stretchable Tanks -------
@@ -129,27 +129,27 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
         gold: ['gold', 3],
     };
 
-    function applySkin(s, skin) {
-        for (let y=0; y< s.h; y++) {
-            for (let x=0; x<s.w; x++) {
-                const i=y*s.w+x;
-                if (s.ramp[i] !== SKIN) continue;
-                let name, base;
-                if (skin === 'roll') {
-                    const quarter = Math.floor((x/s.w)*4);
-                    [name, base] = quarter % 2 === 0 ? ['metal', 6] : ['metal', 1];
+    function applySkin(sprite, skinName) {
+        for (let rowNumber = 0; rowNumber < sprite.height; rowNumber++) {
+            for (let column = 0; column < sprite.width; column++) {
+                const pixel = rowNumber * sprite.width + column;
+                if (sprite.ramp[pixel] !== SKIN_RAMP) continue;
+                let rampName, baseTone;
+                if (skinName === 'roll') {
+                    const stripe = Math.floor((column / sprite.width) * 4);
+                    [rampName, baseTone] = stripe % 2 === 0 ? ['metal', 6] : ['metal', 1];
 
                 } else {
-                    [name, base] = SKINS[skin] || SKINS.white;
+                    [rampName, baseTone] = SKINS[skinName] || SKINS.white;
                 }
-                const r = rampIndex(name);
-                s.ramp[i]=r;
-                s.tone[i] = FS.clamp(base + (s.tone[i] - 4), 0, rampLength(r) -1);
+                const rampNum = rampNumber(rampName);
+                sprite.ramp[pixel] = rampNum;
+                sprite.tone[pixel] = FS.clamp(baseTone + (sprite.tone[pixel] - 4), 0, toneCount(rampNum) - 1);
 
             }
         }
     }
-    
+
     //Tanks are procedural as they need to stretch. their design is defined by a width i draw
 
     const TANK_ART = {
@@ -163,7 +163,7 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
     };
 
     const TANK_CAPS = {
-        'tank-0.62': {top: 3, bottom: 3},
+        'tank-062': {top: 3, bottom: 3},
         'tank-125' : {top: 4, bottom: 4},
         'tank-188': { top: 5, bottom: 5},
         'tank-250': {top: 6, bottom: 6},
@@ -171,94 +171,96 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
         'tank-500': {top: 10, bottom: 10},
     };
 
-    function tank(w, len, skin) {
-        const id = TANK_ART[w];
-        const def = id && FS.SPRITES[id];
-        if (!def) return null;
+    function tank(width, length, skinName) {
+        const id = TANK_ART[width];
+        const drawing = id && FS.SPRITES[id];
+        if (!drawing) return null;
         const caps = TANK_CAPS[id];
-        const drawn = def.rows;
-        const middle = drawn.slice(caps.top, drawn.length - caps.bottom);
-        if (!middle.length) throw new Error(`sprite with id ${id}: its caps leave no repeatable middle rows`);
-        const wanted = Math.max(1, Math.round(len*PX));
-        let top = drawn.slice(0, caps.top);
-        let bottom = drawn.slice(drawn.length - caps.bottom);
-        if (top.length + bottom.length > wanted) {
-            top = top.slice(0, Math.floor(wanted / 2));
-            bottom = bottom.slice(bottom.length - matchMedia.cell(wanted / 2));
+        const drawnRows = drawing.rows;
+        const middleRows = drawnRows.slice(caps.top, drawnRows.length - caps.bottom);
+        if (!middleRows.length) throw new Error(`sprite with id ${id}: its caps leave no repeatable middle rows`);
+        const rowsNeeded = Math.max(1, Math.round(length * PIXELS_PER_METRE));
+        let topCap = drawnRows.slice(0, caps.top);
+        let bottomCap = drawnRows.slice(drawnRows.length - caps.bottom);
+        if (topCap.length + bottomCap.length > rowsNeeded) {
+            topCap = topCap.slice(0, Math.floor(rowsNeeded / 2));
+            bottomCap = bottomCap.slice(bottomCap.length - Math.ceil(rowsNeeded / 2));
 
         }
-        const rows = top.slice();
-        let k =0;
-        while (rows.length < wanted - bottom.length) {
-            rows.push(middle[k % middle.length]);
-            k++;
+        const tankRows = topCap.slice();
+        let middleRow = 0;
+        while (tankRows.length < rowsNeeded - bottomCap.length) {
+            tankRows.push(middleRows[middleRow % middleRows.length]);
+            middleRow++;
 
         }
-        for (const row of bottom) rows.push(row);
-        const s = parse(id, {legend: def.legend, rows});
-        applySkin(s, skin);
-        return s;
+        for (const rowText of bottomCap) tankRows.push(rowText);
+        const sprite = parse(id, {legend: drawing.legend, rows: tankRows});
+        applySkin(sprite, skinName);
+        return sprite;
     }
-    
-    function toImage(s) {
-        const data = new Uint8ClampedArray(s.w * s.h * 4);
-        for (let i = 0; i<s.w*s.h; i++) {
-            if (!s.solid[i]) continue;
-            const c = FS.Palette.ramps[RAMP_NAMES[s.ramp[i]]][s.tone[i]];
-            data[i*4] = c[0];
-            data[i*4+1] = c[1];
-            data[i*4+2] = c[2];
-            data[i*4+3] = 255;
+
+    function toImage(sprite) {
+        const rgba = new Uint8ClampedArray(sprite.width * sprite.height * 4);
+        for (let pixel = 0; pixel < sprite.width * sprite.height; pixel++) {
+            if (!sprite.solid[pixel]) continue;
+            const colour = FS.Palette.ramps[RAMP_NAMES[sprite.ramp[pixel]]][sprite.tone[pixel]];
+            rgba[pixel * 4] = colour[0];
+            rgba[pixel * 4 + 1] = colour[1];
+            rgba[pixel * 4 + 2] = colour[2];
+            rgba[pixel * 4 + 3] = 255;
 
         }
 
 
-        if (typeof ImageData !== `undefined`) return new ImageData(data, s.w, s.h);
-        return {width: s.w, height: s.h, data};
+        if (typeof ImageData !== `undefined`) return new ImageData(rgba, sprite.width, sprite.height);
+        return {width: sprite.width, height: sprite.height, data: rgba};
 
     }
 
     // Here lies lighting
-    // sun actually light stuff now (yipeeee) 
+    // sun actually light stuff now (yipeeee)
     // the andgle at which this light occurs is calculated using mafematics (:nerd-emoji:)
 
-    function light(s, sx, sy, shade, glow = 0) {
-        
-        const n = Math.hypot(sx, sy, 0.35);
+    function light(sprite, sunAcross, sunAlong, sunlit, glow = 0) {
 
-        const lx = sx / n, ly = sy / n, lz = 0.35 / n;
-        const metal = rampIndex('metal');
-        const orange = rampIndex('orange');
-        const nozzleFrom = Math.floor(s.h * 0.75);
-        const ramp = s.ramp.slice();
-        const tone = s.tone.slice();
+        const tilt = 0.35; // how far the sun leans towards you
+        const sunLength = Math.hypot(sunAcross, sunAlong, tilt);
 
-        for (let y=0; y< s.h; y++) {
-            for (let x = 0; x < s.w; x++) {
-                const i = y* s.w + x;
-                if (!s.solid[i]) continue;
-                if (glow > 0 && y >= nozzleFrom) {
+        const sun3DAcross = sunAcross / sunLength, sun3DAlong = sunAlong / sunLength, sun3DOut = tilt / sunLength;
+        const metalRamp = rampNumber('metal');
+        const orangeRamp = rampNumber('orange');
+        const nozzleStartRow = Math.floor(sprite.height * 0.75);
+        const litRamp = sprite.ramp.slice();
+        const litTone = sprite.tone.slice();
+
+        for (let rowNumber = 0; rowNumber < sprite.height; rowNumber++) {
+            for (let column = 0; column < sprite.width; column++) {
+                const pixel = rowNumber * sprite.width + column;
+                if (!sprite.solid[pixel]) continue;
+                if (glow > 0 && rowNumber >= nozzleStartRow) {
                     // tip of engine nozzle glows
-                    ramp[i] = orange;
-                    tone[i] = Math.min(rampLength(orange) - 1, 2+ Math.round(glow *3)); // change for glow brightness
+                    litRamp[pixel] = orangeRamp;
+                    litTone[pixel] = Math.min(toneCount(orangeRamp) - 1, 2 + Math.round(glow * 3)); // change for glow brightness
                     continue;
                 }
 
                 // surface direction at a given pixel as a 3d unit vector
-                const nx = s.nx[i] / 127, ny = s.ny[i] / 127;
-                const nz = Math.sqrt(Math.max(0, 1-nx*nx - ny*ny));
+                const normalAcross = sprite.normalAcross[pixel] / 127, normalAlong = sprite.normalAlong[pixel] / 127;
+                const normalOut = Math.sqrt(Math.max(0, 1 - normalAcross * normalAcross - normalAlong * normalAlong));
 
                 //how much sun this pixel gets
-                const lit = shade * Math.max(0, nx * lx + ny * ly + nz * lz);
-                const top = rampLength(ramp[i]) -1;
-                let t = tone[i] + Math.round(-2 + 3 * lit); //-2 and 3 set the contrast (min max brightness type)
-                if (ramp[i] === metal && lit > 0.93) t = top; //0.93 is like the tolerance of the shine
-                tone[i] = FS.clamp(t, 0, top);
+                const facing = normalAcross * sun3DAcross + normalAlong * sun3DAlong + normalOut * sun3DOut;
+                const brightness = sunlit * Math.max(0, facing);
+                const brightestTone = toneCount(litRamp[pixel]) - 1;
+                let newTone = litTone[pixel] + Math.round(-2 + 3 * brightness); //-2 and 3 set the contrast (min max brightness type)
+                if (litRamp[pixel] === metalRamp && brightness > 0.93) newTone = brightestTone; //0.93 is like the tolerance of the shine
+                litTone[pixel] = FS.clamp(newTone, 0, brightestTone);
             }
         }
-        return toImage({ e: s.w, h: s.h, solid: s.solid, ramp, tone});
+        return toImage({ width: sprite.width, height: sprite.height, solid: sprite.solid, ramp: litRamp, tone: litTone});
     }
 
-    FS.Sprites = {PX, RAMP_NAMES, SKINS, parse, profile, tank, applySkin, toImage, light };
+    FS.Sprites = {PIXELS_PER_METRE, RAMP_NAMES, SKINS, parse, profile, tank, applySkin, toImage, light };
 
 })();
