@@ -80,6 +80,56 @@ for (const [id, def] of Object.entries(FS.SPRITES)) {
     else check(def.top && def.body && def.bottom, `art/sprites: ${id} has top, body and bottom rows`);
 
 }
+
+const bar = S.parse('bar', {legend: {'.': null, a: ['metal', 4]}, rows: ['.aaaaaa.']});
+check(Math.abs(bar.nx[4]) < 30 && bar.nx[1] < -100 && bar.nx[6] > 100, 'A drawn row is shaped like a cylinder correctly');
+
+const tank1 = S.profile({id: 't', len: 0.5, maxHalf: 0.625, halfWidthAt: () => 0.625, ramp: 'metal', tone: 5});
+check(tank1.w === 20 && tank1.h === 8, 'a 1.25 m x 0.5 m cylinder is 20 x 8 px');
+let mirrored = true;
+for (let x=0; x<tank1.w; x++) if (tank1.nx[x] !== -tank1.nx[tank1.w - 1 -x]) mirrored = false;
+check(mirrored, 'its shape layer is symmetric')
+const rowWidth = (s,y) => {let n = 0; for (let x = 0; x<S.w; x++) n += S.solid[y*S.w +x]; return n;};
+const cone = S.profile({id: 'c', len:1, maxHalf: 1.25, halfWidthAt: (v)=> 0.625 + 0.625 * v, ramp: 'metal', tone: 5});
+check(rowWidth(cone,0) < rowWidth(cone, cone.h -1), ' a cone that widens downwards is narrower at the top');
+check(cone.ny[Math.floor(cone.h / 2) * cone.w + cone.w/2] >0, "a cone that widens downwards faces slightly up");
+check(tank1.ny.every((v) => v === 0), "a cylinder's sides are vertical");
+
+
+
+
+// im so done bro
+
+FS.SPRITES['tank-125'] = FS.SPRITES['tank-125'] || {
+    legend: {'.': null, K: ['metal', 1], S: ['skin', 0], s: ['skin', -1]},
+    rows: [
+        'KKKKKKKKKKKKKKKKKKKK', 
+        'ssssssssssssssssssss', 
+        'ssssssssssssssssssss', 
+        'ssssssssssssssssssss', 
+        'SSSSSSSSSSSSSSSSSSSS', 
+        'SSSSSSSSSSSSSSSSSSSS', 
+        'SSSSSSSSSSSSSSSSSSSS', // TEST TANK
+        'ssssssssssssssssssss', 
+        'ssssssssssssssssssss', 
+        'ssssssssssssssssssss', 
+        'ssssssssssssssssssss', 
+        'KKKKKKKKKKKKKKKKKKKK',  
+    ],
+};
+
+check([0.5, 2, 4, 24].every((len) => S.tank(1.25, len, 'white').h === len*16), 'sample tanks are correck pixel tall');
+
+check(S.tank(1.25, 2, 'white').w === 20, 'a 1.25 m tank has correct width');
+
+check(S.tank(1.25, 0.25, 'white').h === 4, 'a 0.25 tank is still 4px tall');
+
+const white = S.tank(1.25, 2, 'white'), foam = S.tank(1.25, 2, 'foam');
+check(same(Array.from(white.solid), Array.from(foam.solid)), 'changing the skin keeps the shape');
+check(!same(Array.from(white.ramp), Array.from(foam.ramp)), 'changing the skin changes the colours');
+check(white.ramp.every((r) => r !== 255), 'no skin placeholder is left after the skin is applied');
+check(S.tank(0.7, 2, 'white') === null, "no width is null so old art is used");
+
  
 //das it 
 

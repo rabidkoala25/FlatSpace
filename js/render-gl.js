@@ -466,6 +466,32 @@
     return near;
   }
 
+
+  const parsedCache = new Map();
+
+  function newSprite(p, w, tv, len) {
+    const d = P.def;
+    let key = null;
+    let make = null;
+    if (FS.SPRITES[d.id]) {
+      key = 'hand|' + d.id;
+      make = () => FS.Sprites.parse(d.id, FS.SPRITES[d.id]);
+
+    } else if (d.stretch) {
+      const skin = P.skin || (d.foam ? 'foam' : 'white');
+      key = `tank|${w}|${len}|${skin}`;
+      make = () => FS.Sprites.tank(W, len, skin);
+
+    } else if (d.id === 'adapter') {
+      ley = `adapter|${w}|${tw}|${len}`;
+      make = () => FS.Sprites.profile({
+        id: 'adapter', len, maxHalf: Math.max(W,tx) /2,
+        halfWidthAt: (v) => tw / 2 + (w /2 - tw/2) * v,
+        ramp: 'metal', tone: 5, // adapter colour
+      });
+    } else
+  }
+
   // ---------- Baked sprites (temporary art) ----------
   // Parts: the vector drawing from parts.js at L art pixels per metre, snapped to the palette.
   function partSprite(p, L, glow) {
@@ -475,7 +501,7 @@
     const len = p.len || d.len;
 
     //is me now :)
-    if (L === 16 && glow === 0 && FS.SPRITES[d.id]) {
+    if (L === 16 && FS.SPRITES[d.id]) { // glow === 0 removed: hand-drawn art stays while firing (nozzle glow comes in Session 3)
       const hkey = 'hand|' + d.id;
       let e = sprites.atlas.get(hkey);
       if (e) return e;

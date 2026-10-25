@@ -198,7 +198,7 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 **How sprites are made.**
 - Sprites are drawn in Pixilart at 16 px per metre, using only the palette, and exported as PNG at 1× into `art/png/`. `tools/png2sprite.js` turns each one into a palette-indexed text grid in `art/sprites/`, which the game reads. The grids are readable and diffs show what changed.
 - `sprite-guide.html` gives the drawing guidance for every part: its size in pixels, the current art, a starter PNG, its outline from top to bottom, what to draw and ideas for later. It reads the game's own files, and its notes live in `art/sprite-notes.js`. Every part needs an entry there (`tests/test_sprite_notes.js` checks), so **a step that adds or changes a part also adds or updates its notes**.
-- Most parts are cylinders and cones, so they are generated from a profile (width along the length) plus hand-drawn decals: windows, hatches, rivets, stripes and logos. This keeps every part consistent and lets stretched tanks stay crisp at any length. Each tank is a top cap, a repeating body slice and a bottom cap. Skins are palette swaps.
+- Most parts are cylinders and cones, so they are generated from a profile (width along the length) plus hand-drawn decals: windows, hatches, rivets, stripes and logos. This keeps every part consistent and lets stretched tanks stay crisp at any length. Tanks are drawn whole, one drawing per width (`art/png/tank-125.png` and so on, from the templates in `guides/tank-templates/`); the code keeps the top and bottom caps and repeats the middle rows to stretch the tank to any length. Skins are palette swaps.
 - `art.html` shows every sprite at 1× and 4×, rotating, under several sun angles, for review.
 - Any generated sprite can be replaced by dropping a PNG with the same name and size into `art/overrides/`. If you, or a pixel artist you work with, want to hand-draw sprites later, it needs no code changes.
 
@@ -871,7 +871,7 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 
 **Done when:** the gallery shows every part rotating under 4 sun angles. **Checkpoint:** you review the gallery and give direction before B3 starts.
 
-**How B2 is being done (Oct 2026):** the user is coding it from a session-by-session guide (sprite format and converter, profile generator and tank caps, lighting from the sun, then the rest over half term), drawing the sprites in Pixilart. One change from the Must list: lighting is worked out in JavaScript when a sprite is made, one lit copy per sun angle (32 steps), not in the shader; moving it into the shader is optional later.
+**How B2 is being done (Oct 2026):** the user is coding it from a session-by-session guide (sprite format and converter, profile generator and tank caps, lighting from the sun, then the rest over half term), drawing the sprites in Pixilart. One change from the Must list: lighting is worked out in JavaScript when a sprite is made, one lit copy per sun angle (32 steps), not in the shader; moving it into the shader is optional later. Another change: tanks are drawn whole in Pixilart, one per width, and `FS.Sprites.tank()` stretches them by repeating the middle rows between the caps (`TANK_CAPS` in `js/sprites.js` says where each cap ends).
 
 #### B3 · The world up close
 **Goal:** ground, sea and the launch site look as good as the rockets.
