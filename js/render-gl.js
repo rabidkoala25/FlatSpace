@@ -508,7 +508,7 @@
     
   }
 
-  
+
 
   // ---------- Baked sprites (temporary art) ----------
   // Parts: the vector drawing from parts.js at L art pixels per metre, snapped to the palette.
@@ -519,18 +519,21 @@
     const len = p.len || d.len;
 
     //is me now :)
-    if (L === 16 && FS.SPRITES[d.id]) { // glow === 0 removed: hand-drawn art stays while firing (nozzle glow comes in Session 3)
-      const hkey = 'hand|' + d.id;
-      let e = sprites.atlas.get(hkey);
-      if (e) return e;
-      const s = FS.Sprites.parse(d.id, FS.SPRITES[d.id]);
-      e = sprites.atlas.add(hkey, FS.Sprites.toImage(s));
-      if (e) {
-        e.ox = s.w / 2;
-        e.oy = s.h / 2;
+    // ugh have to edit this
 
+    if (L === 16) {
+      const ns = newSprite(P, W, tw, len);
+      if (ns) {
+        const key = ns.key + '|flat';
+        let e = sprites.atlas.get(key);
+        if (e) return e;
+        e = sprites.atlas.add(key, FS.Sprites.toImager(ns.s));
+        if (e) {
+          e.ox = ns.s.w / 2; //checking the sprite's center lines up with the part's cente
+          e.oy = ns.s.h /2;
+        }
+        return e;
       }
-      return e;
     }
 
     const key = `p|${d.id}|${w}|${tw}|${len}|${p.skin || ''}|${glow}|${L}`;
