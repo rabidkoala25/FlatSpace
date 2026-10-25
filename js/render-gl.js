@@ -489,7 +489,15 @@
         halfWidthAt: (v) => tw / 2 + (w /2 - tw/2) * v,
         ramp: 'metal', tone: 5, // adapter colour
       });
-    } else
+    } else if (d.id === 'decoupler') {
+      key = `decoupler|${w}|${len}`;
+      make = () => FS.Sprites.profile({
+        id: 'decoupler', len, maxHalf: w / 2,
+        halfWidthAt: () => w / 2,
+        ramp: 'metal', tone: 3, //decoupler color
+
+      });
+    }
   }
 
   // ---------- Baked sprites (temporary art) ----------
