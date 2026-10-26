@@ -183,6 +183,47 @@ check(halfSquare.solid.every((solid) => solid === 1), 'a solid is solid');
 check(halfSquare.tone.every((tone) => tone === 1), 'outline stays dark after halving');
 
 //odd block rounging testing
+const odd = Sprites.parse('odd', {legend: {'.': null, m: ['metal', 4]}, rows: [
+    'mmmmm',
+    'mmmmm',
+    'mmmmm',
+
+]});
+const halfOdd = Sprites.halve(odd);
+check(halfOdd.width === 3 && halfOdd.height === 2, 'halving odd sprite 5x3 gives 3x2');
+
+// if solid block minority, halfved is transparent
+const speck = Sprites.halve(Sprites.parse('speck', {legend: {'.': null, m:['metal', 4]}, rows : ['m.', '..']}));
+check(speck.solid[0] === 0, 'mostly transparent block halves to transparent');
+
+// most common colour in a block wins
+const stripes = Sprites.parse('stripes', {legend: {'.': null, g: ['gold', 3], m: ['metal', 4]}, rows: [
+    'gggggg',
+    'gggggg',
+    'gggggg',
+    'gmmggg',
+    'gmmggg',
+    'gggggg',
+
+]});
+const halfStripes = Sprites.halve(stripes);
+check(halfStripes.ramp[1*halfStripes.width +1] === Sprites.RAMP_NAMES.indexOf('gold'), 'the most common colour in a block wins the election');
+
+// the shape layer survives, so halved sprites still light up properly
+const halfCylinder = Sprites.halve(Sprites.halve(cylinder));
+check(halfCylinder.normalAcross[0] < 0 && halfCylinder.normalAcross[halfCylinder.width - 1] > 0, 'a halved cylinder still faces left on the left and right on the right');
+check(metalToneAt(Sprites.light(halfCylinder, 1, 0, 1), halfCylinder.width - 1, 0) >= metalToneAt(Sprites.light(halfCylinder, 1, 0, 1), 0, 0), 'a halved cylinder is still brighter on the sunny side');
+
+// every hand-drawn sprite can be halved twice
+for (const [id, drawing] of Object.entries(FS.SPRITES)) {
+    if (!drawing.rows) continue;
+    const sprite = Sprites.parse(id, drawing);
+    const quarter = Sprites.halve(Sprites.halve(sprite));
+    check(quarter.width === Math.ceil(Math.ceil(sprite.width / 2) / 2) && quarter.solid.some((solid) => solid === 1), `${id} halves twice to ${quarter.width} × ${quarter.height} px`);
+}
+
+
+
 
 //das it
 
