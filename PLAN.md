@@ -50,7 +50,7 @@ js/vessel.js        a flying craft: forces, fuel, staging, landing, crashing; re
 js/sim.js           game state, the event bus, stepping craft and debris (physics or on rails)
 js/warp.js          time warp rates and limits, warping to a time
 js/nodes.js         maneuver nodes on any patch of the predicted path
-js/render.js        the Canvas 2D renderer (FS.Renderer interface): flight, map, particles
+js/render.js        the Canvas 2D renderer (Flatspace.Renderer interface): flight, map, particles
 js/hud.js           flight instruments: attitude dial, readouts, stage list
 js/editor.js        the Vehicle Assembly hangar
 js/input.js         keyboard, mouse and touch (including pinch zoom)
@@ -59,7 +59,9 @@ tests/              headless checks: node tests/run.js (npm install once for the
 tools/roadmap.js    redraws docs/roadmap.svg (the README's roadmap) from the status table below
 ```
 
-Simulation code (`data/`, `save.js` to `nodes.js`) never touches the page. It reports what happens through events (`staged`, `touchdown`, `exploded`, `soi`, `message`), which the renderer and `main.js` listen to. The tests load exactly these files in Node.
+**Names in the code are plain English words** (Oct 2026): `part.length`, `vessel.position`, `body.radius`, `orbit.eccentricity`, `camera.scale`, `Flatspace.formatDistance`, and the same in the shaders, the HTML ids and the CSS classes. Short names and abbreviations (`len`, `r`, `R`, `e`, `cam.s`, `FS`) were replaced everywhere in v0.8.0. Saves made before then still load: `js/save.js` renames the old fields (format version 4). New code keeps to this: a name says what the thing is, and `x`/`y` are only used for coordinates.
+
+Simulation code (`data/`, `save.js` to `nodes.js`) never touches the page. It reports what happens through events (`staged`, `touchdown`, `exploded`, `sphere-change`, `message`), which the renderer and `main.js` listen to. The tests load exactly these files in Node.
 
 Added by the roadmap:
 
@@ -175,7 +177,7 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 **The goal.** Pixel art that looks genuinely beautiful and deliberate, in the league of Hyper Light Drifter, Celeste, Eastward or Sea of Stars, not a Flash game. Every sprite is drawn on a pixel grid, but objects rotate freely: **when a rocket turns, its pixels turn with it as crisp squares.** The world is never re-pixelated to the screen grid. This keeps motion smooth, which matters in a game where the rocket is always making small SAS corrections and the flight camera turns as you orbit. The alternative, redrawing everything onto a fixed screen grid each frame, makes edges crawl ("pixel boil") during slow rotation.
 
 **What separates this from a Flash game.**
-- No soft vector gradients or glossy "plastic" shading.
+- No soft vector gradients or glossy "plastic" shading on sprites.
 - No pixels of different sizes side by side, such as a part scaled 2× next to parts at 1×.
 - No blurry, smoothed-out bitmaps.
 - No particles drawn as soft blobs.
@@ -189,7 +191,7 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 | Crisp squares at any angle | Rendering moves to WebGL2 in step B1. Sprites are drawn with a "sharp pixel" shader: each art pixel is a solid square, with a blend one screen pixel wide only along its edges. Squares stay crisp at any angle and don't shimmer when an object moves by a fraction of a pixel or turns slowly. |
 | Smooth zoom | Zoom is continuous. When art pixels shrink below about one screen pixel, the renderer switches to prepared ½ and ¼ versions (downscaled with pixel-art rules), then to a pixel icon. |
 | A limited palette | About 48 colours in `art/palette.js`, built as hue-shifted ramps (shadows lean cool and purple, highlights warm). Effects and UI use the same palette. |
-| No smooth gradients | Sky, atmosphere rims, night-side terminators and smoke use banded colours with ordered dithering, at the same pixel size as the art. |
+| Painted, not blocky, backgrounds | Sprites and terrain stay strict pixel art, but the sky, haze and distant layers aim for the Starbound look (below): smooth gradients between palette colours with a fine blue-noise dither at the art-pixel size, so no hard bands show. Banding is kept only where it reads as deliberate, such as sunset streaks. Smoke still fades by dither. |
 | Consistent light | Each part has a colour layer and a "shape" layer (the surface direction at each pixel). The shader lights it from the real sun direction with 4–5 tone ramps and a specular pixel. The lit side moves as the rocket turns, the craft goes dark in a planet's shadow, and engine fire lights nearby parts. |
 | Ground and planets in the same style | Terrain is a mesh textured with pixel-art material tiles (grass, soil strata, rock, sand, snow) that follow the curve of the ground. Planets seen from orbit are pixel-art textures that turn with the planet. |
 | Pixel effects | Particles are single art pixels or small clusters, coloured from palette ramps, fading by dither pattern instead of transparency. |
@@ -198,9 +200,16 @@ The prototype's click-to-stack editor is replaced by a drag-and-drop builder tha
 **How sprites are made.**
 - Sprites are drawn in Pixilart at 16 px per metre, using only the palette, and exported as PNG at 1× into `art/png/`. `tools/png2sprite.js` turns each one into a palette-indexed text grid in `art/sprites/`, which the game reads. The grids are readable and diffs show what changed.
 - `sprite-guide.html` gives the drawing guidance for every part: its size in pixels, the current art, a starter PNG, its outline from top to bottom, what to draw and ideas for later. It reads the game's own files, and its notes live in `art/sprite-notes.js`. Every part needs an entry there (`tests/test_sprite_notes.js` checks), so **a step that adds or changes a part also adds or updates its notes**.
-- Most parts are cylinders and cones, so they are generated from a profile (width along the length) plus hand-drawn decals: windows, hatches, rivets, stripes and logos. This keeps every part consistent and lets stretched tanks stay crisp at any length. Each tank is a top cap, a repeating body slice and a bottom cap. Skins are palette swaps.
+- Most parts are cylinders and cones, so they are generated from a profile (width along the length) plus hand-drawn decals: windows, hatches, rivets, stripes and logos. This keeps every part consistent and lets stretched tanks stay crisp at any length. Tanks are drawn whole, one drawing per width (`art/png/tank-125.png` and so on, from the templates in `guides/tank-templates/`); the code keeps the top and bottom caps and repeats the middle rows to stretch the tank to any length. Skins are palette swaps.
 - `art.html` shows every sprite at 1× and 4×, rotating, under several sun angles, for review.
 - Any generated sprite can be replaced by dropping a PNG with the same name and size into `art/overrides/`. If you, or a pixel artist you work with, want to hand-draw sprites later, it needs no code changes.
+
+**The Starbound look for the world (B3, B6).** The reference for skies, backgrounds and weather is Starbound.
+- A chunky pixel foreground, and behind it several painted-looking parallax layers that get lighter, bluer and lower in contrast with distance; soft, glowing skies; a sun with a halo.
+- **Hand-drawn but procedural.** Shapes come from noise (ridgelines, hills, cloud density), but their surfaces are finished with small hand-drawn pixel "brushes" made in Pixilart (rim-light strips, cracks, grass edges, rock clumps, tree silhouettes), stamped along the generated shapes by seed. No two hills are the same, yet everything looks drawn.
+- Foreground ground gets a Starbound-style edge: a dark outline and a lit top edge along the surface, and blended borders where materials meet.
+- Clouds are lit density fields (B6), not flat sprites.
+- Brushes are drawn and converted like part sprites, and get entries in the drawing guide.
 
 **An honest note.** Art quality is the riskiest part of this plan, because sprites made in code can look mechanical. The rules above keep them consistent. Step B2 ends with a checkpoint where you review the gallery and give direction before the world and effects are drawn.
 
@@ -380,6 +389,8 @@ Features neither game has in stock, which a 2D game is well placed to do: interi
 | Tethers, sails and mass drivers | Rotating momentum-exchange tethers, solar sails, an electromagnetic launch track, fuel depots | H8 |
 | Flight recorder and replays | Every flight recorded; scrub, slow-mo, follow any vessel, cinematic cameras, GIF export, race your own ghost | H9 |
 
+**Later, as a themed DLC:** planetary exploration and construction in the spirit of Starbound (land, step out, dig, gather and build bases). See "DLC — Planetfall" after Phase H.
+
 ---
 
 ## 3. Popular mods and what to build in
@@ -445,11 +456,11 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
    - ticks the step in the status table below, ticks any finished rows in `PARTS.md`, and adds a line to the changelog at the end of this file;
    - if the step added or changed a part: adds or updates its entry in `art/sprite-notes.js`, so `sprite-guide.html` covers it (`tests/test_sprite_notes.js` fails otherwise);
    - from E4 on, if the step added parts or features: notes in its Result which tech node each belongs in and ideas for contracts that use it, for the next "Tech and contracts" step (section 4.4);
-   - bumps `FS.VERSION` in `js/util.js` and the matching `?v=` tags on every script and style link in `index.html` (so browsers never mix cached old files with new ones; the page test checks they match);
+   - bumps `Flatspace.VERSION` in `js/util.js` and the matching `?v=` tags on every script and style link in `index.html` (so browsers never mix cached old files with new ones; the page test checks they match);
    - runs `node tools/roadmap.js` to redraw the roadmap graphic in the README;
    - republishes the playable page and hands back the updated project.
 4. If a session runs short, unfinished Must items move to the top of the next step. The game must run at the end of every session, so nothing is left half-built.
-5. **While the user takes part in Hack Club Terra (from step B2):** the user writes the code, so their hours count. Sessions explain the step, give commented code to follow and review what the user wrote, rather than writing files into the folder, unless the user asks. Sprites are drawn by the user in Pixilart (see `sprite-guide.html`). The README and devlogs are written by the user, because Hack Club doesn't allow AI-written ones.
+5. **While the user takes part in Hack Club Terra (from step B2):** the user writes the code, so their hours count. Sessions explain the step, give commented code to follow and review what the user wrote, rather than writing files into the folder, unless the user asks. Sprites are drawn by the user in Pixilart (see `sprite-guide.html`). The README and devlogs are written by the user, because Hack Club doesn't allow AI-written ones. The user's coding guide for B2 is `guides/b2-coding-guide.md` (kept out of git); keep it in step when the plan for B2 changes.
 
 ### 4.3 Why this order
 
@@ -494,6 +505,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 | B3 | The world up close | ☐ |
 | B4 | Effects and motion | ☐ |
 | B5 | Interface reskin and title screen | ☐ |
+| B6 | Clouds, weather and rain | ☐ |
 | **C** | **Physics upgrade** | |
 | C1 | Rigid bodies, collisions, floating origin | ☐ |
 | C2 | Joints, articulated parts and breaking | ☐ |
@@ -554,8 +566,15 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 | H8 | Tethers, sails and mass drivers | ☐ |
 | H9 | Flight recorder, replays and photo mode | ☐ |
 | H10 | Tech and contracts: beyond KSP | ☐ |
+| **DLC** | **Planetfall: exploration and construction (optional)** | |
+| DLC1 | On foot | ☐ |
+| DLC2 | Diggable ground | ☐ |
+| DLC3 | Gathering and crafting | ☐ |
+| DLC4 | Building bases | ☐ |
+| DLC5 | Living worlds | ☐ |
+| DLC6 | Planetfall missions and themed pack | ☐ |
 
-64 steps after the prototype.
+65 steps after the prototype, plus the optional DLC.
 
 ### Prototype (done)
 
@@ -618,7 +637,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 - **Second half (v0.2.0):**
   - **Split:** `main.js` split into `sim.js`, `warp.js`, `nodes.js` and `input.js`.
   - **Events:** craft report events instead of calling the page.
-  - **Renderer interface:** `FS.Renderer`, which `main.js` checks at start-up.
+  - **Renderer interface:** `Flatspace.Renderer`, which `main.js` checks at start-up.
   - **Maneuver nodes:** they survive SOI changes and can be placed on any patch.
   - **Debris:** kept, on rails, during time warp.
   - **Touch:** pinch zoom in flight and the map.
@@ -722,7 +741,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 - **Physics change brought forward from C4:**
   - The overlay showed the drag-only model gave fins almost no straightening force at small angles; with SAS off, every sample rocket turned away from the airflow.
   - Each part now also feels a sideways push across it. On bodies it grows with the square of the angle; fins act like small wings and push back from the first degree.
-  - Flight and the editor share one function (`FS.partAero`), so the overlay matches how the craft flies.
+  - Flight and the editor share one function (`Flatspace.partAerodynamics`), so the overlay matches how the craft flies.
   - Now a finned rocket straightens itself and a finless one doesn't, matching its centre of pressure.
 - **Sample change:** finned rockets now fall nose-first and fast. The Hopper went 33 km up and came down too fast for its parachute, so it now uses the short tank and makes a 2.4 km hop.
 - **Tests:** 8 files, about 60 new checks. They cover mirrored boosters and their staging, tilted fins touching the tank, offset with its twin, overlaps refused, save and load of angles and mirror links, the centre of pressure moving behind the centre of mass with fins, and flight agreeing. The page test builds the done-when rocket with pointer events and keys, then Ctrl+Z reverses every step and Ctrl+Y restores them.
@@ -819,7 +838,7 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 
 **Result (v0.7.0):** done, including the stretch (a pixel-size setting).
 - **One pixel grid:** world art pixels are (1/16)·2^k m. k is the smallest value that keeps an art pixel at least the chosen pixel size on screen, and parts, terrain, planets and particles all share it, so pixels of different sizes never sit side by side. The setting is in the Esc menu: Fine (1.5 CSS px, the default), Medium (2) or Chunky (3). It is saved under a new versioned key, `flatspace.settings`.
-- **WebGL2 renderer (`js/render-gl.js`)**, behind the same `FS.Renderer` interface:
+- **WebGL2 renderer (`js/render-gl.js`)**, behind the same `Flatspace.Renderer` interface:
   - **sprite batcher and sharp-pixel shader (`js/gl.js`):** a 2048² atlas filled on demand. Each art pixel is a flat colour, smoothed over exactly one screen pixel at its edges, at any angle. Sprites fade by Bayer dither, not transparency;
   - **planet meshes:** a full-screen shader per body, limited to its screen area, works out each art pixel's height and depth. It draws ocean (with a foam line), the surface layer (grass with tufts, sand, rock, snow), soil, rock strata, the deep interior seen from afar, the atmosphere rim, and a dithered night side. Heights come from a 4096-sample texture for each body, or, close to the ground, a 1024-sample window around the camera refreshed every frame, worked out in the ground's own frame so nothing jitters far from the planet's centre;
   - **particle buffer:** exhaust, smoke and explosions are pixel puffs coloured from palette ramps. The particle simulation stays in `render.js` and is shared by both renderers;
@@ -854,7 +873,7 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 
 **Done when:** the gallery shows every part rotating under 4 sun angles. **Checkpoint:** you review the gallery and give direction before B3 starts.
 
-**How B2 is being done (Oct 2026):** the user is coding it from a session-by-session guide (sprite format and converter, profile generator and tank caps, lighting from the sun, then the rest over half term), drawing the sprites in Pixilart. One change from the Must list: lighting is worked out in JavaScript when a sprite is made, one lit copy per sun angle (32 steps), not in the shader; moving it into the shader is optional later.
+**How B2 is being done (Oct 2026):** the user is coding it from a session-by-session guide (sprite format and converter, profile generator and tank caps, lighting from the sun, then the rest over half term), drawing the sprites in Pixilart. One change from the Must list: lighting is worked out in JavaScript when a sprite is made, one lit copy per sun angle (32 steps), not in the shader; moving it into the shader is optional later. Another change: tanks are drawn whole in Pixilart, one per width, and `Flatspace.Sprites.tank()` stretches them by repeating the middle rows between the caps (`TANK_CAPS` in `js/sprites.js` says where each cap ends).
 
 #### B3 · The world up close
 **Goal:** ground, sea and the launch site look as good as the rockets.
@@ -863,13 +882,17 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 - **Terrain mesh:** textured with pixel-art material tiles (soil and rock strata, cliffs, beaches, snow above 2.5 km, crater rims on moons) that follow the ground's curve.
 - **Surface details:** grass tufts, rocks and boulders, scattered by seed.
 - **Ocean:** animated waves, a foam line on beaches, sun glint, darker deep water.
-- **Depth:** two parallax layers of distant hills; a drifting cloud layer you fly through between 2 and 8 km.
+- **Sky (replaces B1's banded sky):** smooth palette gradients by altitude and sun angle with a fine blue-noise dither; a sun disc with a soft halo; warm horizon haze at sunset; stars fading in through it.
+- **Depth, Starbound style:** four to six parallax layers (far mountains, hills, near ridges, tree lines). Each is a noise silhouette finished with hand-drawn brushes (section 1.5), fades into haze with distance and is lit from the sun's side.
+- **Hand-drawn brushes:** a small set drawn in Pixilart (rim light, cracks, grass edge, rock clumps, tree silhouettes), stamped by seed, each with an entry in the sprite guide.
+- **Foreground edges:** a dark outline and lit top edge along the ground surface, and blended borders between materials.
+- **Clouds:** a simple placeholder layer until B6.
 - **Launch site:** pad with flame trench, lattice tower whose arms swing away at launch, assembly building, tracking dish, blinking beacons.
 - **Day and night:** sunlit terrain by day; lit windows at night.
 
 **Stretch:** birds, or steam vents on the pad before launch.
 
-**Done when:** screenshots of the launch, flight through clouds, a beach landing, the mountains, and Mira's craters each look finished.
+**Done when:** screenshots of the launch, a beach landing, the mountains, and Mira's craters each look finished, and the sky and backgrounds pass a side-by-side check against Starbound screenshots (painted, not blocky).
 
 #### B4 · Effects and motion
 **Goal:** fire, smoke and explosions that feel alive, with no soft blobs.
@@ -902,6 +925,23 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 **Stretch:** a short animated logo.
 
 **Done when:** title, editor, flight, map and dialogs share one visual language and work on a phone.
+
+#### B6 · Clouds, weather and rain
+**Goal:** a sky that is alive: volumetric-looking clouds that move with the weather, and rain and storms you can fly through (section 1.5, the Starbound look).
+
+**Must:**
+- **Volumetric 2D clouds:** each cloud layer is a 2D density field (layered noise, drifting with the wind) drawn in a shader. Light is marched towards the sun through the density, so clouds shade themselves: bright sunlit tops, dark undersides, glowing edges when backlit, orange and pink at sunset. The result is snapped to palette ramps with fine dither at the art-pixel size.
+- **Cloud types by altitude:** low cumulus (1–3 km), flat stratus and fog banks, high cirrus (6–10 km), and towering storm clouds.
+- **Flying through:** haze thickens inside a cloud, the craft is lit more dimly, and wisps stream past.
+- **Weather patterns:** each body with an atmosphere has a weather map along its longitude (humidity, pressure, wind) that drifts and changes over game time. It decides cloud cover, rain and storms where you are. It is seeded, so the same time always gives the same weather.
+- **Rain:** pixel streaks slanted by the wind; splashes on the ground, the sea and the craft; wet ground darkens.
+- **Storms:** lightning that lights the clouds and the craft for a frame; thunder once sound exists (E9).
+- **From orbit:** the planet's texture shows the same cloud cover and storms as the weather map.
+- **Performance:** clouds are drawn into a buffer at the art-pixel grid, within the 60 fps budget (section 1.7).
+
+**Stretch:** snow on cold worlds; a rainbow opposite a low sun; wind pushing craft (needs C4).
+
+**Done when:** a recording climbing through rain, a storm and a cloud deck at sunset looks finished, and the same storm can be seen from orbit.
 
 ---
 
@@ -986,7 +1026,7 @@ See the table in section 1.3 for what changes.
 
 **Done when:** a rocket without fins flips in the lower atmosphere and the same rocket with fins flies straight; drag peaks near Mach 1; a capsule floats after splashdown.
 
-*Already in place from A3:* every part feels a sideways push across it, with fins pushing back like small wings (`FS.partAero`, shared by flight and the editor overlay). C4 replaces that with proper lift curves and stall, and adds Mach effects and shielding.
+*Already in place from A3:* every part feels a sideways push across it, with fins pushing back like small wings (`Flatspace.partAerodynamics`, shared by flight and the editor overlay). C4 replaces that with proper lift curves and stall, and adds Mach effects and shielding.
 
 #### C5 · Orbit precision and prediction
 **Goal:** orbits that stay exactly where they should.
@@ -1306,7 +1346,7 @@ H9's flight recorder builds on the flight log from this step.
 - **Ground scatter:** rocks, boulders, grass, shrubs, trees and ice spikes, chosen by biome and slope.
   - Large boulders are collidable (C1), so landers and rovers must avoid them.
   - Small scatter sways in the wind and is flattened by engine blast.
-- **Parallax depth:** three to five layers of distant terrain (far ranges, middle hills, near ridges), taken from the same terrain further along the surface, with haze between them, each moving at the right speed for its distance.
+- **Parallax depth:** extends B3's painted layers: three to five layers of distant terrain (far ranges, middle hills, near ridges), taken from the same terrain further along the surface, with haze between them, each moving at the right speed for its distance.
 - **Marks that stay:** footprints, wheel tracks, scorch marks and small blast craters from landing engines.
 - **Performance:** terrain built and cached in chunks (in a Web Worker if needed), within the 60 fps budget (section 1.7).
 
@@ -1686,6 +1726,44 @@ Features that neither KSP nor Spaceflight Simulator has in stock (section 2.8). 
 
 **Done when:** the checks pass, and a Career save can reach and complete each new kind of contract.
 
+### DLC — Planetfall: exploration and construction (working title)
+
+An optional themed expansion after Phase H, in the spirit of Starbound: land anywhere, step out, then explore, dig and build on the surface. It is not counted in the 65 steps and stays part of the same static site. It builds on E7 (EVA), E10 (terrain), F5 (resources), G3 (construction), G7 (bases), H1–H3 (astronauts and hands-on) and B6 (weather).
+
+#### DLC1 · On foot
+- Side-scrolling astronaut control on any landed body: walk, run, jump, jetpack and climb, with a platformer camera.
+- Gravity, air and temperature come from the body; the suit has power and oxygen.
+
+**Done when:** you can land on Mira, step out and walk to the crater rim and back.
+
+#### DLC2 · Diggable ground
+- Near the astronaut, the height-function terrain becomes a grid of material tiles in chunks that can be mined and placed; further away it stays the height function. Edits are saved per site.
+- Caves, ore veins, ice and buried features by biome (uses E10's density-field stretch).
+
+**Done when:** you dig into a crater wall, the hole is still there after reloading, and the far terrain is unchanged.
+
+#### DLC3 · Gathering and crafting
+- Tools (drill, scanner, cutter), resources from F5, a crafting bench and recipes for blocks, base modules and rocket fuel.
+
+**Done when:** ore you mined becomes fuel in a rocket's tank.
+
+#### DLC4 · Building bases
+- Place blocks and modules (habitat, greenhouse, power, refinery, landing pad, launch pad) on a grid. Rooms must be sealed to hold air; power and air form networks.
+- A pad built on site can launch rockets built on site (ties to G7 and H7).
+
+**Done when:** you build a sealed base, refuel and fly home from it.
+
+#### DLC5 · Living worlds
+- Procedural plants and creatures per biome (simple and non-hostile by default); day, night and B6 weather on the surface.
+- Points of interest: wrecks, anomalies, old probes.
+
+**Done when:** two biomes on Aster feel clearly different on foot.
+
+#### DLC6 · Planetfall missions and themed pack
+- Contracts and a short story arc, plus a themed set of parts, tiles and art.
+
+**Done when:** the arc can be played from first landing to a working base.
+
 ---
 
 ## 5. Controls
@@ -1776,14 +1854,16 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
   - centre of pressure overlay (A3), centre of lift indicator and plane controls (F6), and rover driving (F8) made explicit.
 - **Plan revision 9**: new step D8, "Competition mode (physics club)": shared rules and budgets as a competition code, challenges (highest apogee, predict then fly, egg drop, precision landing, payload to orbit), entries re-run from their flight logs to check the scores, leaderboard and projector view with ghosts, flight data graphs with CSV export, and model rocket motors (A–G); 64 steps in total.
 - **Plan revision 10**: sprites are drawn in Pixilart and converted by `tools/png2sprite.js`; new `sprite-guide.html` and `art/sprite-notes.js` give drawing guidance for every part and are kept up to date whenever a part is added or changed (`tests/test_sprite_notes.js`); B2 lighting is done in JavaScript per sun angle; while the user takes part in Hack Club Terra, they write the code and sessions guide (section 4.2).
+- **Plan revision 11**: the Starbound look for skies and backgrounds (smooth dithered sky, painted parallax layers, hand-drawn brushes on procedural shapes) added to the art rules (1.5) and B3; new step B6 for volumetric 2D clouds, weather patterns, rain and storms; an optional Starbound-style exploration and construction DLC ("Planetfall", working title) after Phase H.
 - **Plan revision 8**: new step E10, "Terrain detail" (realistic landforms, strata, collidable ground scatter and deep parallax layers, the idea behind the Parallax mod); new section 4.4, which says every new part and feature gets a tech-tree node and contracts of its own, with a "Tech and contracts" step closing each phase (E11, F11, G9, H10) and automated checks; tech nodes and contracts are data that packs can extend; 63 steps in total.
 - **Plan revision 7**: new Phase H, "Beyond KSP" (section 2.8): living astronauts with ragdolls (H1), walkable interiors (H2), hands-on objects and tools (H3), damage and repairs (H4), life on board and spin gravity (H5), self-landing rockets (H6), launch and recovery infrastructure (H7), tethers, solar sails and mass drivers (H8), and a flight recorder with replays (H9); 58 steps in total. Original parts added to `PARTS.md`.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
+- **v0.8.0 (during B2)**: plain-English names everywhere: variables, object fields, functions on `Flatspace` (was `FS`), shader uniforms and locals, HTML ids, CSS classes and CSS variables. Save format 4 renames the old saved fields (`rot`, `len`, `sym`, `chuteAlt`), the surface node (`srf` → `surface`) and the side decoupler's id (`radec` → `sidedecoupler`); older saves and craft files still load.
 - **v0.7.0 (B1)**: WebGL2 renderer with one shared art-pixel grid, sharp-pixel sprite shader, atlas and batcher (`js/gl.js`, `js/render-gl.js`); 53-colour palette with dithering (`art/palette.js`); banded, dithered sky with pixel stars and galaxy band; per-pixel planet shader (ocean, surface, soil, strata, atmosphere rim, night side) for flight and map; temporary art baked to palette pixels; pixel puffs for particles; overlay canvas for orbits and labels; Canvas 2D fallback with notice; pixel-size setting (`flatspace.settings`); `art.html` gallery; `tests/test_gl.js`.
 - **v0.6.2 fix**: engines that turn a craft sitting on the ground now tip it over once their turning effect beats what its weight can hold (before, a landed craft ignored turning completely unless it had enough thrust to lift off). While it turns on the ground, a simple contact model lets it pivot, roll and bounce, a part hitting the ground too fast breaks the craft, and it comes to rest at whatever angle it ends up. C1 replaces this with full rigid-body contact.
 - **v0.6.1 (A4 follow-up)**: side parts line up with sloped faces; floating parts in the hangar (left behind, or launched beside the craft); part pop-ups that open on select, pin, drag and point at their part, in the hangar and in flight; settings and actions mid-flight (thrust limit, gimbal, engine on/off, crossfeed, decouple, chute height and arming); `partToScreen` / `screenToPart` in the renderer; `Vessel.act`. Later parts of this request added to B5, C3, D2, D3, D5 and E5.
 - **v0.6.0 (A4)**: stretchable tanks in six widths with handles and 21 presets; one tank density (tank lengths moved to the 0.25 m grid); five tank looks; part settings panel (fuel level, thrust limit, gimbal, crossfeed, parachute height, fires in staging); staging editor with chips, custom staging saved on parts; craft files (download, open, copy and paste as text); `js/staging-editor.js`, `js/part-panel.js`.
-- **v0.5.0 (A3)**: tool rail; mirror symmetry with linked twins; rotate and flip; offset with snap; undo/redo (100 steps); Alt-click copy; subassemblies tab; centre of mass, thrust and pressure overlays with warnings; Swept Fin part; sideways force on parts and wing-like fins (`FS.partAero`), brought forward from C4; Hopper sample uses the short tank.
+- **v0.5.0 (A3)**: tool rail; mirror symmetry with linked twins; rotate and flip; offset with snap; undo/redo (100 steps); Alt-click copy; subassemblies tab; centre of mass, thrust and pressure overlays with warnings; Swept Fin part; sideways force on parts and wing-like fins (`Flatspace.partAerodynamics`), brought forward from C4; Hopper sample uses the short tank.
 - **v0.4.0 fix**: script and style links carry `?v=<version>`, after a browser served a cached old `editor.js` with the new page and the hangar came up blank.
 - **v0.4.0 (A2)**: drag-and-drop hangar: tray with tabs and hover cards, stack and surface snapping, overlap checks, carrying subassemblies, drop on tray to remove, pan and zoom, touch long-press and pinch, live stats while dragging, re-root; `js/build.js`.
-- **v0.2.0 (A0 complete)**: simulation split from the page (`sim.js`, `warp.js`, `nodes.js`, `input.js`) with events; renderer interface (`FS.Renderer`); maneuver nodes survive SOI changes and can go on any patch; debris kept on rails; pinch zoom; `?debug` start in orbit.
+- **v0.2.0 (A0 complete)**: simulation split from the page (`sim.js`, `warp.js`, `nodes.js`, `input.js`) with events; renderer interface (`Flatspace.Renderer`); maneuver nodes survive SOI changes and can go on any patch; debris kept on rails; pinch zoom; `?debug` start in orbit.

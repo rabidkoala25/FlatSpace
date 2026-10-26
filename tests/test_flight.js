@@ -1,117 +1,194 @@
 // Full flights: ascent to orbit, hopper with parachute landing, capsule reentry.
 const { loadGame, fakeGame, check, done } = require('./lib');
-const FS = loadGame();
-const V = FS.vec;
+const Flatspace = loadGame();
+const Vector = Flatspace.Vector;
 
 // --- Ascent to orbit with a scripted gravity turn (Orbiter I) ---
 {
   const game = fakeGame();
-  const craft = FS.SAMPLE_CRAFT.find((c) => c.name === 'Orbiter I');
-  const v = new FS.Vessel(craft.name, craft.parts, FS.root, { throttle: 1 });
-  let t = 0;
-  v.placeOnPad(t);
-  v.stage(game);
-  const dt = 0.02;
-  let coasting = false, circularizing = false, reached = false;
-  for (let i = 0; i < 600 / dt && !v.dead; i++) {
-    const alt = v.altitude;
-    const up = V.angle(v.r);
-    const pitch = alt < 1000 ? 0 : Math.min((Math.PI / 2) * 0.95, ((alt - 1000) / 45000) * (Math.PI / 2));
-    v.sasMode = 'stability';
-    v.sasTarget = up - pitch; // east is clockwise
-    const o = FS.orbitFromState(v.r, v.v, v.body.mu, t);
-    if (!coasting && o.ap - FS.root.R > 85000) { v.throttle = 0; coasting = true; }
-    if (coasting && !circularizing) {
-      v.sasTarget = V.angle(v.v);
-      if (FS.timeToNu(o, Math.PI, t) < 25 && alt > 70000) { v.throttle = 1; circularizing = true; }
+  const craft = Flatspace.SAMPLE_CRAFT.find((craft) => craft.name === 'Orbiter I');
+  const vessel = new Flatspace.Vessel(craft.name, craft.parts, Flatspace.root, { throttle: 1 });
+  let time = 0;
+  vessel.placeOnPad(time);
+  vessel.stage(game);
+  const timeStep = 0.02;
+  let coasting = false;
+  let circularizing = false;
+  let reached = false;
+  for (let step = 0; step < 600 / timeStep && !vessel.dead; step++) {
+    const altitude = vessel.altitude;
+    const upAngle = Vector.angle(vessel.position);
+    const pitch =
+      altitude < 1000 ? 0 : Math.min((Math.PI / 2) * 0.95, ((altitude - 1000) / 45000) * (Math.PI / 2));
+    vessel.stabilityAssistMode = 'stability';
+    vessel.stabilityAssistTarget = upAngle - pitch; // east is clockwise
+    const orbit = Flatspace.orbitFromState(
+      vessel.position,
+      vessel.velocity,
+      vessel.body.gravityParameter,
+      time,
+    );
+    if (!coasting && orbit.apoapsis - Flatspace.root.radius > 85000) {
+      vessel.throttle = 0;
+      coasting = true;
     }
-    if (circularizing && o.pe - FS.root.R > 75000) { v.throttle = 0; reached = true; break; }
-    if (t > 1 && v.thrustNow === 0 && v.throttle > 0 && v.stageIdx < 2) v.stage(game);
-    v.step(dt, t, game);
-    for (const d of game.debris) d.step(dt, t, game);
-    t += dt;
+    if (coasting && !circularizing) {
+      vessel.stabilityAssistTarget = Vector.angle(vessel.velocity);
+      if (Flatspace.timeToTrueAnomaly(orbit, Math.PI, time) < 25 && altitude > 70000) {
+        vessel.throttle = 1;
+        circularizing = true;
+      }
+    }
+    if (circularizing && orbit.periapsis - Flatspace.root.radius > 75000) {
+      vessel.throttle = 0;
+      reached = true;
+      break;
+    }
+    if (time > 1 && vessel.thrustNow === 0 && vessel.throttle > 0 && vessel.stageIndex < 2) {
+      vessel.stage(game);
+    }
+    vessel.step(timeStep, time, game);
+    for (const debrisVessel of game.debris) {
+      debrisVessel.step(timeStep, time, game);
+    }
+    time += timeStep;
   }
-  check(reached && !v.dead, 'Orbiter I reaches orbit with a scripted gravity turn');
-  check(v.situation() === 'Orbiting Aster', `situation reads "Orbiting Aster" (got "${v.situation()}")`);
+  check(reached && !vessel.dead, 'Orbiter I reaches orbit with a scripted gravity turn');
+  check(
+    vessel.situation() === 'Orbiting Aster',
+    `situation reads "Orbiting Aster" (got "${vessel.situation()}")`,
+  );
   check(game.debris.length === 1, 'the first stage was dropped as debris');
 }
 
 // --- Hopper: straight up, parachute down ---
 {
   const game = fakeGame();
-  const craft = FS.SAMPLE_CRAFT.find((c) => c.name === 'Hopper');
-  const v = new FS.Vessel(craft.name, craft.parts, FS.root, { throttle: 1 });
-  let t = 0, chute = false;
-  v.placeOnPad(0);
-  v.stage(game);
-  v.sasMode = 'stability';
-  v.sasTarget = V.angle(v.r) + 0.15;
-  for (let i = 0; i < 200000; i++) {
-    v.step(0.02, t, game);
-    t += 0.02;
-    if (v.dead || (v.landed && t > 10)) break;
-    if (!chute && v.thrustNow === 0 && t > 5) { v.stage(game); chute = true; v.sas = false; }
+  const craft = Flatspace.SAMPLE_CRAFT.find((craft) => craft.name === 'Hopper');
+  const vessel = new Flatspace.Vessel(craft.name, craft.parts, Flatspace.root, { throttle: 1 });
+  let time = 0;
+  let chute = false;
+  vessel.placeOnPad(0);
+  vessel.stage(game);
+  vessel.stabilityAssistMode = 'stability';
+  vessel.stabilityAssistTarget = Vector.angle(vessel.position) + 0.15;
+  for (let step = 0; step < 200000; step++) {
+    vessel.step(0.02, time, game);
+    time += 0.02;
+    if (vessel.dead || (vessel.landed && time > 10)) {
+      break;
+    }
+    if (!chute && vessel.thrustNow === 0 && time > 5) {
+      vessel.stage(game);
+      chute = true;
+      vessel.stabilityAssist = false;
+    }
   }
-  check(v.stats.maxAlt > 1500, `Hopper hops above 1.5 km (got ${(v.stats.maxAlt / 1000).toFixed(1)} km)`);
-  check(!v.dead && !!v.landed, 'Hopper lands safely under its parachute');
+  check(
+    vessel.stats.maxAltitude > 1500,
+    `Hopper hops above 1.5 km (got ${(vessel.stats.maxAltitude / 1000).toFixed(1)} km)`,
+  );
+  check(!vessel.dead && !!vessel.landed, 'Hopper lands safely under its parachute');
 }
 
 // --- Capsule reentry from 80 km with a low periapsis ---
 {
   const game = fakeGame();
-  const v = new FS.Vessel('Capsule', ['canopy', 'lark'], FS.root, {});
-  const r = 680000;
-  const a = (r + 625000) / 2;
-  v.r = { x: r, y: 0 };
-  v.v = { x: 0, y: Math.sqrt(FS.root.mu * (2 / r - 1 / a)) };
-  v.angle = Math.PI / 2 + 0.3;
-  v.landed = null;
-  v.sas = false;
-  v.stage(game); // arm the parachute
-  let t = 0, maxHeat = 0;
-  for (let i = 0; i < 400000 && !v.dead && !v.landed; i++) {
-    v.step(0.02, t, game);
-    t += 0.02;
-    maxHeat = Math.max(maxHeat, v.heat);
+  const vessel = new Flatspace.Vessel('Capsule', ['canopy', 'lark'], Flatspace.root, {});
+  const startRadius = 680000;
+  const semiMajorAxis = (startRadius + 625000) / 2;
+  vessel.position = { x: startRadius, y: 0 };
+  vessel.velocity = {
+    x: 0,
+    y: Math.sqrt(Flatspace.root.gravityParameter * (2 / startRadius - 1 / semiMajorAxis)),
+  };
+  vessel.angle = Math.PI / 2 + 0.3;
+  vessel.landed = null;
+  vessel.stabilityAssist = false;
+  vessel.stage(game); // arm the parachute
+  let time = 0;
+  let maxHeat = 0;
+  for (let step = 0; step < 400000 && !vessel.dead && !vessel.landed; step++) {
+    vessel.step(0.02, time, game);
+    time += 0.02;
+    maxHeat = Math.max(maxHeat, vessel.heat);
   }
   check(maxHeat > 0.5, `reentry produces heating glow (peak ${maxHeat.toFixed(2)})`);
-  check(!v.dead && !!v.landed, 'capsule survives reentry and lands');
+  check(!vessel.dead && !!vessel.landed, 'capsule survives reentry and lands');
 }
 
 // --- Twin Boosters: side boosters through the atmosphere, then to orbit ---
 {
   const game = fakeGame();
-  const v = new FS.Vessel('Twin Boosters', FS.SAMPLE_CRAFT.find((c) => c.name === 'Twin Boosters').tree, FS.root, { throttle: 1 });
-  let t = 0;
-  v.placeOnPad(t);
-  v.stage(game);
-  let coasting = false, circularizing = false, reached = false;
-  const dropAlt = [];
-  for (let i = 0; i < 700 / 0.02 && !v.dead; i++) {
-    const alt = v.altitude;
-    const pitch = alt < 1000 ? 0 : Math.min((Math.PI / 2) * 0.95, ((alt - 1000) / 45000) * (Math.PI / 2));
-    v.sasMode = 'stability';
-    v.sasTarget = V.angle(v.r) - pitch;
-    const o = FS.orbitFromState(v.r, v.v, v.body.mu, t);
-    if (!coasting && o.ap - FS.root.R > 85000) { v.throttle = 0; coasting = true; }
+  const vessel = new Flatspace.Vessel(
+    'Twin Boosters',
+    Flatspace.SAMPLE_CRAFT.find((craft) => craft.name === 'Twin Boosters').tree,
+    Flatspace.root,
+    { throttle: 1 },
+  );
+  let time = 0;
+  vessel.placeOnPad(time);
+  vessel.stage(game);
+  let coasting = false;
+  let circularizing = false;
+  let reached = false;
+  const dropAltitudes = [];
+  for (let step = 0; step < 700 / 0.02 && !vessel.dead; step++) {
+    const altitude = vessel.altitude;
+    const pitch =
+      altitude < 1000 ? 0 : Math.min((Math.PI / 2) * 0.95, ((altitude - 1000) / 45000) * (Math.PI / 2));
+    vessel.stabilityAssistMode = 'stability';
+    vessel.stabilityAssistTarget = Vector.angle(vessel.position) - pitch;
+    const orbit = Flatspace.orbitFromState(
+      vessel.position,
+      vessel.velocity,
+      vessel.body.gravityParameter,
+      time,
+    );
+    if (!coasting && orbit.apoapsis - Flatspace.root.radius > 85000) {
+      vessel.throttle = 0;
+      coasting = true;
+    }
     if (coasting && !circularizing) {
-      v.sasTarget = V.angle(v.v);
-      if (FS.timeToNu(o, Math.PI, t) < 25 && alt > 70000) { v.throttle = 1; circularizing = true; }
+      vessel.stabilityAssistTarget = Vector.angle(vessel.velocity);
+      if (Flatspace.timeToTrueAnomaly(orbit, Math.PI, time) < 25 && altitude > 70000) {
+        vessel.throttle = 1;
+        circularizing = true;
+      }
     }
-    if (circularizing && o.pe - FS.root.R > 75000) { v.throttle = 0; reached = true; break; }
+    if (circularizing && orbit.periapsis - Flatspace.root.radius > 75000) {
+      vessel.throttle = 0;
+      reached = true;
+      break;
+    }
     // stage once whatever the next stage drops has run dry
-    const next = v.stages[v.stageIdx];
-    if (t > 1 && v.throttle > 0 && next && next.decouple &&
-        next.decouplers.every((d) => FS.subtree(v.parts, d).every((q) => q.fuel + q.solid < 1e-6))) {
-      dropAlt.push(alt);
-      v.stage(game);
+    const next = vessel.stages[vessel.stageIndex];
+    if (
+      time > 1 &&
+      vessel.throttle > 0 &&
+      next &&
+      next.decouple &&
+      next.decouplers.every((decoupler) =>
+        Flatspace.subtree(vessel.parts, decoupler).every((part) => part.fuel + part.solid < 1e-6),
+      )
+    ) {
+      dropAltitudes.push(altitude);
+      vessel.stage(game);
     }
-    v.step(0.02, t, game);
-    for (const d of game.debris) d.step(0.02, t, game);
-    t += 0.02;
+    vessel.step(0.02, time, game);
+    for (const debrisVessel of game.debris) {
+      debrisVessel.step(0.02, time, game);
+    }
+    time += 0.02;
   }
-  check(dropAlt.length >= 2 && dropAlt[0] < 15000, `boosters drop low in the atmosphere (${(dropAlt[0] / 1000).toFixed(1)} km), then the core`);
-  check(reached && !v.dead && v.situation() === 'Orbiting Aster', 'Twin Boosters flies through the atmosphere and reaches orbit');
+  check(
+    dropAltitudes.length >= 2 && dropAltitudes[0] < 15000,
+    `boosters drop low in the atmosphere (${(dropAltitudes[0] / 1000).toFixed(1)} km), then the core`,
+  );
+  check(
+    reached && !vessel.dead && vessel.situation() === 'Orbiting Aster',
+    'Twin Boosters flies through the atmosphere and reaches orbit',
+  );
 }
 
 done();

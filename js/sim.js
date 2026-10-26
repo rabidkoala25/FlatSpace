@@ -8,27 +8,27 @@
 //   'staged'       { vessel, event, dropped } a stage fired; dropped lists the vessels that came off
 //   'touchdown'    { vessel, water }        a craft came to rest on ground or water
 //   'exploded'     { vessel }               a craft (or debris) was destroyed
-//   'soi'          { vessel, from }         a craft moved into another body's sphere of influence
-//   'message'      { text, kind, ms }       something the player should be told
+//   'sphere-change' { vessel, from }         a craft moved into another body's sphere of influence
+//   'message'      { text, kind, duration }       something the player should be told
 (function () {
-  const V = FS.vec;
+  const Vector = Flatspace.Vector;
   const STEP = 0.02; // physics step (s)
 
-  const G = (FS.game = {
+  const game = (Flatspace.game = {
     scene: 'editor',
-    t: 0,
-    launchT: 0,
+    time: 0,
+    launchTime: 0,
     vessel: null,
     debris: [],
     // view state, read by the renderer
-    cam: { x: 0, y: 0, s: 10, rot: 0 },
-    mapCam: { x: 0, y: 0, s: 1e-4, rot: 0 },
+    camera: { x: 0, y: 0, scale: 10, rotation: 0 },
+    mapCamera: { x: 0, y: 0, scale: 1e-4, rotation: 0 },
     mapMode: false,
     mapFocus: 'vessel',
     mapPan: { x: 0, y: 0 },
     zoom: 1,
     // time warp (warp.js)
-    warpIdx: 0,
+    warpIndex: 0,
     warpTarget: null,
     onRails: false,
     // maneuver nodes and predicted path (nodes.js)
@@ -40,172 +40,254 @@
     keys: {},
     touch: {},
     // what the last update did: simulated seconds, warp rate, physics or rails, steps
-    frame: { simDt: 0, rate: 1, physics: true, steps: 0 },
+    frame: { simulationStep: 0, rate: 1, physics: true, steps: 0 },
   });
 
   // ---------- Events ----------
   const handlers = {};
-  G.on = (type, fn) => { (handlers[type] = handlers[type] || []).push(fn); };
-  G.emit = (type, data) => { for (const fn of handlers[type] || []) fn(data); };
-  G.message = (text, kind = '', ms = 3000) => G.emit('message', { text, kind, ms });
+  game.on = (type, handler) => {
+    (handlers[type] = handlers[type] || []).push(handler);
+  };
+  game.emit = (type, data) => {
+    for (const handler of handlers[type] || []) {
+      handler(data);
+    }
+  };
+  game.message = (text, kind = '', duration = 3000) => game.emit('message', { text, kind, duration });
 
   // The simulation's own reactions come first, before any page code listens.
-  G.on('staged', ({ dropped }) => dropped.forEach(G.addDebris));
-  G.on('part-action', ({ dropped }) => dropped.forEach(G.addDebris));
-  G.on('exploded', ({ vessel }) => { if (vessel === G.vessel) G.stopWarp(); });
-  G.on('touchdown', ({ vessel }) => {
-    if (vessel !== G.vessel) return;
-    G.stopWarp();
+  game.on('staged', ({ dropped }) => dropped.forEach(game.addDebris));
+  game.on('part-action', ({ dropped }) => dropped.forEach(game.addDebris));
+  game.on('exploded', ({ vessel }) => {
+    if (vessel === game.vessel) {
+      game.stopWarp();
+    }
+  });
+  game.on('touchdown', ({ vessel }) => {
+    if (vessel !== game.vessel) {
+      return;
+    }
+    game.stopWarp();
     vessel.throttle = 0;
   });
-  G.on('soi', ({ vessel }) => {
-    if (vessel !== G.vessel) return;
-    G.patchTimer = 0; // re-predict the path straight away
-    if (G.warpIdx > G.allowedWarpIdx(vessel)) G.warpIdx = G.allowedWarpIdx(vessel);
+  game.on('sphere-change', ({ vessel }) => {
+    if (vessel !== game.vessel) {
+      return;
+    }
+    game.patchTimer = 0; // re-predict the path straight away
+    if (game.warpIndex > game.allowedWarpIndex(vessel)) {
+      game.warpIndex = game.allowedWarpIndex(vessel);
+    }
   });
 
-  G.addDebris = (d) => {
-    G.debris.push(d);
-    if (G.debris.length > 24) G.debris.shift();
-    if (G.onRails && !d.landed) d.goOnRails(G.t);
+  game.addDebris = (debrisVessel) => {
+    game.debris.push(debrisVessel);
+    if (game.debris.length > 24) {
+      game.debris.shift();
+    }
+    if (game.onRails && !debrisVessel.landed) {
+      debrisVessel.goOnRails(game.time);
+    }
   };
 
   // ---------- Starting a flight ----------
-  G.newFlight = (craft) => {
-    G.craft = craft;
-    G.launchT = G.t;
-    const v = (G.vessel = new FS.Vessel(craft.name, craft.parts, FS.root, { throttle: 1 }));
-    v.placeOnPad(G.t);
-    v.visited = new Set();
-    v.landings = [];
-    G.debris = [];
+  game.newFlight = (craft) => {
+    game.craft = craft;
+    game.launchTime = game.time;
+    const vessel = (game.vessel = new Flatspace.Vessel(craft.name, craft.parts, Flatspace.root, {
+      throttle: 1,
+    }));
+    vessel.placeOnPad(game.time);
+    vessel.visited = new Set();
+    vessel.landings = [];
+    game.debris = [];
     // floating parts set to launch with the craft appear where they were placed, relative to
     // it (as uncontrolled objects for now; D3 makes them vessels you can switch to)
-    for (const ex of craft.extras || []) {
-      const d = new FS.Vessel(craft.name + ' (floating)', ex.parts, v.body, { debris: true });
-      const off = V.sub(d.layout.com, v.layout.com); // craft frame
-      d.r = V.add(v.r, v.toWorld(off));
-      d.v = { ...v.v };
-      d.angle = v.angle;
-      d.landed = null;
-      G.debris.push(d);
+    for (const extra of craft.extras || []) {
+      const floatingVessel = new Flatspace.Vessel(craft.name + ' (floating)', extra.parts, vessel.body, {
+        debris: true,
+      });
+      const offset = Vector.subtract(floatingVessel.layout.centreOfMass, vessel.layout.centreOfMass); // craft frame
+      floatingVessel.position = Vector.add(vessel.position, vessel.toWorld(offset));
+      floatingVessel.velocity = { ...vessel.velocity };
+      floatingVessel.angle = vessel.angle;
+      floatingVessel.landed = null;
+      game.debris.push(floatingVessel);
     }
-    G.node = null;
-    G.nodePatches = null;
-    G.patches = null;
-    G.warpIdx = 0;
-    G.warpTarget = null;
-    G.onRails = false;
-    G.zoom = 1;
-    G.frame = { simDt: 0, rate: 1, physics: true, steps: 0 };
-    G.emit('flight-start', { vessel: v });
-    return v;
+    game.node = null;
+    game.nodePatches = null;
+    game.patches = null;
+    game.warpIndex = 0;
+    game.warpTarget = null;
+    game.onRails = false;
+    game.zoom = 1;
+    game.frame = { simulationStep: 0, rate: 1, physics: true, steps: 0 };
+    game.emit('flight-start', { vessel });
+    return vessel;
   };
 
   // Put the active craft in a circular orbit (used by the ?debug flag and the tests).
-  G.debugOrbit = (alt = 100000) => {
-    const v = G.vessel, b = FS.root;
-    const ang = V.angle(v.r);
-    const r = b.R + alt;
-    const sp = Math.sqrt(b.mu / r);
-    v.landed = null;
-    v.r = V.fromAngle(ang, r);
-    v.v = { x: Math.sin(ang) * sp, y: -Math.cos(ang) * sp }; // clockwise, like the planet's spin
-    v.angle = V.angle(v.v);
-    v.omega = 0;
-    v.throttle = 0;
-    v.stats.launched = true;
-    G.patchTimer = 0;
+  game.debugOrbit = (altitude = 100000) => {
+    const vessel = game.vessel;
+    const body = Flatspace.root;
+    const angle = Vector.angle(vessel.position);
+    const orbitRadius = body.radius + altitude;
+    const orbitalSpeed = Math.sqrt(body.gravityParameter / orbitRadius);
+    vessel.landed = null;
+    vessel.position = Vector.fromAngle(angle, orbitRadius);
+    vessel.velocity = { x: Math.sin(angle) * orbitalSpeed, y: -Math.cos(angle) * orbitalSpeed }; // clockwise, like the planet's spin
+    vessel.angle = Vector.angle(vessel.velocity);
+    vessel.angularVelocity = 0;
+    vessel.throttle = 0;
+    vessel.stats.launched = true;
+    game.patchTimer = 0;
   };
 
   // ---------- Stepping ----------
   // Advance the simulation by dt seconds of real time (scaled by time warp).
-  G.update = (dt) => {
-    const ves = G.vessel;
-    if (!ves) return;
-    G.updateWarpTarget();
-    if (G.useRails()) stepRails(dt); else stepPhysics(dt);
+  game.update = (timeStep) => {
+    const vessel = game.vessel;
+    if (!vessel) {
+      return;
+    }
+    game.updateWarpTarget();
+    if (game.useRails()) {
+      stepRails(timeStep);
+    } else {
+      stepPhysics(timeStep);
+    }
 
     // Forget debris that is gone, far away, or around another body.
-    G.debris = G.debris.filter((d) => !d.dead && d.body === ves.body && V.len(V.sub(d.r, ves.r)) < 150000 && d.age < 900);
+    game.debris = game.debris.filter(
+      (debrisVessel) =>
+        !debrisVessel.dead &&
+        debrisVessel.body === vessel.body &&
+        Vector.length(Vector.subtract(debrisVessel.position, vessel.position)) < 150000 &&
+        debrisVessel.age < 900,
+    );
 
-    G.updateNode();
+    game.updateNode();
 
     // Trajectory prediction, a few times per second
-    G.patchTimer -= dt;
-    if (G.patchTimer <= 0) {
-      G.patchTimer = 0.2;
-      if (!ves.dead && !ves.landed) {
-        G.patches = FS.predictPatches(ves.body, ves.r, ves.v, G.t, 3);
-        if (G.node) G.refreshNode(false);
-      } else G.patches = null;
+    game.patchTimer -= timeStep;
+    if (game.patchTimer <= 0) {
+      game.patchTimer = 0.2;
+      if (!vessel.dead && !vessel.landed) {
+        game.patches = Flatspace.predictPatches(vessel.body, vessel.position, vessel.velocity, game.time, 3);
+        if (game.node) {
+          game.refreshNode(false);
+        }
+      } else {
+        game.patches = null;
+      }
     }
   };
 
-  function stepPhysics(dt) {
-    const ves = G.vessel;
-    if (G.onRails) {
-      ves.offRails();
-      for (const d of G.debris) d.offRails();
-      G.onRails = false;
+  function stepPhysics(timeStep) {
+    const vessel = game.vessel;
+    if (game.onRails) {
+      vessel.offRails();
+      for (const debrisVessel of game.debris) {
+        debrisVessel.offRails();
+      }
+      game.onRails = false;
     }
-    const rate = G.effectiveRate();
-    const sim = dt * rate;
-    const n = Math.max(1, Math.ceil(sim / STEP));
-    const h = sim / n;
-    for (let i = 0; i < n; i++) {
-      ves.step(h, G.t, G);
-      G.trackNodeBurn(h);
-      for (const d of G.debris) d.step(h, G.t, G);
-      G.t += h;
-      if (ves.dead) break;
-    }
-    G.frame = { simDt: sim, rate, physics: true, steps: n };
-  }
-
-  function stepRails(dt) {
-    const ves = G.vessel;
-    if (!G.onRails) {
-      ves.goOnRails(G.t);
-      for (const d of G.debris) if (!d.landed) d.goOnRails(G.t);
-      G.onRails = true;
-    }
-    const t0 = G.t;
-    let tNew = G.t + dt * G.effectiveRate();
-    if (G.warpTarget != null && tNew > G.warpTarget) tNew = G.warpTarget;
-    // Sub-step so SOI changes are not skipped
-    const vmax = V.len(ves.v) + 2000;
-    const maxStep = Math.max(1, (0.08 * 2.2e6) / vmax);
-    while (G.t < tNew) {
-      G.t = Math.min(tNew, G.t + maxStep);
-      ves.railsTo(G.t, G);
-      for (const d of G.debris) railsDebris(d);
-      // stop advancing as soon as we get too low for this warp rate
-      if (!ves.landed) {
-        const b = ves.body;
-        if ((b.atmo && ves.altitude < b.atmo.height) || G.allowedWarpIdx(ves) < G.warpIdx) break;
+    const rate = game.effectiveRate();
+    const simTime = timeStep * rate;
+    const substeps = Math.max(1, Math.ceil(simTime / STEP));
+    const substep = simTime / substeps;
+    for (let stepNumber = 0; stepNumber < substeps; stepNumber++) {
+      vessel.step(substep, game.time, game);
+      game.trackNodeBurn(substep);
+      for (const debrisVessel of game.debris) {
+        debrisVessel.step(substep, game.time, game);
+      }
+      game.time += substep;
+      if (vessel.dead) {
+        break;
       }
     }
-    if (!ves.landed) {
-      const b = ves.body;
-      if (b.atmo && ves.altitude < b.atmo.height) { G.stopWarp(); G.message('Entering the atmosphere: time warp stopped.', '', 2500); }
-      else if (G.warpIdx > G.allowedWarpIdx(ves)) G.warpIdx = G.allowedWarpIdx(ves);
+    game.frame = { simulationStep: simTime, rate, physics: true, steps: substeps };
+  }
+
+  function stepRails(timeStep) {
+    const vessel = game.vessel;
+    if (!game.onRails) {
+      vessel.goOnRails(game.time);
+      for (const debrisVessel of game.debris) {
+        if (!debrisVessel.landed) {
+          debrisVessel.goOnRails(game.time);
+        }
+      }
+      game.onRails = true;
     }
-    G.frame = { simDt: G.t - t0, rate: G.effectiveRate(), physics: false, steps: 'on rails' };
-    if (!G.useRails()) {
-      ves.offRails();
-      for (const d of G.debris) d.offRails();
-      G.onRails = false;
+    const startTime = game.time;
+    let newTime = game.time + timeStep * game.effectiveRate();
+    if (game.warpTarget != null && newTime > game.warpTarget) {
+      newTime = game.warpTarget;
+    }
+    // Sub-step so SOI changes are not skipped
+    const maxSpeed = Vector.length(vessel.velocity) + 2000;
+    const maxStep = Math.max(1, (0.08 * 2.2e6) / maxSpeed);
+    while (game.time < newTime) {
+      game.time = Math.min(newTime, game.time + maxStep);
+      vessel.railsTo(game.time, game);
+      for (const debrisVessel of game.debris) {
+        railsDebris(debrisVessel);
+      }
+      // stop advancing as soon as we get too low for this warp rate
+      if (!vessel.landed) {
+        const body = vessel.body;
+        if (
+          (body.atmosphere && vessel.altitude < body.atmosphere.height) ||
+          game.allowedWarpIndex(vessel) < game.warpIndex
+        ) {
+          break;
+        }
+      }
+    }
+    if (!vessel.landed) {
+      const body = vessel.body;
+      if (body.atmosphere && vessel.altitude < body.atmosphere.height) {
+        game.stopWarp();
+        game.message('Entering the atmosphere: time warp stopped.', '', 2500);
+      } else if (game.warpIndex > game.allowedWarpIndex(vessel)) {
+        game.warpIndex = game.allowedWarpIndex(vessel);
+      }
+    }
+    game.frame = {
+      simulationStep: game.time - startTime,
+      rate: game.effectiveRate(),
+      physics: false,
+      steps: 'on rails',
+    };
+    if (!game.useRails()) {
+      vessel.offRails();
+      for (const debrisVessel of game.debris) {
+        debrisVessel.offRails();
+      }
+      game.onRails = false;
     }
   }
 
   // Debris keeps moving on rails. Like unwatched craft in KSP, debris that sinks into
   // the atmosphere or reaches the ground while on rails is removed rather than simulated.
-  function railsDebris(d) {
-    if (d.dead || d.landed) return;
-    d.railsTo(G.t, G);
-    const b = d.body;
-    if (b.atmo && d.altitude < b.atmo.height) d.dead = true;
-    else if (d.altitude < FS.surfaceHeight(b, FS.lonAt(b, V.angle(d.r), G.t))) d.dead = true;
+  function railsDebris(debrisVessel) {
+    if (debrisVessel.dead || debrisVessel.landed) {
+      return;
+    }
+    debrisVessel.railsTo(game.time, game);
+    const body = debrisVessel.body;
+    if (body.atmosphere && debrisVessel.altitude < body.atmosphere.height) {
+      debrisVessel.dead = true;
+    } else if (
+      debrisVessel.altitude <
+      Flatspace.surfaceHeight(
+        body,
+        Flatspace.longitudeAt(body, Vector.angle(debrisVessel.position), game.time),
+      )
+    ) {
+      debrisVessel.dead = true;
+    }
   }
 })();

@@ -3,10 +3,10 @@
 // otherwise.
 //
 // One pixel grid for the whole world. Everything in the world is drawn in "art pixels"
-// whose size in metres is (1/16) × 2^k: at the closest zoom 16 per metre, as the art is
+// whose size in metres is (1/16) × 2^level: at the closest zoom 16 per metre, as the art is
 // authored, then 8, 4, 2… as you zoom out, so an art pixel never gets smaller than the
 // chosen pixel size on screen (1.5–3 CSS pixels, a setting). Parts, terrain, planets and
-// particles all use the same k, so pixels of different sizes never sit side by side.
+// particles all use the same level, so pixels of different sizes never sit side by side.
 //
 // What's drawn how:
 //  - sky: a full-screen shader, palette bands with ordered dithering, plus pixel stars;
@@ -18,913 +18,1617 @@
 //  - particles: pixel puffs coloured from palette ramps, fading by dither;
 //  - orbit lines, markers and labels: an overlay canvas on top.
 (function () {
-  const V = FS.vec;
-  const TAU = FS.TAU;
-  const P = FS.Palette;
-  const R = (FS.RenderGL = {});
+  const Vector = Flatspace.Vector;
+  const FULL_TURN = Flatspace.TAU;
+  const Palette = Flatspace.Palette;
+  const RenderGL = (Flatspace.RenderGL = {});
 
-  let gl, cv, overlay, octx, sprites, sky, planet;
-  let W = 0, H = 0, DPR = 1;
+  let webgl;
+  let viewCanvas;
+  let overlay;
+  let overlayContext;
+  let sprites;
+  let skyShader;
+  let planet;
+  let viewWidth = 0;
+  let viewHeight = 0;
+  let pixelRatio = 1;
   let game = null;
   const stars = [];
-  const heightTex = new Map(); // body → full-circle height texture
-  let windowTex = null;        // heights around the camera, refreshed every frame
-  const N_FULL = 4096, N_WIN = 1024;
-  let pixelSize = 1.5;         // smallest art pixel on screen, CSS px (setting)
+  const heightTextures = new Map(); // body → full-circle height texture
+  let windowTexture = null; // heights around the camera, refreshed every frame
+  const FULL_CIRCLE_SAMPLES = 4096;
+  const WINDOW_SAMPLES = 1024;
+  let pixelSize = 1.5; // smallest art pixel on screen, CSS px (setting)
   let frameInfo = { level: 0, draws: 0 };
 
-  R.setPixelSize = (n) => { pixelSize = FS.clamp(n, 1, 3); };
-  R.pixelSize = () => pixelSize;
+  RenderGL.setPixelSize = (size) => {
+    pixelSize = Flatspace.clamp(size, 1, 3);
+  };
+  RenderGL.pixelSize = () => pixelSize;
 
   // ---------- Set-up ----------
-  R.init = (canvas, g) => {
-    cv = canvas;
-    game = g;
-    gl = canvas.getContext('webgl2', { antialias: false, premultipliedAlpha: true, alpha: false, preserveDrawingBuffer: true });
-    if (!gl) throw new Error('WebGL2 is not available');
+  RenderGL.initialise = (canvas, theGame) => {
+    viewCanvas = canvas;
+    game = theGame;
+    webgl = canvas.getContext('webgl2', {
+      antialias: false,
+      premultipliedAlpha: true,
+      alpha: false,
+      preserveDrawingBuffer: true,
+    });
+    if (!webgl) {
+      throw new Error('WebGL2 is not available');
+    }
     overlay = document.createElement('canvas');
     overlay.className = 'view-overlay';
     overlay.setAttribute('aria-hidden', 'true');
     canvas.after(overlay);
-    octx = overlay.getContext('2d');
-    sprites = new FS.GL.Sprites(gl, Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE)));
-    sky = FS.GL.fullscreen(gl, SKY_FS);
-    planet = FS.GL.fullscreen(gl, PLANET_FS);
-    windowTex = makeHeightTexture(N_WIN);
-    const rnd = FS.rng(4242);
-    const starCols = [P.ramps.metal[7], P.ramps.metal[7], P.ramps.blue[7], P.ramps.blue[6], P.ramps.gold[4], P.ramps.dusk[4]];
-    for (let i = 0; i < 700; i++) {
-      const a = rnd() * TAU, d = Math.sqrt(rnd());
+    overlayContext = overlay.getContext('2d');
+    sprites = new Flatspace.WebGL.Sprites(webgl, Math.min(2048, webgl.getParameter(webgl.MAX_TEXTURE_SIZE)));
+    skyShader = Flatspace.WebGL.fullscreen(webgl, SKY_FS);
+    planet = Flatspace.WebGL.fullscreen(webgl, PLANET_FS);
+    windowTexture = makeHeightTexture(WINDOW_SAMPLES);
+    const random = Flatspace.seededRandom(4242);
+    const starColours = [
+      Palette.ramps.metal[7],
+      Palette.ramps.metal[7],
+      Palette.ramps.blue[7],
+      Palette.ramps.blue[6],
+      Palette.ramps.gold[4],
+      Palette.ramps.dusk[4],
+    ];
+    for (let starIndex = 0; starIndex < 700; starIndex++) {
+      const angle = random() * FULL_TURN;
+      const distance = Math.sqrt(random());
       stars.push({
-        x: Math.cos(a) * d, y: Math.sin(a) * d,
-        big: rnd() < 0.06,
-        b: 0.3 + rnd() * 0.7,
-        c: starCols[Math.floor(rnd() * starCols.length)].map((v) => v / 255),
-        tw: rnd() < 0.05 ? rnd() * TAU : null, // a few twinkle
+        x: Math.cos(angle) * distance,
+        y: Math.sin(angle) * distance,
+        big: random() < 0.06,
+        brightness: 0.3 + random() * 0.7,
+        colour: starColours[Math.floor(random() * starColours.length)].map((channel) => channel / 255),
+        twinkle: random() < 0.05 ? random() * FULL_TURN : null, // a few twinkle
       });
     }
-    if (FS.Render.subscribe && g) FS.Render.subscribe(g);
-    R.resize();
+    if (Flatspace.Render.subscribe && theGame) {
+      Flatspace.Render.subscribe(theGame);
+    }
+    RenderGL.resize();
   };
 
-  R.resize = () => {
-    DPR = Math.min(window.devicePixelRatio || 1, 2);
-    W = cv.clientWidth; H = cv.clientHeight;
-    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
-    overlay.width = cv.width; overlay.height = cv.height;
+  RenderGL.resize = () => {
+    pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    viewWidth = viewCanvas.clientWidth;
+    viewHeight = viewCanvas.clientHeight;
+    viewCanvas.width = Math.round(viewWidth * pixelRatio);
+    viewCanvas.height = Math.round(viewHeight * pixelRatio);
+    overlay.width = viewCanvas.width;
+    overlay.height = viewCanvas.height;
   };
-  R.size = () => ({ W, H });
+  RenderGL.size = () => ({ width: viewWidth, height: viewHeight });
 
   // Particles are simulated by the shared code in render.js; only drawing differs.
-  R.update = (g) => FS.Render.update(g);
-  R.stats = () => ({ particles: FS.Render.particles.length, level: frameInfo.level, draws: frameInfo.draws, atlas: sprites ? Math.round(sprites.atlas.used() * 100) + '%' : '' });
+  RenderGL.update = (theGame) => Flatspace.Render.update(theGame);
+  RenderGL.stats = () => ({
+    particles: Flatspace.Render.particles.length,
+    level: frameInfo.level,
+    draws: frameInfo.draws,
+    atlas: sprites ? Math.round(sprites.atlas.used() * 100) + '%' : '',
+  });
 
   // ---------- Camera ----------
-  function w2s(cam, x, y) {
-    const dx = x - cam.x, dy = y - cam.y;
-    const c = Math.cos(cam.rot), s = Math.sin(cam.rot);
-    return { x: W / 2 + (dx * c + dy * s) * cam.s, y: H / 2 - (-dx * s + dy * c) * cam.s };
+  function worldToScreenPoint(camera, x, y) {
+    const deltaX = x - camera.x;
+    const deltaY = y - camera.y;
+    const cosRotation = Math.cos(camera.rotation);
+    const sinRotation = Math.sin(camera.rotation);
+    return {
+      x: viewWidth / 2 + (deltaX * cosRotation + deltaY * sinRotation) * camera.scale,
+      y: viewHeight / 2 - (-deltaX * sinRotation + deltaY * cosRotation) * camera.scale,
+    };
   }
-  R.worldToScreen = w2s;
+  RenderGL.worldToScreen = worldToScreenPoint;
 
-  // The art-pixel level for a zoom: art pixels are (1/16)·2^k metres.
-  function levelFor(camS) {
-    let k = 0;
-    while (k < 60 && (camS * Math.pow(2, k)) / 16 < pixelSize) k++;
-    return k;
+  // The art-pixel level for a zoom: art pixels are (1/16)·2^level metres.
+  function levelFor(cameraScale) {
+    let level = 0;
+    while (level < 60 && (cameraScale * Math.pow(2, level)) / 16 < pixelSize) {
+      level++;
+    }
+    return level;
   }
 
   // ---------- Sky ----------
   const SKY_FS = `#version 300 es
     precision highp float;
-    uniform vec2 uRes;
-    uniform float uPix;
-    uniform vec3 uSky[8];
-    uniform int uSkyN;
-    uniform float uGal;
-    uniform float uGalAng;
-    uniform vec3 uGalCol[2];
-    out vec4 o;
-    ${FS.GL.GLSL_BAYER}
-    float hash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
-    float vnoise(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hash(i), hash(i + 1.0), f); }
+    uniform vec2 resolution;
+    uniform float pixelSize;
+    uniform vec3 skyColours[8];
+    uniform int skyColourCount;
+    uniform float galaxyStrength;
+    uniform float galaxyAngle;
+    uniform vec3 galaxyColours[2];
+    out vec4 fragmentColour;
+    ${Flatspace.WebGL.GLSL_BAYER}
+    float hash(float seed) { return fract(sin(seed * 12.9898) * 43758.5453); }
+    float valueNoise(float position) { float stopIndex = floor(position), blend = fract(position); blend = blend * blend * (3.0 - 2.0 * blend); return mix(hash(stopIndex), hash(stopIndex + 1.0), blend); }
     void main() {
-      vec2 cell = floor(vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uPix);
-      vec2 mid = (cell + 0.5) * uPix;
-      float t = clamp(mid.y / uRes.y, 0.0, 1.0);
-      float f = t * float(uSkyN - 1);
-      int i = int(floor(f));
-      vec3 c = (stepUp(fract(f), cell) && i + 1 < uSkyN) ? uSky[i + 1] : uSky[i];
-      if (uGal > 0.0) {
-        vec2 p = (mid - uRes * 0.5) / uRes.y;
-        vec2 n = vec2(-sin(uGalAng), cos(uGalAng));
-        float v = dot(p, n), s = dot(p, vec2(n.y, -n.x));
-        float dens = exp(-v * v / 0.012) * (0.45 + 0.55 * vnoise(s * 7.0 + 3.0)) * (0.6 + 0.4 * vnoise(s * 23.0 + v * 9.0));
-        float a = dens * uGal;
-        if (a > bayer4(cell) * 1.4) c = a > 0.55 ? uGalCol[1] : uGalCol[0];
+      vec2 cell = floor(vec2(gl_FragCoord.x, resolution.y - gl_FragCoord.y) / pixelSize);
+      vec2 mid = (cell + 0.5) * pixelSize;
+      float screenHeight = clamp(mid.y / resolution.y, 0.0, 1.0);
+      float blend = screenHeight * float(skyColourCount - 1);
+      int stopIndex = int(floor(blend));
+      vec3 colour = (stepUp(fract(blend), cell) && stopIndex + 1 < skyColourCount) ? skyColours[stopIndex + 1] : skyColours[stopIndex];
+      if (galaxyStrength > 0.0) {
+        vec2 point = (mid - resolution * 0.5) / resolution.y;
+        vec2 seed = vec2(-sin(galaxyAngle), cos(galaxyAngle));
+        float across = dot(point, seed), along = dot(point, vec2(seed.y, -seed.x));
+        float density = exp(-across * across / 0.012) * (0.45 + 0.55 * valueNoise(along * 7.0 + 3.0)) * (0.6 + 0.4 * valueNoise(along * 23.0 + across * 9.0));
+        float galaxyAmount = density * galaxyStrength;
+        if (galaxyAmount > bayer4(cell) * 1.4) colour = galaxyAmount > 0.55 ? galaxyColours[1] : galaxyColours[0];
       }
-      o = vec4(c, 1.0);
+      fragmentColour = vec4(colour, 1.0);
     }`;
 
   // Snap a smooth top-to-bottom gradient to palette colours (the shader dithers between them).
-  function skyStops(top, bot) {
+  function skyStops(top, bottom) {
     const out = [];
-    for (let i = 0; i < 7; i++) {
-      const k = i / 6;
-      const c = P.nearest(top[0] + (bot[0] - top[0]) * k, top[1] + (bot[1] - top[1]) * k, top[2] + (bot[2] - top[2]) * k);
-      if (!out.length || out[out.length - 1] !== c) out.push(c);
+    for (let stopIndex = 0; stopIndex < 7; stopIndex++) {
+      const fraction = stopIndex / 6;
+      const colour = Palette.nearest(
+        top[0] + (bottom[0] - top[0]) * fraction,
+        top[1] + (bottom[1] - top[1]) * fraction,
+        top[2] + (bottom[2] - top[2]) * fraction,
+      );
+      if (!out.length || out[out.length - 1] !== colour) {
+        out.push(colour);
+      }
     }
     return out;
   }
 
-  function drawSky(stops, gal, galAng) {
-    gl.useProgram(sky.p);
-    gl.uniform2f(sky.u.uRes, cv.width, cv.height);
-    gl.uniform1f(sky.u.uPix, Math.max(1, pixelSize * DPR));
-    FS.GL.rampUniform(gl, sky.u.uSky, stops, 8);
-    gl.uniform1i(sky.u.uSkyN, stops.length);
-    gl.uniform1f(sky.u.uGal, gal);
-    gl.uniform1f(sky.u.uGalAng, galAng);
-    FS.GL.rampUniform(gl, sky.u.uGalCol, [P.ramps.night[2], P.ramps.night[3]], 2);
-    gl.disable(gl.BLEND);
-    sky.draw();
+  function drawSky(stops, galaxyStrength, galaxyAngle) {
+    webgl.useProgram(skyShader.program);
+    webgl.uniform2f(skyShader.uniforms.resolution, viewCanvas.width, viewCanvas.height);
+    webgl.uniform1f(skyShader.uniforms.pixelSize, Math.max(1, pixelSize * pixelRatio));
+    Flatspace.WebGL.rampUniform(webgl, skyShader.uniforms.skyColours, stops, 8);
+    webgl.uniform1i(skyShader.uniforms.skyColourCount, stops.length);
+    webgl.uniform1f(skyShader.uniforms.galaxyStrength, galaxyStrength);
+    webgl.uniform1f(skyShader.uniforms.galaxyAngle, galaxyAngle);
+    Flatspace.WebGL.rampUniform(
+      webgl,
+      skyShader.uniforms.galaxyColours,
+      [Palette.ramps.night[2], Palette.ramps.night[3]],
+      2,
+    );
+    webgl.disable(webgl.BLEND);
+    skyShader.draw();
   }
 
   // Pixel stars: one or two art pixels each, turning with the camera.
-  function drawStars(cam, alpha, rotate, t) {
-    if (alpha <= 0.02) return;
-    const rad = Math.hypot(W, H) * 0.55;
-    const rot = rotate ? cam.rot : 0;
-    const c = Math.cos(-rot), s = Math.sin(-rot);
-    const px = Math.max(1, pixelSize) * DPR;
-    for (const st of stars) {
-      const x = W / 2 + (st.x * c - st.y * s) * rad, y = H / 2 + (st.x * s + st.y * c) * rad;
-      if (x < -4 || y < -4 || x > W + 4 || y > H + 4) continue;
-      let a = st.b * alpha;
-      if (st.tw !== null) a *= Math.sin(t * 2.3 + st.tw) > 0.3 ? 1 : 0.45;
-      block(x * DPR, y * DPR, st.big ? px * 2 : px, st.big ? px * 2 : px, -rot, [st.c[0], st.c[1], st.c[2], a]);
+  function drawStars(camera, alpha, rotate, time) {
+    if (alpha <= 0.02) {
+      return;
+    }
+    const skyRadius = Math.hypot(viewWidth, viewHeight) * 0.55;
+    const rotation = rotate ? camera.rotation : 0;
+    const cosRotation = Math.cos(-rotation);
+    const sinRotation = Math.sin(-rotation);
+    const dotSize = Math.max(1, pixelSize) * pixelRatio;
+    for (const star of stars) {
+      const starX = viewWidth / 2 + (star.x * cosRotation - star.y * sinRotation) * skyRadius;
+      const starY = viewHeight / 2 + (star.x * sinRotation + star.y * cosRotation) * skyRadius;
+      if (starX < -4 || starY < -4 || starX > viewWidth + 4 || starY > viewHeight + 4) {
+        continue;
+      }
+      let starAlpha = star.brightness * alpha;
+      if (star.twinkle !== null) {
+        starAlpha *= Math.sin(time * 2.3 + star.twinkle) > 0.3 ? 1 : 0.45;
+      }
+      block(
+        starX * pixelRatio,
+        starY * pixelRatio,
+        star.big ? dotSize * 2 : dotSize,
+        star.big ? dotSize * 2 : dotSize,
+        -rotation,
+        [star.colour[0], star.colour[1], star.colour[2], starAlpha],
+      );
     }
   }
 
-  // A solid rectangle w × h device px centred at (x, y), turned by angle, with crisp edges.
-  function block(x, y, w, h, angle, tint) {
-    const e = sprites.white();
-    const c = Math.cos(angle), s = Math.sin(angle);
+  // A solid rectangle width × height device px centred at (x, y), turned by angle, with crisp edges.
+  function block(centreX, centreY, width, height, angle, tint) {
+    const entry = sprites.white();
+    const cosAngle = Math.cos(angle);
+    const sinAngle = Math.sin(angle);
     // the quad reaches 1 texel into the clear padding on every side, so the edges are smoothed
-    const hw = (w / 2) * 1.5, hh = (h / 2) * 1.5;
-    const at = (dx, dy) => ({ x: x + dx * c - dy * s, y: y + dx * s + dy * c });
-    sprites.quad(at(-hw, -hh), at(hw, -hh), at(hw, hh), at(-hw, hh), e, tint, -1, -1, 5, 5);
+    const halfWidth = (width / 2) * 1.5;
+    const halfHeight = (height / 2) * 1.5;
+    const cornerAt = (offsetX, offsetY) => ({
+      x: centreX + offsetX * cosAngle - offsetY * sinAngle,
+      y: centreY + offsetX * sinAngle + offsetY * cosAngle,
+    });
+    sprites.drawQuad(
+      cornerAt(-halfWidth, -halfHeight),
+      cornerAt(halfWidth, -halfHeight),
+      cornerAt(halfWidth, halfHeight),
+      cornerAt(-halfWidth, halfHeight),
+      entry,
+      tint,
+      -1,
+      -1,
+      5,
+      5,
+    );
   }
 
   // ---------- Bodies ----------
   // Heights as a 1-pixel-high float texture (read with texelFetch, interpolated by hand).
-  function makeHeightTexture(n) {
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, n, 1, 0, gl.RED, gl.FLOAT, null);
-    for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST);
-    return { tex, n, data: new Float32Array(n) };
-  }
-  function uploadHeights(h) {
-    gl.bindTexture(gl.TEXTURE_2D, h.tex);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, h.n, 1, gl.RED, gl.FLOAT, h.data);
-  }
-  function fullHeights(b) {
-    let h = heightTex.get(b);
-    if (!h) {
-      h = makeHeightTexture(N_FULL);
-      for (let i = 0; i < N_FULL; i++) h.data[i] = FS.terrainHeight(b, (i / N_FULL) * TAU);
-      uploadHeights(h);
-      heightTex.set(b, h);
+  function makeHeightTexture(sampleCount) {
+    const texture = webgl.createTexture();
+    webgl.bindTexture(webgl.TEXTURE_2D, texture);
+    webgl.texImage2D(webgl.TEXTURE_2D, 0, webgl.R32F, sampleCount, 1, 0, webgl.RED, webgl.FLOAT, null);
+    for (const filter of [webgl.TEXTURE_MIN_FILTER, webgl.TEXTURE_MAG_FILTER]) {
+      webgl.texParameteri(webgl.TEXTURE_2D, filter, webgl.NEAREST);
     }
-    return h;
+    return { texture, sampleCount, data: new Float32Array(sampleCount) };
+  }
+  function uploadHeights(heights) {
+    webgl.bindTexture(webgl.TEXTURE_2D, heights.texture);
+    webgl.texSubImage2D(
+      webgl.TEXTURE_2D,
+      0,
+      0,
+      0,
+      heights.sampleCount,
+      1,
+      webgl.RED,
+      webgl.FLOAT,
+      heights.data,
+    );
+  }
+  function fullHeights(body) {
+    let heights = heightTextures.get(body);
+    if (!heights) {
+      heights = makeHeightTexture(FULL_CIRCLE_SAMPLES);
+      for (let sampleIndex = 0; sampleIndex < FULL_CIRCLE_SAMPLES; sampleIndex++) {
+        heights.data[sampleIndex] = Flatspace.terrainHeight(
+          body,
+          (sampleIndex / FULL_CIRCLE_SAMPLES) * FULL_TURN,
+        );
+      }
+      uploadHeights(heights);
+      heightTextures.set(body, heights);
+    }
+    return heights;
   }
 
   // Colour ramps for each body's materials (5 entries each, dark to light).
-  const hex = (list) => list.map((x) => P.nearest(parseInt(x.slice(1, 3), 16), parseInt(x.slice(3, 5), 16), parseInt(x.slice(5, 7), 16)));
-  const pick = (ramp, ...idx) => idx.map((i) => ramp[i]);
+  const hexToPalette = (list) =>
+    list.map((hexText) =>
+      Palette.nearest(
+        parseInt(hexText.slice(1, 3), 16),
+        parseInt(hexText.slice(3, 5), 16),
+        parseInt(hexText.slice(5, 7), 16),
+      ),
+    );
+  const pick = (ramp, ...indices) => indices.map((index) => ramp[index]);
   const MATERIALS = {
     Aster: () => ({
-      land: pick(P.ramps.green, 0, 1, 2, 3, 4),
-      sand: pick(P.ramps.earth, 2, 3, 4, 5, 6),
-      rock: pick(P.ramps.metal, 1, 2, 3, 4, 5),
-      snow: [P.ramps.metal[3], P.ramps.blue[5], P.ramps.blue[6], P.ramps.metal[7], P.ramps.blue[7]],
-      soil: pick(P.ramps.earth, 0, 1, 2, 3, 4),
-      strA: pick(P.ramps.earth, 0, 1, 2, 3, 4),
-      strB: [P.ramps.earth[0], P.ramps.metal[1], P.ramps.earth[1], P.ramps.metal[2], P.ramps.earth[2]],
-      deep: [P.ramps.night[1], P.ramps.blue[0], P.ramps.blue[1], P.ramps.blue[2], P.ramps.blue[3]],
-      ocean: pick(P.ramps.blue, 0, 1, 2, 3, 4, 5),
-      atmo: pick(P.ramps.blue, 3, 4, 5, 6, 7),
+      land: pick(Palette.ramps.green, 0, 1, 2, 3, 4),
+      sand: pick(Palette.ramps.earth, 2, 3, 4, 5, 6),
+      rock: pick(Palette.ramps.metal, 1, 2, 3, 4, 5),
+      snow: [
+        Palette.ramps.metal[3],
+        Palette.ramps.blue[5],
+        Palette.ramps.blue[6],
+        Palette.ramps.metal[7],
+        Palette.ramps.blue[7],
+      ],
+      soil: pick(Palette.ramps.earth, 0, 1, 2, 3, 4),
+      strataA: pick(Palette.ramps.earth, 0, 1, 2, 3, 4),
+      strataB: [
+        Palette.ramps.earth[0],
+        Palette.ramps.metal[1],
+        Palette.ramps.earth[1],
+        Palette.ramps.metal[2],
+        Palette.ramps.earth[2],
+      ],
+      deep: [
+        Palette.ramps.night[1],
+        Palette.ramps.blue[0],
+        Palette.ramps.blue[1],
+        Palette.ramps.blue[2],
+        Palette.ramps.blue[3],
+      ],
+      ocean: pick(Palette.ramps.blue, 0, 1, 2, 3, 4, 5),
+      atmosphere: pick(Palette.ramps.blue, 3, 4, 5, 6, 7),
     }),
     Mira: () => ({
-      land: pick(P.ramps.metal, 1, 2, 3, 4, 5),
-      sand: pick(P.ramps.metal, 1, 2, 3, 4, 5),
-      rock: pick(P.ramps.metal, 2, 3, 4, 5, 6),
-      snow: pick(P.ramps.metal, 2, 3, 4, 5, 6),
-      soil: pick(P.ramps.metal, 0, 1, 2, 3, 4),
-      strA: pick(P.ramps.metal, 0, 1, 2, 3, 4),
-      strB: [P.ramps.night[1], P.ramps.night[2], P.ramps.metal[1], P.ramps.metal[2], P.ramps.metal[3]],
-      deep: [P.ramps.night[0], P.ramps.metal[0], P.ramps.metal[1], P.ramps.metal[2], P.ramps.metal[3]],
-      ocean: pick(P.ramps.blue, 0, 1, 2, 3, 4, 5),
-      atmo: pick(P.ramps.metal, 3, 4, 5, 6, 7),
+      land: pick(Palette.ramps.metal, 1, 2, 3, 4, 5),
+      sand: pick(Palette.ramps.metal, 1, 2, 3, 4, 5),
+      rock: pick(Palette.ramps.metal, 2, 3, 4, 5, 6),
+      snow: pick(Palette.ramps.metal, 2, 3, 4, 5, 6),
+      soil: pick(Palette.ramps.metal, 0, 1, 2, 3, 4),
+      strataA: pick(Palette.ramps.metal, 0, 1, 2, 3, 4),
+      strataB: [
+        Palette.ramps.night[1],
+        Palette.ramps.night[2],
+        Palette.ramps.metal[1],
+        Palette.ramps.metal[2],
+        Palette.ramps.metal[3],
+      ],
+      deep: [
+        Palette.ramps.night[0],
+        Palette.ramps.metal[0],
+        Palette.ramps.metal[1],
+        Palette.ramps.metal[2],
+        Palette.ramps.metal[3],
+      ],
+      ocean: pick(Palette.ramps.blue, 0, 1, 2, 3, 4, 5),
+      atmosphere: pick(Palette.ramps.metal, 3, 4, 5, 6, 7),
     }),
     Pell: () => ({
-      land: [P.ramps.teal[0], P.ramps.teal[1], P.ramps.teal[2], P.ramps.teal[3], P.ramps.metal[7]],
-      sand: [P.ramps.teal[0], P.ramps.teal[1], P.ramps.teal[2], P.ramps.teal[3], P.ramps.metal[7]],
-      rock: [P.ramps.night[2], P.ramps.teal[0], P.ramps.teal[1], P.ramps.teal[2], P.ramps.teal[3]],
-      snow: [P.ramps.teal[1], P.ramps.teal[2], P.ramps.teal[3], P.ramps.blue[6], P.ramps.metal[7]],
-      soil: [P.ramps.night[1], P.ramps.night[2], P.ramps.teal[0], P.ramps.teal[1], P.ramps.teal[2]],
-      strA: [P.ramps.night[1], P.ramps.night[2], P.ramps.teal[0], P.ramps.teal[1], P.ramps.teal[2]],
-      strB: [P.ramps.night[0], P.ramps.metal[1], P.ramps.metal[2], P.ramps.teal[0], P.ramps.teal[1]],
-      deep: [P.ramps.night[0], P.ramps.night[1], P.ramps.night[2], P.ramps.teal[0], P.ramps.teal[1]],
-      ocean: pick(P.ramps.blue, 0, 1, 2, 3, 4, 5),
-      atmo: pick(P.ramps.teal, 0, 1, 2, 3, 3),
+      land: [
+        Palette.ramps.teal[0],
+        Palette.ramps.teal[1],
+        Palette.ramps.teal[2],
+        Palette.ramps.teal[3],
+        Palette.ramps.metal[7],
+      ],
+      sand: [
+        Palette.ramps.teal[0],
+        Palette.ramps.teal[1],
+        Palette.ramps.teal[2],
+        Palette.ramps.teal[3],
+        Palette.ramps.metal[7],
+      ],
+      rock: [
+        Palette.ramps.night[2],
+        Palette.ramps.teal[0],
+        Palette.ramps.teal[1],
+        Palette.ramps.teal[2],
+        Palette.ramps.teal[3],
+      ],
+      snow: [
+        Palette.ramps.teal[1],
+        Palette.ramps.teal[2],
+        Palette.ramps.teal[3],
+        Palette.ramps.blue[6],
+        Palette.ramps.metal[7],
+      ],
+      soil: [
+        Palette.ramps.night[1],
+        Palette.ramps.night[2],
+        Palette.ramps.teal[0],
+        Palette.ramps.teal[1],
+        Palette.ramps.teal[2],
+      ],
+      strataA: [
+        Palette.ramps.night[1],
+        Palette.ramps.night[2],
+        Palette.ramps.teal[0],
+        Palette.ramps.teal[1],
+        Palette.ramps.teal[2],
+      ],
+      strataB: [
+        Palette.ramps.night[0],
+        Palette.ramps.metal[1],
+        Palette.ramps.metal[2],
+        Palette.ramps.teal[0],
+        Palette.ramps.teal[1],
+      ],
+      deep: [
+        Palette.ramps.night[0],
+        Palette.ramps.night[1],
+        Palette.ramps.night[2],
+        Palette.ramps.teal[0],
+        Palette.ramps.teal[1],
+      ],
+      ocean: pick(Palette.ramps.blue, 0, 1, 2, 3, 4, 5),
+      atmosphere: pick(Palette.ramps.teal, 0, 1, 2, 3, 3),
     }),
   };
   const matCache = new Map();
-  const materials = (b) => {
-    if (!matCache.has(b)) matCache.set(b, (MATERIALS[b.name] || MATERIALS.Mira)());
-    return matCache.get(b);
+  const materials = (body) => {
+    if (!matCache.has(body)) {
+      matCache.set(body, (MATERIALS[body.name] || MATERIALS.Mira)());
+    }
+    return matCache.get(body);
   };
 
   const PLANET_FS = `#version 300 es
     precision highp float;
-    uniform vec2 uRes;        // device px
-    uniform float uCamS;      // device px per metre
-    uniform float uCamRot;
-    uniform float uCell;      // art pixel, metres
-    uniform int uMode;        // 0: whole body (cells in the body's turning frame), 1: close to the ground
-    uniform vec2 uC;          // body centre relative to the camera (mode 0)
-    uniform float uBodyRot;
-    uniform vec2 uUp;         // mode 1: up at the camera
-    uniform float uAltCam;    // mode 1: camera height above datum
-    uniform float uRc;        // mode 1: camera distance from the centre
-    uniform float uU0;        // mode 1: the camera's position along the ground (wrapped)
-    uniform float uLonCam;    // mode 1: body-fixed longitude under the camera
-    uniform float uSpan;      // mode 1: the height window covers ±uSpan radians
-    uniform sampler2D uH;
-    uniform int uHN;
-    uniform float uR;
-    uniform float uAtmoH;
-    uniform int uOcean;
-    uniform float uSnowH, uRockH, uAmp;
-    uniform vec2 uSun;
-    uniform float uRim;       // draw the atmosphere rim (1) or not (0)
-    uniform vec3 uLand[5], uSand[5], uRock[5], uSnow[5], uSoil[5], uStrA[5], uStrB[5], uDeep[5], uOceanR[6], uAtmo[5];
-    out vec4 o;
-    ${FS.GL.GLSL_BAYER}
-    float hash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
+    uniform vec2 resolution;        // device px
+    uniform float cameraScale;      // device px per metre
+    uniform float cameraRotation;
+    uniform float cellSize;      // art pixel, metres
+    uniform int mode;        // 0: whole body (cells in the body's turning frame), 1: close to the ground
+    uniform vec2 bodyCentre;          // body centre relative to the camera (mode 0)
+    uniform float bodyRotation;
+    uniform vec2 up;         // mode 1: up at the camera
+    uniform float cameraAltitude;    // mode 1: camera height above datum
+    uniform float cameraDistance;        // mode 1: camera distance from the centre
+    uniform float cameraAlong;        // mode 1: the camera's position along the ground (wrapped)
+    uniform float cameraLongitude;    // mode 1: body-fixed longitude under the camera
+    uniform float span;      // mode 1: the height window covers ±span radians
+    uniform sampler2D heights;
+    uniform int heightCount;
+    uniform float radius;
+    uniform float atmosphereHeight;
+    uniform int hasOcean;
+    uniform float snowHeight, rockHeight, amplitude;
+    uniform vec2 sunDirection;
+    uniform float drawRim;       // draw the atmosphere rim (1) or not (0)
+    uniform vec3 landColours[5], sandColours[5], rockColours[5], snowColours[5], soilColours[5], strataColoursA[5], strataColoursB[5], deepColours[5], oceanColours[6], atmosphereColours[5];
+    out vec4 fragmentColour;
+    ${Flatspace.WebGL.GLSL_BAYER}
+    float hash(float seed) { return fract(sin(seed * 12.9898) * 43758.5453); }
 
-    float heightAt(float x) { // x in texels, wraps
-      float n = float(uHN);
-      x = mod(x, n);
-      float i = floor(x);
-      int a = int(i), b = int(mod(i + 1.0, n));
-      return mix(texelFetch(uH, ivec2(a, 0), 0).r, texelFetch(uH, ivec2(b, 0), 0).r, x - i);
+    float heightAt(float position) { // x in texels, wraps
+      float count = float(heightCount);
+      position = mod(position, count);
+      float whole = floor(position);
+      int leftIndex = int(whole), rightIndex = int(mod(whole + 1.0, count));
+      return mix(texelFetch(heights, ivec2(leftIndex, 0), 0).r, texelFetch(heights, ivec2(rightIndex, 0), 0).r, position - whole);
     }
-    vec2 gCell;
-    vec3 ramp5(vec3 r[5], float t, float th) {
-      float f = clamp(t, 0.0, 1.0) * 4.0;
-      int i = int(floor(f));
-      return (stepUp(fract(f), gCell) && i < 4) ? r[i + 1] : r[i];
+    vec2 currentCell;
+    vec3 ramp5(vec3 colours[5], float position, float threshold) {
+      float scaled = clamp(position, 0.0, 1.0) * 4.0;
+      int index = int(floor(scaled));
+      return (stepUp(fract(scaled), currentCell) && index < 4) ? colours[index + 1] : colours[index];
     }
-    vec3 ramp6(vec3 r[6], float t, float th) {
-      float f = clamp(t, 0.0, 1.0) * 5.0;
-      int i = int(floor(f));
-      return (stepUp(fract(f), gCell) && i < 5) ? r[i + 1] : r[i];
+    vec3 ramp6(vec3 colours[6], float position, float threshold) {
+      float scaled = clamp(position, 0.0, 1.0) * 5.0;
+      int index = int(floor(scaled));
+      return (stepUp(fract(scaled), currentCell) && index < 5) ? colours[index + 1] : colours[index];
     }
 
     void main() {
       // screen → metres from the camera, in the world frame
-      vec2 sp = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
-      vec2 rr = vec2(sp.x - uRes.x * 0.5, -(sp.y - uRes.y * 0.5)) / uCamS;
-      float c = cos(uCamRot), s = sin(uCamRot);
-      vec2 d = vec2(rr.x * c - rr.y * s, rr.x * s + rr.y * c);
+      vec2 screenPoint = vec2(gl_FragCoord.x, resolution.y - gl_FragCoord.y);
+      vec2 fromCamera = vec2(screenPoint.x - resolution.x * 0.5, -(screenPoint.y - resolution.y * 0.5)) / cameraScale;
+      float cosRotation = cos(cameraRotation), sinRotation = sin(cameraRotation);
+      vec2 worldOffset = vec2(fromCamera.x * cosRotation - fromCamera.y * sinRotation, fromCamera.x * sinRotation + fromCamera.y * cosRotation);
 
-      float alt, h, u, light;
+      float altitude, groundHeight, along, light;
       vec2 cell;
-      if (uMode == 0) {
-        vec2 p = d - uC;
-        float cb = cos(-uBodyRot), sb = sin(-uBodyRot);
-        vec2 pb = vec2(p.x * cb - p.y * sb, p.x * sb + p.y * cb);
-        cell = floor(pb / uCell);
-        vec2 pc = (cell + 0.5) * uCell;
-        float r = length(pc);
-        alt = r - uR;
-        if (alt > uAtmoH * 1.4 + uAmp * 1.5 + uCell * 2.0) discard;
-        float lon = atan(pc.y, pc.x);
-        h = heightAt(lon / 6.28318530718 * float(uHN));
-        u = lon * uR;
-        float ca = cos(uBodyRot), sa = sin(uBodyRot);
-        vec2 nw = vec2(pc.x * ca - pc.y * sa, pc.x * sa + pc.y * ca) / r;
-        light = dot(nw, uSun);
+      if (mode == 0) {
+        vec2 fromBody = worldOffset - bodyCentre;
+        float cosBody = cos(-bodyRotation), sinBody = sin(-bodyRotation);
+        vec2 bodyPoint = vec2(fromBody.x * cosBody - fromBody.y * sinBody, fromBody.x * sinBody + fromBody.y * cosBody);
+        cell = floor(bodyPoint / cellSize);
+        vec2 cellCentre = (cell + 0.5) * cellSize;
+        float centreDistance = length(cellCentre);
+        altitude = centreDistance - radius;
+        if (altitude > atmosphereHeight * 1.4 + amplitude * 1.5 + cellSize * 2.0) discard;
+        float longitude = atan(cellCentre.y, cellCentre.x);
+        groundHeight = heightAt(longitude / 6.28318530718 * float(heightCount));
+        along = longitude * radius;
+        float cosAngle = cos(bodyRotation), sinAngle = sin(bodyRotation);
+        vec2 worldNormal = vec2(cellCentre.x * cosAngle - cellCentre.y * sinAngle, cellCentre.x * sinAngle + cellCentre.y * cosAngle) / centreDistance;
+        light = dot(worldNormal, sunDirection);
       } else {
-        vec2 tang = vec2(-uUp.y, uUp.x);
-        float du = dot(d, uUp), dt = dot(d, tang);
-        float a = uAltCam + du + dt * dt / (2.0 * (uRc + du));
-        float ang = atan(dt, uRc + du);
-        float uu = uU0 + ang * uR;
-        cell = vec2(floor(uu / uCell), floor(a / uCell));
-        alt = (cell.y + 0.5) * uCell;
-        float angC = ((cell.x + 0.5) * uCell - uU0) / uR;
-        if (alt > uAmp * 1.5 + 10.0) discard;
-        h = heightAt((angC / uSpan * 0.5 + 0.5) * float(uHN - 1));
-        u = (uLonCam + angC) * uR;
-        float ca = cos(angC), sa = sin(angC);
-        vec2 nw = vec2(uUp.x * ca - uUp.y * sa, uUp.x * sa + uUp.y * ca);
-        light = dot(nw, uSun);
+        vec2 tangent = vec2(-up.y, up.x);
+        float upDistance = dot(worldOffset, up), sideDistance = dot(worldOffset, tangent);
+        float heightAboveDatum = cameraAltitude + upDistance + sideDistance * sideDistance / (2.0 * (cameraDistance + upDistance));
+        float angle = atan(sideDistance, cameraDistance + upDistance);
+        float alongGround = cameraAlong + angle * radius;
+        cell = vec2(floor(alongGround / cellSize), floor(heightAboveDatum / cellSize));
+        altitude = (cell.y + 0.5) * cellSize;
+        float cellAngle = ((cell.x + 0.5) * cellSize - cameraAlong) / radius;
+        if (altitude > amplitude * 1.5 + 10.0) discard;
+        groundHeight = heightAt((cellAngle / span * 0.5 + 0.5) * float(heightCount - 1));
+        along = (cameraLongitude + cellAngle) * radius;
+        float cosAngle = cos(cellAngle), sinAngle = sin(cellAngle);
+        vec2 worldNormal = vec2(up.x * cosAngle - up.y * sinAngle, up.x * sinAngle + up.y * cosAngle);
+        light = dot(worldNormal, sunDirection);
       }
-      float th = bayer4(cell);
-      gCell = cell;
-      float lit = smoothstep(-0.12, 0.25, light);      // 0 night … 1 day
-      float shadeT = 0.12 + 0.62 * lit;                // position on a ramp
+      float threshold = bayer4(cell);
+      currentCell = cell;
+      float daylight = smoothstep(-0.12, 0.25, light);      // 0 night … 1 day
+      float shade = 0.12 + 0.62 * daylight;                // position on a ramp
 
-      vec3 col;
+      vec3 colour;
       // from afar, oceans cover the band where the sea floor would show
-      bool farSea = uMode == 0 && uOcean == 1 && h < 0.0 && alt < 0.0 && -alt < max(uR * 0.035, uCell * 6.0);
-      if (alt > h || farSea) {
-        if (uOcean == 1 && alt < 0.0) {
+      bool farSea = mode == 0 && hasOcean == 1 && groundHeight < 0.0 && altitude < 0.0 && -altitude < max(radius * 0.035, cellSize * 6.0);
+      if (altitude > groundHeight || farSea) {
+        if (hasOcean == 1 && altitude < 0.0) {
           // water: lighter near the surface, a foam line on top
-          float depth = -alt;
-          float k = clamp(depth / max(80.0, uCell * 10.0), 0.0, 1.0);
-          float t = (1.0 - k) * (0.25 + 0.6 * lit);
-          if (depth < uCell * 1.01 && lit > 0.2) t = 0.95;
-          col = ramp6(uOceanR, t, th);
-        } else if (uMode == 0 && uRim > 0.5 && uAtmoH > 0.0) {
+          float depth = -altitude;
+          float depthFraction = clamp(depth / max(80.0, cellSize * 10.0), 0.0, 1.0);
+          float shadePosition = (1.0 - depthFraction) * (0.25 + 0.6 * daylight);
+          if (depth < cellSize * 1.01 && daylight > 0.2) shadePosition = 0.95;
+          colour = ramp6(oceanColours, shadePosition, threshold);
+        } else if (mode == 0 && drawRim > 0.5 && atmosphereHeight > 0.0) {
           // atmosphere rim: thins out with height, dimmer on the night side
-          float above = alt - max(h, 0.0);
-          float dens = exp(-above / (uAtmoH * 0.3));
-          float cover = dens * (0.18 + 0.82 * smoothstep(-0.35, 0.3, light));
-          if (cover * 0.95 <= th) discard;
-          col = ramp5(uAtmo, dens * (0.35 + 0.65 * lit), th);
+          float above = altitude - max(groundHeight, 0.0);
+          float density = exp(-above / (atmosphereHeight * 0.3));
+          float cover = density * (0.18 + 0.82 * smoothstep(-0.35, 0.3, light));
+          if (cover * 0.95 <= threshold) discard;
+          colour = ramp5(atmosphereColours, density * (0.35 + 0.65 * daylight), threshold);
         } else discard;
       } else {
-        float depth = h - alt;
-        float wob = (3.0 * sin(u * 0.004) + 1.5 * sin(u * 0.017 + 1.0)) * max(1.0, uCell);
-        float top = max(0.6, uCell * 1.5);
-        float soil = max(5.0, uCell * 4.0);
-        if (uMode == 0) { top = max(top, uR * 0.012); soil = max(soil, uR * 0.022); }
-        float bands = max(7.0, uCell * 3.0);
-        if (uMode == 0 && depth > max(uR * 0.035, uCell * 6.0)) {
+        float depth = groundHeight - altitude;
+        float wobble = (3.0 * sin(along * 0.004) + 1.5 * sin(along * 0.017 + 1.0)) * max(1.0, cellSize);
+        float top = max(0.6, cellSize * 1.5);
+        float soil = max(5.0, cellSize * 4.0);
+        if (mode == 0) { top = max(top, radius * 0.012); soil = max(soil, radius * 0.022); }
+        float bandThickness = max(7.0, cellSize * 3.0);
+        if (mode == 0 && depth > max(radius * 0.035, cellSize * 6.0)) {
           // the body's interior seen from afar
-          col = ramp5(uDeep, 0.15 + 0.55 * lit, th);
+          colour = ramp5(deepColours, 0.15 + 0.55 * daylight, threshold);
         } else if (depth < top) {
-          float tuft = hash(floor(u / uCell)) > 0.72 && depth < uCell * 1.01 ? 0.18 : 0.0;
-          if (uOcean == 1 && h < 40.0) col = ramp5(uSand, shadeT + tuft, th);
-          else if (h > uSnowH) col = ramp5(uSnow, shadeT + 0.15 + tuft, th);
-          else if (h > uRockH) col = ramp5(uRock, shadeT + tuft, th);
-          else col = ramp5(uLand, shadeT + tuft, th);
-        } else if (depth < soil + wob * 0.3) {
-          col = ramp5(uSoil, shadeT * 0.9, th);
+          float tuft = hash(floor(along / cellSize)) > 0.72 && depth < cellSize * 1.01 ? 0.18 : 0.0;
+          if (hasOcean == 1 && groundHeight < 40.0) colour = ramp5(sandColours, shade + tuft, threshold);
+          else if (groundHeight > snowHeight) colour = ramp5(snowColours, shade + 0.15 + tuft, threshold);
+          else if (groundHeight > rockHeight) colour = ramp5(rockColours, shade + tuft, threshold);
+          else colour = ramp5(landColours, shade + tuft, threshold);
+        } else if (depth < soil + wobble * 0.3) {
+          colour = ramp5(soilColours, shade * 0.9, threshold);
         } else {
-          float band = floor((depth + wob) / bands);
-          col = mod(band, 2.0) < 1.0 ? ramp5(uStrA, shadeT * 0.85, th) : ramp5(uStrB, shadeT * 0.85, th);
+          float band = floor((depth + wobble) / bandThickness);
+          colour = mod(band, 2.0) < 1.0 ? ramp5(strataColoursA, shade * 0.85, threshold) : ramp5(strataColoursB, shade * 0.85, threshold);
         }
       }
-      o = vec4(col, 1.0);
+      fragmentColour = vec4(colour, 1.0);
     }`;
 
   // Draw one body. Returns whether its surface is visible.
-  function drawBody(cam, b, t, k) {
-    const cell = Math.pow(2, k) / 16;
-    const c = FS.bodyAbs(b, t);
-    const rel = { x: c.x - cam.x, y: c.y - cam.y };
-    const dist = Math.hypot(rel.x, rel.y);
-    const viewR = Math.hypot(W, H) / 2 / cam.s;
-    const atmoH = b.atmo ? b.atmo.height : 0;
-    const reach = b.R + Math.max(atmoH * 1.4, b.terrain.amp * 1.5);
-    if (dist - reach > viewR) return false;
+  function drawBody(camera, body, time, zoomLevel) {
+    const cell = Math.pow(2, zoomLevel) / 16;
+    const centre = Flatspace.bodyAbsolutePosition(body, time);
+    const relative = { x: centre.x - camera.x, y: centre.y - camera.y };
+    const distance = Math.hypot(relative.x, relative.y);
+    const viewRadius = Math.hypot(viewWidth, viewHeight) / 2 / camera.scale;
+    const atmosphereHeight = body.atmosphere ? body.atmosphere.height : 0;
+    const reach = body.radius + Math.max(atmosphereHeight * 1.4, body.terrain.amplitude * 1.5);
+    if (distance - reach > viewRadius) {
+      return false;
+    }
     // tiny: a dot of a few art pixels
-    if (b.R * cam.s < 2.5) {
-      const sp = w2s(cam, c.x, c.y);
-      const col = P.nearest(...hex([b.colors.disc])[0]).map((v) => v / 255);
-      sprites.begin(cv.width, cv.height);
-      const sz = Math.max(2.5, b.R * cam.s) * 2 * DPR;
-      block(sp.x * DPR, sp.y * DPR, sz, sz, 0, [col[0], col[1], col[2], 1]);
+    if (body.radius * camera.scale < 2.5) {
+      const screenPoint = worldToScreenPoint(camera, centre.x, centre.y);
+      const colour = Palette.nearest(...hexToPalette([body.colors.disc])[0]).map((channel) => channel / 255);
+      sprites.begin(viewCanvas.width, viewCanvas.height);
+      const dotSize = Math.max(2.5, body.radius * camera.scale) * 2 * pixelRatio;
+      block(screenPoint.x * pixelRatio, screenPoint.y * pixelRatio, dotSize, dotSize, 0, [
+        colour[0],
+        colour[1],
+        colour[2],
+        1,
+      ]);
       sprites.flush();
       return false;
     }
-    const near = cam.body === b && viewR < b.R * 0.3 && dist - b.R < viewR * 4 + b.terrain.amp * 2;
-    const m = materials(b);
-    const u = planet.u;
-    gl.useProgram(planet.p);
-    gl.uniform2f(u.uRes, cv.width, cv.height);
-    gl.uniform1f(u.uCamS, cam.s * DPR);
-    gl.uniform1f(u.uCamRot, cam.rot);
-    gl.uniform1f(u.uCell, cell);
-    gl.uniform1f(u.uBodyRot, FS.bodyRot(b, t));
-    gl.uniform1f(u.uR, b.R);
-    gl.uniform1f(u.uAtmoH, atmoH);
-    gl.uniform1i(u.uOcean, b.ocean ? 1 : 0);
-    gl.uniform1f(u.uSnowH, b.ocean ? 2550 : 1e9);
-    gl.uniform1f(u.uRockH, b.ocean ? 1900 : b.terrain.amp * 0.6);
-    gl.uniform1f(u.uAmp, b.terrain.amp);
-    gl.uniform2f(u.uSun, FS.SUN_DIR.x, FS.SUN_DIR.y);
-    gl.uniform1f(u.uRim, near ? 0 : 1);
-    const ramps = { uLand: m.land, uSand: m.sand, uRock: m.rock, uSnow: m.snow, uSoil: m.soil, uStrA: m.strA, uStrB: m.strB, uDeep: m.deep, uAtmo: m.atmo };
-    for (const [name, r] of Object.entries(ramps)) FS.GL.rampUniform(gl, u[name], r, 5);
-    FS.GL.rampUniform(gl, u.uOceanR, m.ocean, 6);
-    let hTex;
+    const near =
+      camera.body === body &&
+      viewRadius < body.radius * 0.3 &&
+      distance - body.radius < viewRadius * 4 + body.terrain.amplitude * 2;
+    const material = materials(body);
+    const uniforms = planet.uniforms;
+    webgl.useProgram(planet.program);
+    webgl.uniform2f(uniforms.resolution, viewCanvas.width, viewCanvas.height);
+    webgl.uniform1f(uniforms.cameraScale, camera.scale * pixelRatio);
+    webgl.uniform1f(uniforms.cameraRotation, camera.rotation);
+    webgl.uniform1f(uniforms.cellSize, cell);
+    webgl.uniform1f(uniforms.bodyRotation, Flatspace.bodyRotation(body, time));
+    webgl.uniform1f(uniforms.radius, body.radius);
+    webgl.uniform1f(uniforms.atmosphereHeight, atmosphereHeight);
+    webgl.uniform1i(uniforms.hasOcean, body.ocean ? 1 : 0);
+    webgl.uniform1f(uniforms.snowHeight, body.ocean ? 2550 : 1e9);
+    webgl.uniform1f(uniforms.rockHeight, body.ocean ? 1900 : body.terrain.amplitude * 0.6);
+    webgl.uniform1f(uniforms.amplitude, body.terrain.amplitude);
+    webgl.uniform2f(uniforms.sunDirection, Flatspace.SUN_DIRECTION.x, Flatspace.SUN_DIRECTION.y);
+    webgl.uniform1f(uniforms.drawRim, near ? 0 : 1);
+    const ramps = {
+      landColours: material.land,
+      sandColours: material.sand,
+      rockColours: material.rock,
+      snowColours: material.snow,
+      soilColours: material.soil,
+      strataColoursA: material.strataA,
+      strataColoursB: material.strataB,
+      deepColours: material.deep,
+      atmosphereColours: material.atmosphere,
+    };
+    for (const [name, ramp] of Object.entries(ramps)) {
+      Flatspace.WebGL.rampUniform(webgl, uniforms[name], ramp, 5);
+    }
+    Flatspace.WebGL.rampUniform(webgl, uniforms.oceanColours, material.ocean, 6);
+    let heightTexture;
     if (near) {
       // close to the ground: work in the frame of the ground under the camera
-      const up = { x: -rel.x / dist, y: -rel.y / dist };
-      const ang = Math.atan2(up.y, up.x);
-      const lonCam = FS.wrapAngle(ang - FS.bodyRot(b, t));
-      const span = Math.min(Math.PI, (viewR * 1.6) / b.R);
+      const localUp = { x: -relative.x / distance, y: -relative.y / distance };
+      const angle = Math.atan2(localUp.y, localUp.x);
+      const cameraLongitude = Flatspace.wrapAngle(angle - Flatspace.bodyRotation(body, time));
+      const span = Math.min(Math.PI, (viewRadius * 1.6) / body.radius);
       const period = cell * 65536;
-      const u0 = (((lonCam * b.R) % period) + period) % period;
-      for (let i = 0; i < N_WIN; i++) windowTex.data[i] = FS.terrainHeight(b, lonCam - span + (2 * span * i) / (N_WIN - 1));
-      uploadHeights(windowTex);
-      hTex = windowTex;
-      gl.uniform1i(u.uMode, 1);
-      gl.uniform2f(u.uUp, up.x, up.y);
-      gl.uniform1f(u.uAltCam, dist - b.R);
-      gl.uniform1f(u.uRc, dist);
-      gl.uniform1f(u.uU0, u0);
-      gl.uniform1f(u.uLonCam, lonCam);
-      gl.uniform1f(u.uSpan, span);
+      const windowStart = (((cameraLongitude * body.radius) % period) + period) % period;
+      for (let sampleIndex = 0; sampleIndex < WINDOW_SAMPLES; sampleIndex++) {
+        windowTexture.data[sampleIndex] = Flatspace.terrainHeight(
+          body,
+          cameraLongitude - span + (2 * span * sampleIndex) / (WINDOW_SAMPLES - 1),
+        );
+      }
+      uploadHeights(windowTexture);
+      heightTexture = windowTexture;
+      webgl.uniform1i(uniforms.mode, 1);
+      webgl.uniform2f(uniforms.up, localUp.x, localUp.y);
+      webgl.uniform1f(uniforms.cameraAltitude, distance - body.radius);
+      webgl.uniform1f(uniforms.cameraDistance, distance);
+      webgl.uniform1f(uniforms.cameraAlong, windowStart);
+      webgl.uniform1f(uniforms.cameraLongitude, cameraLongitude);
+      webgl.uniform1f(uniforms.span, span);
     } else {
-      hTex = fullHeights(b);
-      gl.uniform1i(u.uMode, 0);
-      gl.uniform2f(u.uC, rel.x, rel.y);
+      heightTexture = fullHeights(body);
+      webgl.uniform1i(uniforms.mode, 0);
+      webgl.uniform2f(uniforms.bodyCentre, relative.x, relative.y);
     }
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, hTex.tex);
-    gl.uniform1i(u.uH, 1);
-    gl.uniform1i(u.uHN, hTex.n);
+    webgl.activeTexture(webgl.TEXTURE1);
+    webgl.bindTexture(webgl.TEXTURE_2D, heightTexture.texture);
+    webgl.uniform1i(uniforms.heights, 1);
+    webgl.uniform1i(uniforms.heightCount, heightTexture.sampleCount);
     // only shade the pixels the body can cover
-    const sp = w2s(cam, c.x, c.y);
-    const rpx = reach * cam.s;
-    const x0 = FS.clamp(sp.x - rpx, 0, W), x1 = FS.clamp(sp.x + rpx, 0, W);
-    const y0 = FS.clamp(sp.y - rpx, 0, H), y1 = FS.clamp(sp.y + rpx, 0, H);
-    if (x1 <= x0 || y1 <= y0) return false;
-    gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(Math.floor(x0 * DPR), Math.floor((H - y1) * DPR), Math.ceil((x1 - x0) * DPR) + 1, Math.ceil((y1 - y0) * DPR) + 1);
-    gl.disable(gl.BLEND);
+    const screenPoint = worldToScreenPoint(camera, centre.x, centre.y);
+    const reachPixels = reach * camera.scale;
+    const minX = Flatspace.clamp(screenPoint.x - reachPixels, 0, viewWidth);
+    const maxX = Flatspace.clamp(screenPoint.x + reachPixels, 0, viewWidth);
+    const minY = Flatspace.clamp(screenPoint.y - reachPixels, 0, viewHeight);
+    const maxY = Flatspace.clamp(screenPoint.y + reachPixels, 0, viewHeight);
+    if (maxX <= minX || maxY <= minY) {
+      return false;
+    }
+    webgl.enable(webgl.SCISSOR_TEST);
+    webgl.scissor(
+      Math.floor(minX * pixelRatio),
+      Math.floor((viewHeight - maxY) * pixelRatio),
+      Math.ceil((maxX - minX) * pixelRatio) + 1,
+      Math.ceil((maxY - minY) * pixelRatio) + 1,
+    );
+    webgl.disable(webgl.BLEND);
     planet.draw();
-    gl.disable(gl.SCISSOR_TEST);
+    webgl.disable(webgl.SCISSOR_TEST);
     return near;
   }
 
+  const parsedCache = new Map();
+
+  function newSprite(part, width, topWidth, length) {
+    const partType = part.type;
+    let cacheKey = null;
+    let makeSprite = null;
+    if (Flatspace.SPRITES[partType.id]) {
+      cacheKey = 'hand|' + partType.id;
+      makeSprite = () => Flatspace.Sprites.parse(partType.id, Flatspace.SPRITES[partType.id]);
+    } else if (partType.stretch) {
+      const skinName = part.skin || (partType.foam ? 'foam' : 'white');
+      cacheKey = `tank|${width}|${length}|${skinName}`;
+      makeSprite = () => Flatspace.Sprites.tank(width, length, skinName);
+    } else if (partType.id === 'adapter') {
+      cacheKey = `adapter|${width}|${topWidth}|${length}`;
+      makeSprite = () =>
+        Flatspace.Sprites.profile({
+          id: 'adapter',
+          length,
+          widestHalfWidth: Math.max(width, topWidth) / 2,
+          halfWidthAt: (howFarDown) => topWidth / 2 + (width / 2 - topWidth / 2) * howFarDown,
+          rampName: 'metal',
+          tone: 5, // adapter colour
+        });
+    } else if (partType.id === 'decoupler') {
+      cacheKey = `decoupler|${width}|${length}`;
+      makeSprite = () =>
+        Flatspace.Sprites.profile({
+          id: 'decoupler',
+          length,
+          widestHalfWidth: width / 2,
+          halfWidthAt: () => width / 2,
+          rampName: 'metal',
+          tone: 3, //decoupler color
+        });
+    }
+    if (!cacheKey) {
+      return null;
+    }
+
+    if (!parsedCache.has(cacheKey)) {
+      parsedCache.set(cacheKey, makeSprite());
+    }
+    const sprite = parsedCache.get(cacheKey);
+    if (!sprite) {
+      return null;
+    }
+    return { cacheKey, sprite };
+  }
+
   // ---------- Baked sprites (temporary art) ----------
-  // Parts: the vector drawing from parts.js at L art pixels per metre, snapped to the palette.
-  function partSprite(p, L, glow) {
-    const d = p.def;
-    const w = p.w || (d.w === 'auto' ? 1.25 : d.w);
-    const tw = p.tw || d.topW || w;
-    const len = p.len || d.len;
-    const key = `p|${d.id}|${w}|${tw}|${len}|${p.skin || ''}|${glow}|${L}`;
-    let s = sprites.atlas.get(key);
-    if (s) return s;
-    const halfW = Math.max(w, tw) / 2 + (d.fin ? 0.9 : 0.1);
-    const hx = Math.ceil(halfW * L), top = Math.ceil(0.6 * L);
-    const cw = hx * 2, ch = top + Math.ceil((len + 0.3) * L);
-    const img = FS.GL.bake(cw, ch, (g) => {
-      g.setTransform(L, 0, 0, L, hx, top);
-      FS.drawPart(g, p, 0, 1 / L, { glow });
+  // Parts: the vector drawing from parts.js at pixelsPerMetre art pixels per metre, snapped to the palette.
+  function partSprite(part, pixelsPerMetre, glow, sunStep = 8, sunlit = 1) {
+    const partType = part.type;
+    const width = part.width || (partType.width === 'auto' ? 1.25 : partType.width);
+    const topWidth = part.topWidth || partType.topWidth || width;
+    const length = part.length || partType.length;
+
+    //is me now :)
+    // ugh have to edit this
+
+    // New art at full zoom, and at ½ and ¼ zoom by halving it once or twice.
+    const halvings = { 16: 0, 8: 1, 4: 2 }[pixelsPerMetre]; // further out, parts are only a few pixels, so the old art stays
+    if (halvings !== undefined) {
+      const newArt = newSprite(part, width, topWidth, length);
+      if (newArt) {
+        const halvedKey = `${newArt.cacheKey}|half${halvings}`; // its own key for each size
+        if (!parsedCache.has(halvedKey)) {
+          let halved = newArt.sprite;
+          for (let step = 0; step < halvings; step++) {
+            halved = Flatspace.Sprites.halve(halved);
+          }
+          parsedCache.set(halvedKey, halved);
+        }
+        const sprite = parsedCache.get(halvedKey);
+
+        const nozzleGlow = partType.engine ? glow : 0; //only engines glow
+        const mirrored = !!part.flip;
+        const litKey = `${halvedKey}|${sunStep}|${sunlit}|${nozzleGlow}|${mirrored}`;
+        let atlasEntry = sprites.atlas.get(litKey);
+        if (atlasEntry) {
+          return atlasEntry;
+        }
+
+        const sunAngle = sunStep * (Flatspace.TAU / 32);
+        let sunAcross = Math.sin(sunAngle);
+        const sunAlong = Math.cos(sunAngle);
+        if (mirrored) {
+          sunAcross = -sunAcross;
+        }
+        atlasEntry = sprites.atlas.add(
+          litKey,
+          Flatspace.Sprites.light(sprite, sunAcross, sunAlong, sunlit, nozzleGlow),
+        );
+        if (atlasEntry) {
+          // the centre in the halved sprite's own pixels: the full-size centre halved, so odd sizes don't drift
+          atlasEntry.originX = newArt.sprite.width / 2 / Math.pow(2, halvings);
+          atlasEntry.originY = newArt.sprite.height / 2 / Math.pow(2, halvings);
+          atlasEntry.lit = true;
+        }
+        return atlasEntry;
+      }
+    }
+
+    const cacheKey = `p|${partType.id}|${width}|${topWidth}|${length}|${part.skin || ''}|${glow}|${pixelsPerMetre}`;
+    let atlasEntry = sprites.atlas.get(cacheKey);
+    if (atlasEntry) {
+      return atlasEntry;
+    }
+    const halfWidth = Math.max(width, topWidth) / 2 + (partType.fin ? 0.9 : 0.1);
+    const halfWidthPixels = Math.ceil(halfWidth * pixelsPerMetre);
+    const topMargin = Math.ceil(0.6 * pixelsPerMetre);
+    const canvasWidth = halfWidthPixels * 2;
+    const canvasHeight = topMargin + Math.ceil((length + 0.3) * pixelsPerMetre);
+    const image = Flatspace.WebGL.bake(canvasWidth, canvasHeight, (graphics) => {
+      graphics.setTransform(pixelsPerMetre, 0, 0, pixelsPerMetre, halfWidthPixels, topMargin);
+      Flatspace.drawPart(graphics, part, 0, 1 / pixelsPerMetre, { glow });
     });
-    s = sprites.atlas.add(key, img);
-    if (s) { s.ox = hx; s.oy = top + (len / 2) * L; }
-    return s;
+    atlasEntry = sprites.atlas.add(cacheKey, image);
+    if (atlasEntry) {
+      atlasEntry.originX = halfWidthPixels;
+      atlasEntry.originY = topMargin + (length / 2) * pixelsPerMetre;
+    }
+    return atlasEntry;
   }
 
   // Parachute canopies, in the drawing frame of drawVessel in render.js.
-  function chuteSprite(full, L) {
-    const key = `chute|${full ? 1 : 0}|${L}`;
-    let s = sprites.atlas.get(key);
-    if (s) return s;
-    const dist = full ? 11 : 6, cw = full ? 7.5 : 1.6;
-    const hx = Math.ceil((cw + 0.5) * L), up = Math.ceil((dist + cw + 0.5) * L), down = Math.ceil(0.5 * L);
-    const img = FS.GL.bake(hx * 2, up + down, (g) => {
-      g.setTransform(L, 0, 0, L, hx, up);
-      const px = 1 / L;
-      g.strokeStyle = '#e8e4da';
-      g.lineWidth = px * 1.2;
-      g.beginPath();
-      g.moveTo(0, 0); g.lineTo(-cw, -dist);
-      g.moveTo(0, 0); g.lineTo(cw, -dist);
-      g.moveTo(0, 0); g.lineTo(0, -dist - cw * 0.3);
-      g.stroke();
-      g.beginPath();
-      g.moveTo(-cw, -dist);
-      g.quadraticCurveTo(-cw, -dist - cw * 0.9, 0, -dist - cw * 0.9);
-      g.quadraticCurveTo(cw, -dist - cw * 0.9, cw, -dist);
-      g.quadraticCurveTo(0, -dist - cw * 0.25, -cw, -dist);
-      g.fillStyle = '#e8622a'; g.fill();
-      g.fillStyle = '#f4efe6';
-      g.beginPath();
-      g.moveTo(-cw * 0.35, -dist - cw * 0.12);
-      g.quadraticCurveTo(-cw * 0.3, -dist - cw * 0.85, 0, -dist - cw * 0.88);
-      g.quadraticCurveTo(cw * 0.3, -dist - cw * 0.85, cw * 0.35, -dist - cw * 0.12);
-      g.closePath(); g.fill();
-    }, 0.3);
-    s = sprites.atlas.add(key, img);
-    if (s) { s.ox = hx; s.oy = up; }
-    return s;
+  function chuteSprite(full, pixelsPerMetre) {
+    const key = `chute|${full ? 1 : 0}|${pixelsPerMetre}`;
+    let atlasEntry = sprites.atlas.get(key);
+    if (atlasEntry) {
+      return atlasEntry;
+    }
+    const canopyDistance = full ? 11 : 6;
+    const canopyWidth = full ? 7.5 : 1.6;
+    const halfWidthPixels = Math.ceil((canopyWidth + 0.5) * pixelsPerMetre);
+    const abovePixels = Math.ceil((canopyDistance + canopyWidth + 0.5) * pixelsPerMetre);
+    const down = Math.ceil(0.5 * pixelsPerMetre);
+    const image = Flatspace.WebGL.bake(
+      halfWidthPixels * 2,
+      abovePixels + down,
+      (graphics) => {
+        graphics.setTransform(pixelsPerMetre, 0, 0, pixelsPerMetre, halfWidthPixels, abovePixels);
+        const pixelSize = 1 / pixelsPerMetre;
+        graphics.strokeStyle = '#e8e4da';
+        graphics.lineWidth = pixelSize * 1.2;
+        graphics.beginPath();
+        graphics.moveTo(0, 0);
+        graphics.lineTo(-canopyWidth, -canopyDistance);
+        graphics.moveTo(0, 0);
+        graphics.lineTo(canopyWidth, -canopyDistance);
+        graphics.moveTo(0, 0);
+        graphics.lineTo(0, -canopyDistance - canopyWidth * 0.3);
+        graphics.stroke();
+        graphics.beginPath();
+        graphics.moveTo(-canopyWidth, -canopyDistance);
+        graphics.quadraticCurveTo(
+          -canopyWidth,
+          -canopyDistance - canopyWidth * 0.9,
+          0,
+          -canopyDistance - canopyWidth * 0.9,
+        );
+        graphics.quadraticCurveTo(
+          canopyWidth,
+          -canopyDistance - canopyWidth * 0.9,
+          canopyWidth,
+          -canopyDistance,
+        );
+        graphics.quadraticCurveTo(0, -canopyDistance - canopyWidth * 0.25, -canopyWidth, -canopyDistance);
+        graphics.fillStyle = '#e8622a';
+        graphics.fill();
+        graphics.fillStyle = '#f4efe6';
+        graphics.beginPath();
+        graphics.moveTo(-canopyWidth * 0.35, -canopyDistance - canopyWidth * 0.12);
+        graphics.quadraticCurveTo(
+          -canopyWidth * 0.3,
+          -canopyDistance - canopyWidth * 0.85,
+          0,
+          -canopyDistance - canopyWidth * 0.88,
+        );
+        graphics.quadraticCurveTo(
+          canopyWidth * 0.3,
+          -canopyDistance - canopyWidth * 0.85,
+          canopyWidth * 0.35,
+          -canopyDistance - canopyWidth * 0.12,
+        );
+        graphics.closePath();
+        graphics.fill();
+      },
+      0.3,
+    );
+    atlasEntry = sprites.atlas.add(key, image);
+    if (atlasEntry) {
+      atlasEntry.originX = halfWidthPixels;
+      atlasEntry.originY = abovePixels;
+    }
+    return atlasEntry;
   }
 
   // The launch site, baked in 32 m wide tiles (only the visible ones), in the pad's frame
   // (x along the ground, y up). Same drawing as render.js.
-  const SC_X0 = -164, SC_X1 = 132, SC_TILE = 32, SC_Y0 = -4, SC_Y1 = 41;
-  function drawSpaceCenterVector(g, t) {
-    const px = g.__px;
-    g.lineWidth = px;
-    g.strokeStyle = 'rgba(15,18,24,0.7)';
-    g.fillStyle = '#6f7378';
-    g.fillRect(-14, -3, 28, 3); g.strokeRect(-14, -3, 28, 3);
-    g.fillStyle = '#4b4f55';
-    g.fillRect(-4, -0.4, 8, 0.4);
-    g.fillStyle = '#a33b2b';
-    g.fillRect(7, 0, 2.6, 34);
-    g.strokeStyle = 'rgba(40,10,5,0.8)';
-    for (let y = 0; y < 34; y += 2.6) { g.beginPath(); g.moveTo(7, y); g.lineTo(9.6, y + 2.6); g.moveTo(9.6, y); g.lineTo(7, y + 2.6); g.stroke(); }
-    g.fillStyle = '#d9d4c7'; g.fillRect(6.5, 34, 3.6, 2);
-    const blds = [[-160, 46, 38, '#c9ccd1'], [-95, 22, 14, '#b4b9bf'], [-60, 12, 9, '#9da3aa'], [70, 30, 10, '#bfc3c8'], [110, 16, 22, '#aeb3b9']];
-    for (const [x, w, h, col] of blds) {
-      g.fillStyle = col; g.fillRect(x, -2, w, h + 2); g.strokeStyle = 'rgba(15,18,24,0.6)'; g.strokeRect(x, -2, w, h + 2);
-      g.fillStyle = 'rgba(40,70,110,0.55)';
-      for (let wy = 3; wy < h - 2; wy += 4) for (let wx = x + 2; wx < x + w - 3; wx += 4) g.fillRect(wx, wy, 2, 1.6);
+  const SC_X0 = -164;
+  const SC_X1 = 132;
+  const SC_TILE = 32;
+  const SC_Y0 = -4;
+  const SC_Y1 = 41;
+  function drawSpaceCenterVector(graphics, time) {
+    const pixelSize = graphics.__pixelSize;
+    graphics.lineWidth = pixelSize;
+    graphics.strokeStyle = 'rgba(15,18,24,0.7)';
+    graphics.fillStyle = '#6f7378';
+    graphics.fillRect(-14, -3, 28, 3);
+    graphics.strokeRect(-14, -3, 28, 3);
+    graphics.fillStyle = '#4b4f55';
+    graphics.fillRect(-4, -0.4, 8, 0.4);
+    graphics.fillStyle = '#a33b2b';
+    graphics.fillRect(7, 0, 2.6, 34);
+    graphics.strokeStyle = 'rgba(40,10,5,0.8)';
+    for (let lineY = 0; lineY < 34; lineY += 2.6) {
+      graphics.beginPath();
+      graphics.moveTo(7, lineY);
+      graphics.lineTo(9.6, lineY + 2.6);
+      graphics.moveTo(9.6, lineY);
+      graphics.lineTo(7, lineY + 2.6);
+      graphics.stroke();
     }
-    g.fillStyle = '#2d4e7c'; g.fillRect(-150, -2, 18, 26);
+    graphics.fillStyle = '#d9d4c7';
+    graphics.fillRect(6.5, 34, 3.6, 2);
+    const buildings = [
+      [-160, 46, 38, '#c9ccd1'],
+      [-95, 22, 14, '#b4b9bf'],
+      [-60, 12, 9, '#9da3aa'],
+      [70, 30, 10, '#bfc3c8'],
+      [110, 16, 22, '#aeb3b9'],
+    ];
+    for (const [buildingX, buildingWidth, buildingHeight, colour] of buildings) {
+      graphics.fillStyle = colour;
+      graphics.fillRect(buildingX, -2, buildingWidth, buildingHeight + 2);
+      graphics.strokeStyle = 'rgba(15,18,24,0.6)';
+      graphics.strokeRect(buildingX, -2, buildingWidth, buildingHeight + 2);
+      graphics.fillStyle = 'rgba(40,70,110,0.55)';
+      for (let windowY = 3; windowY < buildingHeight - 2; windowY += 4) {
+        for (let windowX = buildingX + 2; windowX < buildingX + buildingWidth - 3; windowX += 4) {
+          graphics.fillRect(windowX, windowY, 2, 1.6);
+        }
+      }
+    }
+    graphics.fillStyle = '#2d4e7c';
+    graphics.fillRect(-150, -2, 18, 26);
   }
-  function scTile(i, L) {
-    const key = `sc|${i}|${L}`;
-    let s = sprites.atlas.get(key);
-    if (s) return s;
-    const x0 = SC_X0 + i * SC_TILE;
-    const img = FS.GL.bake(Math.round(SC_TILE * L), Math.round((SC_Y1 - SC_Y0) * L), (g) => {
-      g.setTransform(L, 0, 0, -L, -x0 * L, SC_Y1 * L); // y up
-      g.__px = 1 / L;
-      drawSpaceCenterVector(g);
-    });
-    return sprites.atlas.add(key, img);
+  function scTile(tileIndex, pixelsPerMetre) {
+    const key = `sc|${tileIndex}|${pixelsPerMetre}`;
+    let atlasEntry = sprites.atlas.get(key);
+    if (atlasEntry) {
+      return atlasEntry;
+    }
+    const tileStartX = SC_X0 + tileIndex * SC_TILE;
+    const image = Flatspace.WebGL.bake(
+      Math.round(SC_TILE * pixelsPerMetre),
+      Math.round((SC_Y1 - SC_Y0) * pixelsPerMetre),
+      (graphics) => {
+        graphics.setTransform(
+          pixelsPerMetre,
+          0,
+          0,
+          -pixelsPerMetre,
+          -tileStartX * pixelsPerMetre,
+          SC_Y1 * pixelsPerMetre,
+        ); // y up
+        graphics.__pixelSize = 1 / pixelsPerMetre;
+        drawSpaceCenterVector(graphics);
+      },
+    );
+    return sprites.atlas.add(key, image);
   }
-  function drawSpaceCenter(cam, b, t, L) {
-    const ang = b.pad.lon + FS.bodyRot(b, t);
-    const c = FS.bodyAbs(b, t);
-    const base = { x: c.x + Math.cos(ang) * (b.R + b.pad.height), y: c.y + Math.sin(ang) * (b.R + b.pad.height) };
-    const bs = w2s(cam, base.x, base.y);
-    const reachPx = Math.hypot(W, H) / 2 + 200 * cam.s;
-    if (Math.hypot(bs.x - W / 2, bs.y - H / 2) > reachPx) return;
+  function drawSpaceCenter(camera, body, time, pixelsPerMetre) {
+    const angle = body.launchPad.longitude + Flatspace.bodyRotation(body, time);
+    const centre = Flatspace.bodyAbsolutePosition(body, time);
+    const base = {
+      x: centre.x + Math.cos(angle) * (body.radius + body.launchPad.height),
+      y: centre.y + Math.sin(angle) * (body.radius + body.launchPad.height),
+    };
+    const baseScreen = worldToScreenPoint(camera, base.x, base.y);
+    const reachPixels = Math.hypot(viewWidth, viewHeight) / 2 + 200 * camera.scale;
+    if (Math.hypot(baseScreen.x - viewWidth / 2, baseScreen.y - viewHeight / 2) > reachPixels) {
+      return;
+    }
     // pad frame on screen: +x along the ground (east), +y up
-    const scr = (ang - Math.PI / 2) - cam.rot; // rotation of the pad's x axis, world → camera
-    const size = (cam.s * DPR) / L;
-    for (let i = 0; i * SC_TILE + SC_X0 < SC_X1; i++) {
-      const midX = SC_X0 + (i + 0.5) * SC_TILE, midY = (SC_Y0 + SC_Y1) / 2;
-      const cx = Math.cos(scr), sx = Math.sin(scr);
-      const wx = midX * cx - midY * sx, wy = midX * sx + midY * cx; // camera-frame metres
-      const sxp = bs.x + wx * cam.s, syp = bs.y - wy * cam.s;
-      const rad = (SC_TILE * 0.75 + (SC_Y1 - SC_Y0) * 0.5) * cam.s;
-      if (sxp < -rad || syp < -rad || sxp > W + rad || syp > H + rad) continue;
-      const e = scTile(i, L);
-      if (!e) continue;
-      sprites.sprite(e, sxp * DPR, syp * DPR, size, -scr, e.w / 2, e.h / 2, null);
+    const screenRotation = angle - Math.PI / 2 - camera.rotation; // rotation of the pad's x axis, world → camera
+    const size = (camera.scale * pixelRatio) / pixelsPerMetre;
+    for (let tileIndex = 0; tileIndex * SC_TILE + SC_X0 < SC_X1; tileIndex++) {
+      const midX = SC_X0 + (tileIndex + 0.5) * SC_TILE;
+      const midY = (SC_Y0 + SC_Y1) / 2;
+      const cosRotation = Math.cos(screenRotation);
+      const sinRotation = Math.sin(screenRotation);
+      const worldX = midX * cosRotation - midY * sinRotation;
+      const worldY = midX * sinRotation + midY * cosRotation; // camera-frame metres
+      const screenX = baseScreen.x + worldX * camera.scale;
+      const screenY = baseScreen.y - worldY * camera.scale;
+      const tileRadius = (SC_TILE * 0.75 + (SC_Y1 - SC_Y0) * 0.5) * camera.scale;
+      if (
+        screenX < -tileRadius ||
+        screenY < -tileRadius ||
+        screenX > viewWidth + tileRadius ||
+        screenY > viewHeight + tileRadius
+      ) {
+        continue;
+      }
+      const entry = scTile(tileIndex, pixelsPerMetre);
+      if (!entry) {
+        continue;
+      }
+      sprites.sprite(
+        entry,
+        screenX * pixelRatio,
+        screenY * pixelRatio,
+        size,
+        -screenRotation,
+        entry.width / 2,
+        entry.height / 2,
+        null,
+      );
     }
     // beacon on the tower top
-    if (t % 2 < 1) {
-      const bx = 8.4, by = 36.4;
-      const cx = Math.cos(scr), sx = Math.sin(scr);
-      const wx = bx * cx - by * sx, wy = bx * sx + by * cx;
-      const r = P.ramps.red[0];
-      block((bs.x + wx * cam.s) * DPR, (bs.y - wy * cam.s) * DPR, Math.max(0.8 * cam.s * DPR, size * 2), Math.max(0.8 * cam.s * DPR, size * 2), -scr, [r[0] / 255, r[1] / 255, r[2] / 255, 1]);
+    if (time % 2 < 1) {
+      const beaconX = 8.4;
+      const beaconY = 36.4;
+      const cosRotation = Math.cos(screenRotation);
+      const sinRotation = Math.sin(screenRotation);
+      const worldX = beaconX * cosRotation - beaconY * sinRotation;
+      const worldY = beaconX * sinRotation + beaconY * cosRotation;
+      const beaconColour = Palette.ramps.red[0];
+      block(
+        (baseScreen.x + worldX * camera.scale) * pixelRatio,
+        (baseScreen.y - worldY * camera.scale) * pixelRatio,
+        Math.max(0.8 * camera.scale * pixelRatio, size * 2),
+        Math.max(0.8 * camera.scale * pixelRatio, size * 2),
+        -screenRotation,
+        [beaconColour[0] / 255, beaconColour[1] / 255, beaconColour[2] / 255, 1],
+      );
     }
   }
 
-  // Pixel puffs for particles: discs n art pixels across, white with a lighter core
+  // Pixel puffs for particles: discs a few art pixels across, white with a lighter core
   // (tinted from a palette ramp when drawn).
-  function puff(n) {
-    const key = 'puff|' + n;
-    let s = sprites.atlas.get(key);
-    if (s) return s;
-    const c = document.createElement('canvas');
-    c.width = c.height = n;
-    const g = c.getContext('2d');
-    const img = g.createImageData(n, n);
-    const r = n / 2;
-    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-      const dx = x + 0.5 - r, dy = y + 0.5 - r;
-      const q = Math.hypot(dx, dy) / r;
-      if (q > (n <= 2 ? 1.5 : 1)) continue;
-      const v = q < 0.45 ? 255 : q < 0.8 ? 215 : 180;
-      const i = (y * n + x) * 4;
-      img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+  function puff(size) {
+    const key = 'puff|' + size;
+    let atlasEntry = sprites.atlas.get(key);
+    if (atlasEntry) {
+      return atlasEntry;
     }
-    g.putImageData(img, 0, 0);
-    return sprites.atlas.add(key, c);
+    const puffCanvas = document.createElement('canvas');
+    puffCanvas.width = puffCanvas.height = size;
+    const graphics = puffCanvas.getContext('2d');
+    const image = graphics.createImageData(size, size);
+    const radius = size / 2;
+    for (let pixelY = 0; pixelY < size; pixelY++) {
+      for (let pixelX = 0; pixelX < size; pixelX++) {
+        const deltaX = pixelX + 0.5 - radius;
+        const deltaY = pixelY + 0.5 - radius;
+        const distanceFraction = Math.hypot(deltaX, deltaY) / radius;
+        if (distanceFraction > (size <= 2 ? 1.5 : 1)) {
+          continue;
+        }
+        const brightness = distanceFraction < 0.45 ? 255 : distanceFraction < 0.8 ? 215 : 180;
+        const byte = (pixelY * size + pixelX) * 4;
+        image.data[byte] = image.data[byte + 1] = image.data[byte + 2] = brightness;
+        image.data[byte + 3] = 255;
+      }
+    }
+    graphics.putImageData(image, 0, 0);
+    return sprites.atlas.add(key, puffCanvas);
   }
 
   // ---------- Vessels ----------
-  function vesselFrame(cam, ves, t) {
-    const c = V.add(FS.bodyAbs(ves.body, t), ves.r);
-    return { sp: w2s(cam, c.x, c.y), th: -(ves.angle - cam.rot) + Math.PI / 2 };
+  function vesselFrame(camera, vessel, time) {
+    const centre = Vector.add(Flatspace.bodyAbsolutePosition(vessel.body, time), vessel.position);
+    return {
+      screenCentre: worldToScreenPoint(camera, centre.x, centre.y),
+      screenAngle: -(vessel.angle - camera.rotation) + Math.PI / 2,
+    };
   }
-  R.partToScreen = (cam, ves, t, pt) => {
-    const f = vesselFrame(cam, ves, t);
-    const x = pt.x * cam.s, y = -pt.y * cam.s, c = Math.cos(f.th), s = Math.sin(f.th);
-    return { x: f.sp.x + x * c - y * s, y: f.sp.y + x * s + y * c };
+  RenderGL.partToScreen = (camera, vessel, time, point) => {
+    const frame = vesselFrame(camera, vessel, time);
+    const scaledX = point.x * camera.scale;
+    const scaledY = -point.y * camera.scale;
+    const cosAngle = Math.cos(frame.screenAngle);
+    const sinAngle = Math.sin(frame.screenAngle);
+    return {
+      x: frame.screenCentre.x + scaledX * cosAngle - scaledY * sinAngle,
+      y: frame.screenCentre.y + scaledX * sinAngle + scaledY * cosAngle,
+    };
   };
-  R.screenToPart = (cam, ves, t, sx, sy) => {
-    const f = vesselFrame(cam, ves, t);
-    const dx = (sx - f.sp.x) / cam.s, dy = (sy - f.sp.y) / cam.s, c = Math.cos(-f.th), s = Math.sin(-f.th);
-    return { x: dx * c - dy * s, y: -(dx * s + dy * c) };
+  RenderGL.screenToPart = (camera, vessel, time, screenX, screenY) => {
+    const frame = vesselFrame(camera, vessel, time);
+    const deltaX = (screenX - frame.screenCentre.x) / camera.scale;
+    const deltaY = (screenY - frame.screenCentre.y) / camera.scale;
+    const cosAngle = Math.cos(-frame.screenAngle);
+    const sinAngle = Math.sin(-frame.screenAngle);
+    return { x: deltaX * cosAngle - deltaY * sinAngle, y: -(deltaX * sinAngle + deltaY * cosAngle) };
   };
 
   function arrowSprite() {
-    let s = sprites.atlas.get('arrow');
-    if (s) return s;
-    const img = FS.GL.bake(9, 9, (g) => {
-      g.fillStyle = '#ffd27a';
-      g.beginPath(); g.moveTo(8.5, 4.5); g.lineTo(0.5, 0.5); g.lineTo(2.5, 4.5); g.lineTo(0.5, 8.5); g.closePath(); g.fill();
-    }, 0.5);
-    return sprites.atlas.add('arrow', img);
+    let atlasEntry = sprites.atlas.get('arrow');
+    if (atlasEntry) {
+      return atlasEntry;
+    }
+    const image = Flatspace.WebGL.bake(
+      9,
+      9,
+      (graphics) => {
+        graphics.fillStyle = '#ffd27a';
+        graphics.beginPath();
+        graphics.moveTo(8.5, 4.5);
+        graphics.lineTo(0.5, 0.5);
+        graphics.lineTo(2.5, 4.5);
+        graphics.lineTo(0.5, 8.5);
+        graphics.closePath();
+        graphics.fill();
+      },
+      0.5,
+    );
+    return sprites.atlas.add('arrow', image);
   }
 
-  function drawVessel(cam, ves, t, k, tint) {
-    const f = vesselFrame(cam, ves, t);
-    const len = ves.layout.height * cam.s;
-    const L = 16 / Math.pow(2, k);
-    if (len < 6 || L < 0.25) {
-      const e = arrowSprite();
-      const a = ves.isDebris ? 0.6 : 1;
-      if (e) sprites.sprite(e, f.sp.x * DPR, f.sp.y * DPR, 1.5 * DPR, -(ves.angle - cam.rot), 4.5, 4.5, [1, 1, 1, a]);
+  function drawVessel(camera, vessel, time, zoomLevel, tint) {
+    const frame = vesselFrame(camera, vessel, time);
+    const craftLength = vessel.layout.height * camera.scale;
+    const pixelsPerMetre = 16 / Math.pow(2, zoomLevel);
+    if (craftLength < 6 || pixelsPerMetre < 0.25) {
+      const arrowEntry = arrowSprite();
+      const alpha = vessel.isDebris ? 0.6 : 1;
+      if (arrowEntry) {
+        sprites.sprite(
+          arrowEntry,
+          frame.screenCentre.x * pixelRatio,
+          frame.screenCentre.y * pixelRatio,
+          1.5 * pixelRatio,
+          -(vessel.angle - camera.rotation),
+          4.5,
+          4.5,
+          [1, 1, 1, alpha],
+        );
+      }
       return;
     }
-    const size = (cam.s * DPR) / L;
-    const th = f.th;
-    const toScreen = (x, y) => { // drawing frame (x, y down the rocket) → device px
-      const c = Math.cos(th), s = Math.sin(th);
-      return { x: (f.sp.x + (x * c - y * s) * cam.s) * DPR, y: (f.sp.y + (x * s + y * c) * cam.s) * DPR };
+    const size = (camera.scale * pixelRatio) / pixelsPerMetre;
+    const drawAngle = frame.screenAngle;
+    const toScreen = (drawX, drawY) => {
+      // drawing frame (x, y down the rocket) → device px
+      const cosAngle = Math.cos(drawAngle);
+      const sinAngle = Math.sin(drawAngle);
+      return {
+        x: (frame.screenCentre.x + (drawX * cosAngle - drawY * sinAngle) * camera.scale) * pixelRatio,
+        y: (frame.screenCentre.y + (drawX * sinAngle + drawY * cosAngle) * camera.scale) * pixelRatio,
+      };
     };
-    const chutes = ves.parts.filter((p) => p.chute === 'semi' || p.chute === 'full');
+    const chutes = vessel.parts.filter((part) => part.chute === 'halfOpen' || part.chute === 'full');
     if (chutes.length) {
-      const cp = chutes[0];
-      const tip = V.add(cp.c, V.scale(cp.axis, cp.len / 2));
-      const e = chuteSprite(chutes.some((p) => p.chute === 'full'), L);
-      if (e) { const at = toScreen(tip.x, -tip.y); sprites.sprite(e, at.x, at.y, size, th, e.ox, e.oy, tint); }
+      const chutePart = chutes[0];
+      const chuteTip = Vector.add(chutePart.centreOffset, Vector.scale(chutePart.axis, chutePart.length / 2));
+      const chuteEntry = chuteSprite(
+        chutes.some((part) => part.chute === 'full'),
+        pixelsPerMetre,
+      );
+      if (chuteEntry) {
+        const screenAt = toScreen(chuteTip.x, -chuteTip.y);
+        sprites.sprite(
+          chuteEntry,
+          screenAt.x,
+          screenAt.y,
+          size,
+          drawAngle,
+          chuteEntry.originX,
+          chuteEntry.originY,
+          tint,
+        );
+      }
     }
     const glowMap = new Map();
-    if (ves.nozzles) ves.nozzles.forEach((n) => glowMap.set(n.part, n.power));
-    for (const p of ves.parts) {
-      const glow = Math.round((glowMap.get(p) || 0) * 2) / 2;
-      const e = partSprite(p, L, glow);
-      if (!e) continue;
-      const at = toScreen(p.c.x, -p.c.y);
-      sprites.sprite(e, at.x, at.y, size, th - p.rot, e.ox, e.oy, tint, !!p.flip);
+    if (vessel.nozzles) {
+      vessel.nozzles.forEach((nozzle) => glowMap.set(nozzle.part, nozzle.power));
+    }
+    const sunlit = Math.round(lightAt(vessel) * 4) / 4;
+    const SUN_STEP = Flatspace.TAU / 32;
+    const noTint = [1, 1, 1, tint ? tint[3] : 1];
+    for (const part of vessel.parts) {
+      const glow = Math.round((glowMap.get(part) || 0) * 2) / 2;
+      const noseAngle = vessel.angle + part.rotation;
+      const sunStep = ((Math.round(noseAngle / SUN_STEP) % 32) + 32) % 32;
+      const atlasEntry = partSprite(part, pixelsPerMetre, glow, sunStep, sunlit);
+      if (!atlasEntry) {
+        continue;
+      }
+      const screenAt = toScreen(part.centreOffset.x, -part.centreOffset.y);
+      const spriteTint = atlasEntry.lit ? noTint : tint;
+      sprites.sprite(
+        atlasEntry,
+        screenAt.x,
+        screenAt.y,
+        size,
+        drawAngle - part.rotation,
+        atlasEntry.originX,
+        atlasEntry.originY,
+        spriteTint,
+        !!part.flip,
+      );
     }
   }
 
   // ---------- Particles ----------
-  const FIRE = [P.ramps.gold[4], P.ramps.gold[3], P.ramps.orange[4], P.ramps.orange[3], P.ramps.orange[2], P.ramps.orange[1]];
-  const BLUE = [P.ramps.blue[7], P.ramps.blue[6], P.ramps.blue[5], P.ramps.blue[4]];
-  const SMOKE = [P.ramps.metal[7], P.ramps.metal[6], P.ramps.metal[6], P.ramps.metal[5], P.ramps.metal[4]];
-  const rampAt = (ramp, f) => ramp[Math.min(ramp.length - 1, Math.floor(f * ramp.length))];
+  const FIRE = [
+    Palette.ramps.gold[4],
+    Palette.ramps.gold[3],
+    Palette.ramps.orange[4],
+    Palette.ramps.orange[3],
+    Palette.ramps.orange[2],
+    Palette.ramps.orange[1],
+  ];
+  const BLUE = [Palette.ramps.blue[7], Palette.ramps.blue[6], Palette.ramps.blue[5], Palette.ramps.blue[4]];
+  const SMOKE = [
+    Palette.ramps.metal[7],
+    Palette.ramps.metal[6],
+    Palette.ramps.metal[6],
+    Palette.ramps.metal[5],
+    Palette.ramps.metal[4],
+  ];
+  const rampAt = (ramp, fraction) => ramp[Math.min(ramp.length - 1, Math.floor(fraction * ramp.length))];
 
-  function drawParticles(cam, body, t, cell, tint) {
-    const base = FS.bodyAbs(body, t);
-    const list = FS.Render.particles;
+  function drawParticles(camera, body, time, cell, tint) {
+    const base = Flatspace.bodyAbsolutePosition(body, time);
+    const list = Flatspace.Render.particles;
     for (const pass of ['smoke', 'fire']) {
-      for (const q of list) {
-        const smoke = q.kind === 'smoke';
-        if ((pass === 'smoke') !== smoke) continue;
-        const f = q.life / q.max;
-        const sizeM = q.size + q.grow * q.life;
-        const n = FS.clamp(Math.round(sizeM / cell), 1, 40);
-        const sp = w2s(cam, base.x + q.x, base.y + q.y);
-        const rpx = n * cell * cam.s;
-        if (sp.x < -rpx || sp.y < -rpx || sp.x > W + rpx || sp.y > H + rpx) continue;
-        const e = puff(n);
-        if (!e) continue;
-        const col = smoke ? rampAt(SMOKE, f) : q.kind === 'blue' ? rampAt(BLUE, f) : rampAt(FIRE, f);
-        const k = smoke ? tint : [1, 1, 1];
-        const a = smoke ? (1 - f) * 0.75 : Math.max(0.05, (1 - f) * (1 - f) * 1.1);
-        sprites.sprite(e, sp.x * DPR, sp.y * DPR, cell * cam.s * DPR, -cam.rot * 0, n / 2, n / 2, [(col[0] / 255) * k[0], (col[1] / 255) * k[1], (col[2] / 255) * k[2], a]);
+      for (const particle of list) {
+        const smoke = particle.kind === 'smoke';
+        if ((pass === 'smoke') !== smoke) {
+          continue;
+        }
+        const lifeFraction = particle.life / particle.max;
+        const sizeMetres = particle.size + particle.grow * particle.life;
+        const size = Flatspace.clamp(Math.round(sizeMetres / cell), 1, 40);
+        const screenPoint = worldToScreenPoint(camera, base.x + particle.x, base.y + particle.y);
+        const radiusPixels = size * cell * camera.scale;
+        if (
+          screenPoint.x < -radiusPixels ||
+          screenPoint.y < -radiusPixels ||
+          screenPoint.x > viewWidth + radiusPixels ||
+          screenPoint.y > viewHeight + radiusPixels
+        ) {
+          continue;
+        }
+        const puffEntry = puff(size);
+        if (!puffEntry) {
+          continue;
+        }
+        const colour = smoke
+          ? rampAt(SMOKE, lifeFraction)
+          : particle.kind === 'blue'
+            ? rampAt(BLUE, lifeFraction)
+            : rampAt(FIRE, lifeFraction);
+        const particleTint = smoke ? tint : [1, 1, 1];
+        const alpha = smoke
+          ? (1 - lifeFraction) * 0.75
+          : Math.max(0.05, (1 - lifeFraction) * (1 - lifeFraction) * 1.1);
+        sprites.sprite(
+          puffEntry,
+          screenPoint.x * pixelRatio,
+          screenPoint.y * pixelRatio,
+          cell * camera.scale * pixelRatio,
+          -camera.rotation * 0,
+          size / 2,
+          size / 2,
+          [
+            (colour[0] / 255) * particleTint[0],
+            (colour[1] / 255) * particleTint[1],
+            (colour[2] / 255) * particleTint[2],
+            alpha,
+          ],
+        );
       }
     }
   }
 
   // Reentry: a pixel glow ahead of the craft and streaks behind it.
-  function drawReentry(cam, ves, t, cell) {
-    if (ves.heat <= 0.01) return;
-    const b = ves.body;
-    const vAir = V.sub(ves.v, FS.airVel(b, ves.r));
-    const dir = V.norm(vAir);
-    const c = V.add(FS.bodyAbs(b, t), ves.r);
-    const lead = V.add(c, V.scale(dir, ves.layout.height * 0.45));
-    const sp = w2s(cam, lead.x, lead.y);
-    const n = FS.clamp(Math.round((ves.layout.height * 0.9) / cell), 3, 40);
-    const e = puff(n);
-    const hot = ves.heat;
-    const col = rampAt(FIRE, 1 - hot);
-    if (e) sprites.sprite(e, sp.x * DPR, sp.y * DPR, cell * cam.s * DPR, 0, n / 2, n / 2, [col[0] / 255, col[1] / 255, col[2] / 255, hot * 0.9]);
-    const sd = w2s(cam, lead.x - dir.x * 40, lead.y - dir.y * 40);
-    const ang = Math.atan2(sd.y - sp.y, sd.x - sp.x);
-    const len = Math.hypot(sd.x - sp.x, sd.y - sp.y);
-    const thick = Math.max(1, cell * cam.s) * DPR;
-    const sc = rampAt(FIRE, 0.4);
-    for (let i = -2; i <= 2; i++) {
-      const off = i * n * cell * cam.s * 0.25;
-      const ox = -Math.sin(ang) * off, oy = Math.cos(ang) * off;
-      block((sp.x + ox + Math.cos(ang) * len / 2) * DPR, (sp.y + oy + Math.sin(ang) * len / 2) * DPR, len * DPR * (0.6 + 0.4 * Math.random()), thick, ang, [sc[0] / 255, sc[1] / 255, sc[2] / 255, hot * 0.7]);
+  function drawReentry(camera, vessel, time, cell) {
+    if (vessel.heat <= 0.01) {
+      return;
+    }
+    const body = vessel.body;
+    const vAir = Vector.subtract(vessel.velocity, Flatspace.airVelocity(body, vessel.position));
+    const direction = Vector.normalise(vAir);
+    const centre = Vector.add(Flatspace.bodyAbsolutePosition(body, time), vessel.position);
+    const lead = Vector.add(centre, Vector.scale(direction, vessel.layout.height * 0.45));
+    const screenPoint = worldToScreenPoint(camera, lead.x, lead.y);
+    const size = Flatspace.clamp(Math.round((vessel.layout.height * 0.9) / cell), 3, 40);
+    const puffEntry = puff(size);
+    const heat = vessel.heat;
+    const colour = rampAt(FIRE, 1 - heat);
+    if (puffEntry) {
+      sprites.sprite(
+        puffEntry,
+        screenPoint.x * pixelRatio,
+        screenPoint.y * pixelRatio,
+        cell * camera.scale * pixelRatio,
+        0,
+        size / 2,
+        size / 2,
+        [colour[0] / 255, colour[1] / 255, colour[2] / 255, heat * 0.9],
+      );
+    }
+    const trailPoint = worldToScreenPoint(camera, lead.x - direction.x * 40, lead.y - direction.y * 40);
+    const angle = Math.atan2(trailPoint.y - screenPoint.y, trailPoint.x - screenPoint.x);
+    const trailLength = Math.hypot(trailPoint.x - screenPoint.x, trailPoint.y - screenPoint.y);
+    const thick = Math.max(1, cell * camera.scale) * pixelRatio;
+    const streakColour = rampAt(FIRE, 0.4);
+    for (let streak = -2; streak <= 2; streak++) {
+      const offset = streak * size * cell * camera.scale * 0.25;
+      const offsetX = -Math.sin(angle) * offset;
+      const offsetY = Math.cos(angle) * offset;
+      block(
+        (screenPoint.x + offsetX + (Math.cos(angle) * trailLength) / 2) * pixelRatio,
+        (screenPoint.y + offsetY + (Math.sin(angle) * trailLength) / 2) * pixelRatio,
+        trailLength * pixelRatio * (0.6 + 0.4 * Math.random()),
+        thick,
+        angle,
+        [streakColour[0] / 255, streakColour[1] / 255, streakColour[2] / 255, heat * 0.7],
+      );
     }
   }
 
   // ---------- Flight view ----------
-  function sunlight(up) { return FS.smoothstep(-0.12, 0.25, V.dot(up, FS.SUN_DIR)); }
-  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  function sunlight(localUp) {
+    return Flatspace.smoothstep(-0.12, 0.25, Vector.dot(localUp, Flatspace.SUN_DIRECTION));
+  }
+  const mixColours = (first, second, fraction) => [
+    first[0] + (second[0] - first[0]) * fraction,
+    first[1] + (second[1] - first[1]) * fraction,
+    first[2] + (second[2] - first[2]) * fraction,
+  ];
 
   // How sunlit the craft is: dark in a planet's shadow, dimmer towards dusk in the air.
-  function lightAt(ves) {
-    const b = ves.body;
-    const S = FS.SUN_DIR;
-    const along = V.dot(ves.r, S);
-    const off = Math.abs(V.cross(ves.r, S));
-    let lt = along < 0 && off < b.R ? 0 : 1;
-    if (b.atmo && ves.altitude < b.atmo.height) lt = Math.min(1, sunlight(V.norm(ves.r)) * 1.25);
-    return lt;
+  function lightAt(vessel) {
+    const body = vessel.body;
+    const sunDirection = Flatspace.SUN_DIRECTION;
+    const along = Vector.dot(vessel.position, sunDirection);
+    const offsetFromLine = Math.abs(Vector.cross(vessel.position, sunDirection));
+    let lightLevel = along < 0 && offsetFromLine < body.radius ? 0 : 1;
+    if (body.atmosphere && vessel.altitude < body.atmosphere.height) {
+      lightLevel = Math.min(1, sunlight(Vector.normalise(vessel.position)) * 1.25);
+    }
+    return lightLevel;
   }
 
-  R.drawFlight = (g) => {
-    const ves = g.vessel, t = g.t, cam = g.cam, b = ves.body;
-    const k = levelFor(cam.s);
-    const cell = Math.pow(2, k) / 16;
-    frameInfo.level = k;
+  RenderGL.drawFlight = (theGame) => {
+    const vessel = theGame.vessel;
+    const time = theGame.time;
+    const camera = theGame.camera;
+    const currentBody = vessel.body;
+    const zoomLevel = levelFor(camera.scale);
+    const cell = Math.pow(2, zoomLevel) / 16;
+    frameInfo.level = zoomLevel;
     sprites.draws = 0;
-    gl.viewport(0, 0, cv.width, cv.height);
+    webgl.viewport(0, 0, viewCanvas.width, viewCanvas.height);
     // sky
-    const alt = ves.altitude;
-    const up = V.norm(ves.r);
-    const light = sunlight(up);
-    let skyT = 1;
-    if (b.atmo) skyT = FS.clamp(Math.pow(Math.max(alt, 0) / b.atmo.height, 0.55), 0, 1);
-    const sunsetK = b.atmo ? (1 - skyT) * Math.exp(-Math.pow(V.dot(up, FS.SUN_DIR) / 0.18, 2)) : 0;
-    const day = b.atmo ? (1 - skyT) * light : 0;
-    const top = mix([6, 9, 20], [58, 118, 196], day);
-    const bot = mix(mix([8, 12, 26], [140, 190, 236], day), [236, 132, 72], sunsetK * 0.8);
-    const starA = 1 - day * 1.15;
-    drawSky(skyStops(top, bot), FS.clamp(starA * 1.6 - 0.6, 0, 1) * 0.55, -cam.rot + 0.6);
-    sprites.begin(cv.width, cv.height);
-    drawStars(cam, starA, true, t);
+    const altitude = vessel.altitude;
+    const localUp = Vector.normalise(vessel.position);
+    const light = sunlight(localUp);
+    let spaceFraction = 1;
+    if (currentBody.atmosphere) {
+      spaceFraction = Flatspace.clamp(
+        Math.pow(Math.max(altitude, 0) / currentBody.atmosphere.height, 0.55),
+        0,
+        1,
+      );
+    }
+    const sunsetAmount = currentBody.atmosphere
+      ? (1 - spaceFraction) * Math.exp(-Math.pow(Vector.dot(localUp, Flatspace.SUN_DIRECTION) / 0.18, 2))
+      : 0;
+    const daylight = currentBody.atmosphere ? (1 - spaceFraction) * light : 0;
+    const top = mixColours([6, 9, 20], [58, 118, 196], daylight);
+    const horizonColour = mixColours(
+      mixColours([8, 12, 26], [140, 190, 236], daylight),
+      [236, 132, 72],
+      sunsetAmount * 0.8,
+    );
+    const starA = 1 - daylight * 1.15;
+    drawSky(
+      skyStops(top, horizonColour),
+      Flatspace.clamp(starA * 1.6 - 0.6, 0, 1) * 0.55,
+      -camera.rotation + 0.6,
+    );
+    sprites.begin(viewCanvas.width, viewCanvas.height);
+    drawStars(camera, starA, true, time);
     sprites.flush();
     // bodies, farthest first
-    cam.body = b;
-    const order = FS.bodies.slice().sort((a, c) => V.len(V.sub(FS.bodyAbs(c, t), cam)) - V.len(V.sub(FS.bodyAbs(a, t), cam)));
-    const L = 16 / Math.pow(2, Math.min(k, 6));
+    camera.body = currentBody;
+    const order = Flatspace.bodies
+      .slice()
+      .sort(
+        (first, second) =>
+          Vector.length(Vector.subtract(Flatspace.bodyAbsolutePosition(second, time), camera)) -
+          Vector.length(Vector.subtract(Flatspace.bodyAbsolutePosition(first, time), camera)),
+      );
+    const pixelsPerMetre = 16 / Math.pow(2, Math.min(zoomLevel, 6));
     for (const body of order) {
-      const near = drawBody(cam, body, t, k);
-      if (near && body.pad) { sprites.begin(cv.width, cv.height); drawSpaceCenter(cam, body, t, L); sprites.flush(); }
+      const near = drawBody(camera, body, time, zoomLevel);
+      if (near && body.launchPad) {
+        sprites.begin(viewCanvas.width, viewCanvas.height);
+        drawSpaceCenter(camera, body, time, pixelsPerMetre);
+        sprites.flush();
+      }
     }
     // the craft, its debris and its exhaust
-    const lt = lightAt(ves);
+    const lightLevel = lightAt(vessel);
     const night = [0.34, 0.38, 0.6];
-    const tint = mix(night, [1, 1, 1], lt);
+    const tint = mixColours(night, [1, 1, 1], lightLevel);
     const tintA = [tint[0], tint[1], tint[2], 1];
-    sprites.begin(cv.width, cv.height);
-    drawParticles(cam, b, t, cell, tint);
-    for (const d of g.debris) if (!d.dead) drawVessel(cam, d, t, k, tintA);
-    if (!ves.dead) {
-      drawVessel(cam, ves, t, k, tintA);
-      drawReentry(cam, ves, t, cell);
+    sprites.begin(viewCanvas.width, viewCanvas.height);
+    drawParticles(camera, currentBody, time, cell, tint);
+    for (const debrisVessel of theGame.debris) {
+      if (!debrisVessel.dead) {
+        drawVessel(camera, debrisVessel, time, zoomLevel, tintA);
+      }
+    }
+    if (!vessel.dead) {
+      drawVessel(camera, vessel, time, zoomLevel, tintA);
+      drawReentry(camera, vessel, time, cell);
     }
     sprites.flush();
     frameInfo.draws = sprites.draws;
-    octx.setTransform(1, 0, 0, 1, 0, 0);
-    octx.clearRect(0, 0, overlay.width, overlay.height);
+    overlayContext.setTransform(1, 0, 0, 1, 0, 0);
+    overlayContext.clearRect(0, 0, overlay.width, overlay.height);
   };
 
   // ---------- Map view ----------
   const PATCH_COLORS = ['#55d6ff', '#ffb547', '#ff6fb1'];
 
-  R.drawMap = (g) => {
-    const t = g.t, cam = g.mapCam;
-    const k = levelFor(cam.s);
-    frameInfo.level = k;
+  RenderGL.drawMap = (theGame) => {
+    const time = theGame.time;
+    const camera = theGame.mapCamera;
+    const zoomLevel = levelFor(camera.scale);
+    frameInfo.level = zoomLevel;
     sprites.draws = 0;
-    gl.viewport(0, 0, cv.width, cv.height);
-    drawSky([P.ramps.night[0]], 0.4, 0.6);
-    sprites.begin(cv.width, cv.height);
-    drawStars(cam, 0.8, false, t);
+    webgl.viewport(0, 0, viewCanvas.width, viewCanvas.height);
+    drawSky([Palette.ramps.night[0]], 0.4, 0.6);
+    sprites.begin(viewCanvas.width, viewCanvas.height);
+    drawStars(camera, 0.8, false, time);
     sprites.flush();
-    cam.body = null;
-    for (const b of FS.bodies) drawBody(cam, b, t, k);
+    camera.body = null;
+    for (const body of Flatspace.bodies) {
+      drawBody(camera, body, time, zoomLevel);
+    }
     frameInfo.draws = sprites.draws;
 
     // lines, markers and labels on the overlay
-    const ctx = octx;
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    for (const b of FS.bodies) {
-      if (!b.parent) continue;
-      const pc = FS.bodyAbs(b.parent, t);
-      const sp = w2s(cam, pc.x, pc.y);
-      ctx.strokeStyle = 'rgba(150,170,210,0.22)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(sp.x, sp.y, b.a * cam.s, 0, TAU); ctx.stroke();
-      const bc = FS.bodyAbs(b, t);
-      const bs = w2s(cam, bc.x, bc.y);
-      if (b.soi * cam.s > 6) {
-        ctx.setLineDash([4, 6]);
-        ctx.strokeStyle = 'rgba(150,170,210,0.28)';
-        ctx.beginPath(); ctx.arc(bs.x, bs.y, b.soi * cam.s, 0, TAU); ctx.stroke();
-        ctx.setLineDash([]);
+    const context = overlayContext;
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, viewWidth, viewHeight);
+    for (const body of Flatspace.bodies) {
+      if (!body.parent) {
+        continue;
+      }
+      const parentCentre = Flatspace.bodyAbsolutePosition(body.parent, time);
+      const screenPoint = worldToScreenPoint(camera, parentCentre.x, parentCentre.y);
+      context.strokeStyle = 'rgba(150,170,210,0.22)';
+      context.lineWidth = 1;
+      context.beginPath();
+      context.arc(screenPoint.x, screenPoint.y, body.semiMajorAxis * camera.scale, 0, FULL_TURN);
+      context.stroke();
+      const bodyCentre = Flatspace.bodyAbsolutePosition(body, time);
+      const bodyScreen = worldToScreenPoint(camera, bodyCentre.x, bodyCentre.y);
+      if (body.sphereOfInfluence * camera.scale > 6) {
+        context.setLineDash([4, 6]);
+        context.strokeStyle = 'rgba(150,170,210,0.28)';
+        context.beginPath();
+        context.arc(bodyScreen.x, bodyScreen.y, body.sphereOfInfluence * camera.scale, 0, FULL_TURN);
+        context.stroke();
+        context.setLineDash([]);
       }
     }
-    ctx.font = '600 12px "Saira Semi Condensed", "Arial Narrow", sans-serif';
-    ctx.textAlign = 'center';
-    for (const b of FS.bodies) {
-      const bc = FS.bodyAbs(b, t);
-      const bs = w2s(cam, bc.x, bc.y);
-      ctx.fillStyle = 'rgba(214,224,245,0.85)';
-      ctx.fillText(b.name.toUpperCase(), bs.x, bs.y + Math.max(b.R * cam.s, 4) + 16);
+    context.font = '600 12px "Saira Semi Condensed", "Arial Narrow", sans-serif';
+    context.textAlign = 'center';
+    for (const body of Flatspace.bodies) {
+      const bodyCentre = Flatspace.bodyAbsolutePosition(body, time);
+      const bodyScreen = worldToScreenPoint(camera, bodyCentre.x, bodyCentre.y);
+      context.fillStyle = 'rgba(214,224,245,0.85)';
+      context.fillText(
+        body.name.toUpperCase(),
+        bodyScreen.x,
+        bodyScreen.y + Math.max(body.radius * camera.scale, 4) + 16,
+      );
     }
-    const ves = g.vessel;
-    if (!ves.dead && !ves.landed) {
-      drawPatches(ctx, cam, g.patches, t, false);
-      if (g.node && g.nodePatches) drawPatches(ctx, cam, g.nodePatches, t, true, g.node.originT);
+    const vessel = theGame.vessel;
+    if (!vessel.dead && !vessel.landed) {
+      drawPatches(context, camera, theGame.patches, time, false);
+      if (theGame.node && theGame.nodePatches) {
+        drawPatches(context, camera, theGame.nodePatches, time, true, theGame.node.originTime);
+      }
     }
-    if (g.node) {
-      const nd = g.node;
-      const p = V.add(FS.bodyAbs(nd.body, nd.originT ?? t), nd.r);
-      const s = w2s(cam, p.x, p.y);
-      ctx.save();
-      ctx.translate(s.x, s.y);
-      ctx.rotate(Math.PI / 4);
-      ctx.fillStyle = '#4f8dff'; ctx.strokeStyle = '#d8e6ff'; ctx.lineWidth = 1.5;
-      ctx.fillRect(-6, -6, 12, 12); ctx.strokeRect(-6, -6, 12, 12);
-      ctx.restore();
+    if (theGame.node) {
+      const node = theGame.node;
+      const position = Vector.add(
+        Flatspace.bodyAbsolutePosition(node.body, node.originTime ?? time),
+        node.position,
+      );
+      const screenPoint = worldToScreenPoint(camera, position.x, position.y);
+      context.save();
+      context.translate(screenPoint.x, screenPoint.y);
+      context.rotate(Math.PI / 4);
+      context.fillStyle = '#4f8dff';
+      context.strokeStyle = '#d8e6ff';
+      context.lineWidth = 1.5;
+      context.fillRect(-6, -6, 12, 12);
+      context.strokeRect(-6, -6, 12, 12);
+      context.restore();
     }
-    if (!ves.dead) {
-      const vp = V.add(FS.bodyAbs(ves.body, t), ves.r);
-      const s = w2s(cam, vp.x, vp.y);
-      ctx.save();
-      ctx.translate(s.x, s.y);
-      ctx.rotate(-ves.angle);
-      ctx.fillStyle = '#ffd27a'; ctx.strokeStyle = '#1a1405'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(-6, 5.5); ctx.lineTo(-3, 0); ctx.lineTo(-6, -5.5); ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      ctx.restore();
+    if (!vessel.dead) {
+      const vesselPosition = Vector.add(Flatspace.bodyAbsolutePosition(vessel.body, time), vessel.position);
+      const screenPoint = worldToScreenPoint(camera, vesselPosition.x, vesselPosition.y);
+      context.save();
+      context.translate(screenPoint.x, screenPoint.y);
+      context.rotate(-vessel.angle);
+      context.fillStyle = '#ffd27a';
+      context.strokeStyle = '#1a1405';
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(9, 0);
+      context.lineTo(-6, 5.5);
+      context.lineTo(-3, 0);
+      context.lineTo(-6, -5.5);
+      context.closePath();
+      context.fill();
+      context.stroke();
+      context.restore();
     }
   };
 
-  function drawPatches(ctx, cam, patches, t, planned, firstRef) {
-    if (!patches) return;
-    patches.forEach((pt, i) => {
-      const o = pt.orbit;
-      const tRef = i === 0 ? (firstRef ?? t) : pt.tStart;
-      const origin = FS.bodyAbs(pt.body, tRef);
-      const t0 = Math.max(pt.tStart, i === 0 ? t : pt.tStart);
-      const pts = FS.sampleOrbit(o, t0, pt.tEnd, 360);
-      ctx.strokeStyle = PATCH_COLORS[i % PATCH_COLORS.length];
-      ctx.lineWidth = planned ? 1.6 : 2;
-      ctx.globalAlpha = planned ? 0.85 : 1;
-      if (planned) ctx.setLineDash([7, 5]);
-      ctx.beginPath();
-      pts.forEach((p, j) => {
-        const s = w2s(cam, origin.x + p.x, origin.y + p.y);
-        j ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y);
+  function drawPatches(context, camera, patches, time, planned, firstReferenceTime) {
+    if (!patches) {
+      return;
+    }
+    patches.forEach((patch, index) => {
+      const orbit = patch.orbit;
+      const referenceTime = index === 0 ? (firstReferenceTime ?? time) : patch.startTime;
+      const origin = Flatspace.bodyAbsolutePosition(patch.body, referenceTime);
+      const startTime = Math.max(patch.startTime, index === 0 ? time : patch.startTime);
+      const points = Flatspace.sampleOrbit(orbit, startTime, patch.endTime, 360);
+      context.strokeStyle = PATCH_COLORS[index % PATCH_COLORS.length];
+      context.lineWidth = planned ? 1.6 : 2;
+      context.globalAlpha = planned ? 0.85 : 1;
+      if (planned) {
+        context.setLineDash([7, 5]);
+      }
+      context.beginPath();
+      points.forEach((point, pointIndex) => {
+        const screenPoint = worldToScreenPoint(camera, origin.x + point.x, origin.y + point.y);
+        pointIndex
+          ? context.lineTo(screenPoint.x, screenPoint.y)
+          : context.moveTo(screenPoint.x, screenPoint.y);
       });
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
-      if (i > 0 && pt.body.parent) {
-        const s = w2s(cam, origin.x, origin.y);
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-        ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(pt.body.R * cam.s, 4), 0, TAU); ctx.stroke();
+      context.stroke();
+      context.setLineDash([]);
+      context.globalAlpha = 1;
+      if (index > 0 && patch.body.parent) {
+        const screenPoint = worldToScreenPoint(camera, origin.x, origin.y);
+        context.strokeStyle = 'rgba(255,255,255,0.3)';
+        context.beginPath();
+        context.arc(
+          screenPoint.x,
+          screenPoint.y,
+          Math.max(patch.body.radius * camera.scale, 4),
+          0,
+          FULL_TURN,
+        );
+        context.stroke();
       }
-      if (planned) return;
-      const b = pt.body;
-      const mark = (nu, label, value) => {
-        const dtTo = FS.timeToNu(o, nu, t0);
-        if (!isFinite(dtTo) || t0 + dtTo > pt.tEnd) return;
-        const st = FS.orbitState(o, t0 + dtTo);
-        marker(ctx, w2s(cam, origin.x + st.r.x, origin.y + st.r.y), label, FS.fmtDist(value));
+      if (planned) {
+        return;
+      }
+      const body = patch.body;
+      const mark = (trueAnomaly, label, value) => {
+        const timeUntil = Flatspace.timeToTrueAnomaly(orbit, trueAnomaly, startTime);
+        if (!isFinite(timeUntil) || startTime + timeUntil > patch.endTime) {
+          return;
+        }
+        const state = Flatspace.orbitState(orbit, startTime + timeUntil);
+        marker(
+          context,
+          worldToScreenPoint(camera, origin.x + state.position.x, origin.y + state.position.y),
+          label,
+          Flatspace.formatDistance(value),
+        );
       };
-      if (o.e > 1e-4) {
-        if (o.e < 1) mark(Math.PI, 'Ap', o.ap - b.R);
-        if (o.pe > b.R * 0.2) mark(0, 'Pe', o.pe - b.R);
+      if (orbit.eccentricity > 1e-4) {
+        if (orbit.eccentricity < 1) {
+          mark(Math.PI, 'Ap', orbit.apoapsis - body.radius);
+        }
+        if (orbit.periapsis > body.radius * 0.2) {
+          mark(0, 'Pe', orbit.periapsis - body.radius);
+        }
       }
-      const end = pts[pts.length - 1];
-      if (pt.end && end) {
-        const s = w2s(cam, origin.x + end.x, origin.y + end.y);
-        const lbl = pt.end === 'encounter' ? pt.next.name + ' encounter' : pt.end === 'escape' ? 'Escape' : 'Impact';
-        marker(ctx, s, lbl, FS.fmtTime(pt.tEnd - t), pt.end === 'impact' ? '#ff6b5a' : '#c7d6ff');
+      const end = points[points.length - 1];
+      if (patch.end && end) {
+        const screenPoint = worldToScreenPoint(camera, origin.x + end.x, origin.y + end.y);
+        const label =
+          patch.end === 'encounter'
+            ? patch.next.name + ' encounter'
+            : patch.end === 'escape'
+              ? 'Escape'
+              : 'Impact';
+        marker(
+          context,
+          screenPoint,
+          label,
+          Flatspace.formatTime(patch.endTime - time),
+          patch.end === 'impact' ? '#ff6b5a' : '#c7d6ff',
+        );
       }
     });
   }
 
-  function marker(ctx, s, label, value, col = '#ffe2a6') {
-    ctx.fillStyle = col;
-    ctx.beginPath(); ctx.arc(s.x, s.y, 3.5, 0, TAU); ctx.fill();
-    ctx.font = '600 11px "IBM Plex Mono", ui-monospace, monospace';
-    ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(5,7,15,0.7)';
-    const txt = label + '  ' + value;
-    const w = ctx.measureText(txt).width;
-    ctx.fillRect(s.x + 7, s.y - 16, w + 8, 16);
-    ctx.fillStyle = col;
-    ctx.fillText(txt, s.x + 11, s.y - 4);
+  function marker(context, screenPoint, label, value, colour = '#ffe2a6') {
+    context.fillStyle = colour;
+    context.beginPath();
+    context.arc(screenPoint.x, screenPoint.y, 3.5, 0, FULL_TURN);
+    context.fill();
+    context.font = '600 11px "IBM Plex Mono", ui-monospace, monospace';
+    context.textAlign = 'left';
+    context.fillStyle = 'rgba(5,7,15,0.7)';
+    const text = label + '  ' + value;
+    const textWidth = context.measureText(text).width;
+    context.fillRect(screenPoint.x + 7, screenPoint.y - 16, textWidth + 8, 16);
+    context.fillStyle = colour;
+    context.fillText(text, screenPoint.x + 11, screenPoint.y - 4);
   }
 
-  // For the gallery: draw a part sprite at L art pixels per metre.
-  R.galleryPart = (p, L, glow) => partSprite(p, L, glow);
-  R.sprites = () => sprites;
+  // For the gallery: draw a part sprite at pixelsPerMetre art pixels per metre.
+  RenderGL.galleryPart = (part, pixelsPerMetre, glow) => partSprite(part, pixelsPerMetre, glow);
+  RenderGL.sprites = () => sprites;
 })();

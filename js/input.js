@@ -1,122 +1,201 @@
 // input.js — keyboard, mouse and touch controls for the flight scene.
-// Turns player input into changes on the game state (FS.game) and calls the page
-// helpers in FS.UI (set up by main.js) for menus and map actions.
+// Turns player input into changes on the game state (Flatspace.game) and calls the page
+// helpers in Flatspace.UI (set up by main.js) for menus and map actions.
 (function () {
-  const G = FS.game;
-  const $ = (id) => document.getElementById(id);
-  const I = (FS.Input = {});
+  const game = Flatspace.game;
+  const byId = (elementId) => document.getElementById(elementId);
+  const Input = (Flatspace.Input = {});
 
   // Held controls, applied every frame before the simulation steps.
-  I.apply = (dt) => {
-    const ves = G.vessel;
-    if (!ves) return;
-    const k = G.keys, tc = G.touch;
-    if (k.Shift || tc.thrUp) ves.throttle = Math.min(1, ves.throttle + dt * 0.9);
-    if (k.Control || tc.thrDown) ves.throttle = Math.max(0, ves.throttle - dt * 0.9);
-    ves.rot = ((k.a || k.ArrowLeft || tc.left) ? 1 : 0) - ((k.d || k.ArrowRight || tc.right) ? 1 : 0);
+  Input.apply = (timeStep) => {
+    const vessel = game.vessel;
+    if (!vessel) {
+      return;
+    }
+    const keys = game.keys;
+    const touch = game.touch;
+    if (keys.Shift || touch.throttleUp) {
+      vessel.throttle = Math.min(1, vessel.throttle + timeStep * 0.9);
+    }
+    if (keys.Control || touch.throttleDown) {
+      vessel.throttle = Math.max(0, vessel.throttle - timeStep * 0.9);
+    }
+    vessel.rotation =
+      (keys.a || keys.ArrowLeft || touch.left ? 1 : 0) - (keys.d || keys.ArrowRight || touch.right ? 1 : 0);
   };
 
   function stage() {
-    const ves = G.vessel;
-    if (ves && !ves.dead) ves.stage(G);
+    const vessel = game.vessel;
+    if (vessel && !vessel.dead) {
+      vessel.stage(game);
+    }
   }
 
-  function onKey(e, down) {
-    if (G.scene !== 'flight') return;
-    if (e.target.tagName === 'INPUT') return;
-    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-    G.keys[key] = down;
-    if (e.key === 'Shift') G.keys.Shift = down;
-    if (e.key === 'Control') G.keys.Control = down;
-    if (!down || e.repeat) {
-      if ([' ', 'Tab'].includes(e.key)) e.preventDefault();
+  function onKey(event, down) {
+    if (game.scene !== 'flight') {
       return;
     }
-    const ves = G.vessel;
-    if (!$('dialog').hidden) {
-      if (e.key === 'Escape') FS.UI.hideDialog();
+    if (event.target.tagName === 'INPUT') {
+      return;
+    }
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    game.keys[key] = down;
+    if (event.key === 'Shift') {
+      game.keys.Shift = down;
+    }
+    if (event.key === 'Control') {
+      game.keys.Control = down;
+    }
+    if (!down || event.repeat) {
+      if ([' ', 'Tab'].includes(event.key)) {
+        event.preventDefault();
+      }
+      return;
+    }
+    const vessel = game.vessel;
+    if (!byId('dialog').hidden) {
+      if (event.key === 'Escape') {
+        Flatspace.UI.hideDialog();
+      }
       return;
     }
     switch (key) {
-      case ' ': e.preventDefault(); stage(); break;
-      case 'z': ves.throttle = 1; break;
-      case 'x': ves.throttle = 0; break;
-      case 't': ves.sas = !ves.sas; ves.sasTarget = ves.angle; break;
-      case 'm': FS.UI.setMapMode(!G.mapMode); break;
-      case '.': G.changeWarp(1); break;
-      case ',': G.changeWarp(-1); break;
-      case '/': G.stopWarp(); break;
-      case 'p': if (ves.deployChutes()) G.message('Parachutes armed.', '', 1500); break;
-      case 'h': $('help').hidden = !$('help').hidden; break;
-      case 'Tab': e.preventDefault(); if (G.mapMode) FS.UI.cycleFocus(); break;
-      case 'Escape': FS.UI.menu(); break;
-      case 'F3': e.preventDefault(); $('devOverlay').hidden = !$('devOverlay').hidden; break;
+      case ' ':
+        event.preventDefault();
+        stage();
+        break;
+      case 'z':
+        vessel.throttle = 1;
+        break;
+      case 'x':
+        vessel.throttle = 0;
+        break;
+      case 't':
+        vessel.stabilityAssist = !vessel.stabilityAssist;
+        vessel.stabilityAssistTarget = vessel.angle;
+        break;
+      case 'm':
+        Flatspace.UI.setMapMode(!game.mapMode);
+        break;
+      case '.':
+        game.changeWarp(1);
+        break;
+      case ',':
+        game.changeWarp(-1);
+        break;
+      case '/':
+        game.stopWarp();
+        break;
+      case 'p':
+        if (vessel.deployChutes()) {
+          game.message('Parachutes armed.', '', 1500);
+        }
+        break;
+      case 'h':
+        byId('help').hidden = !byId('help').hidden;
+        break;
+      case 'Tab':
+        event.preventDefault();
+        if (game.mapMode) {
+          Flatspace.UI.cycleFocus();
+        }
+        break;
+      case 'Escape':
+        Flatspace.UI.menu();
+        break;
+      case 'F3':
+        event.preventDefault();
+        byId('devOverlay').hidden = !byId('devOverlay').hidden;
+        break;
     }
   }
 
   // Click or tap in the flight view: open the pop-up of the part under the pointer (in flight,
   // some settings can still change, and engines, decouplers and parachutes can be used).
   function pickPart(x, y) {
-    const ves = G.vessel;
-    if (!ves || G.mapMode) return;
-    const local = FS.Renderer.screenToPart(G.cam, ves, G.t, x, y);
-    const pt = FS.vec.add(local, ves.layout.com);
-    const hit = FS.Build.partAt(ves.parts, pt, 8 / Math.max(G.cam.s, 0.01));
-    FS.PartPanel.select(hit, 'flight');
+    const vessel = game.vessel;
+    if (!vessel || game.mapMode) {
+      return;
+    }
+    const local = Flatspace.Renderer.screenToPart(game.camera, vessel, game.time, x, y);
+    const point = Flatspace.Vector.add(local, vessel.layout.centreOfMass);
+    const hit = Flatspace.Build.partAt(vessel.parts, point, 8 / Math.max(game.camera.scale, 0.01));
+    Flatspace.PartPanel.select(hit, 'flight');
   }
 
-  // Zoom the map or the flight view by factor f.
-  function zoomBy(f) {
-    if (G.mapMode) G.mapCam.s = FS.clamp(G.mapCam.s * f, 1e-7, 0.5);
-    else G.zoom = FS.clamp(G.zoom * f, 1e-6, 30);
+  // Zoom the map or the flight view by a factor.
+  function zoomBy(factor) {
+    if (game.mapMode) {
+      game.mapCamera.scale = Flatspace.clamp(game.mapCamera.scale * factor, 1e-7, 0.5);
+    } else {
+      game.zoom = Flatspace.clamp(game.zoom * factor, 1e-6, 30);
+    }
   }
 
   // Mouse and touch on the view: drag to pan the map, click to add a node, pinch to zoom.
   function setupPointer(view) {
     const pointers = new Map();
-    let drag = null, pinch = null;
+    let drag = null;
+    let pinch = null;
     const spread = () => {
-      const [a, b] = [...pointers.values()];
-      return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const [firstPointer, secondPointer] = [...pointers.values()];
+      return Math.hypot(firstPointer.x - secondPointer.x, firstPointer.y - secondPointer.y) || 1;
     };
 
-    view.addEventListener('pointerdown', (e) => {
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      view.setPointerCapture(e.pointerId);
+    view.addEventListener('pointerdown', (event) => {
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      view.setPointerCapture(event.pointerId);
       if (pointers.size === 2) {
-        pinch = { d: spread(), last: 1 };
+        pinch = { startSpread: spread(), last: 1 };
         drag = null;
-      } else if (pointers.size === 1 && G.mapMode) {
-        drag = { x: e.clientX, y: e.clientY, moved: false, pan: { ...G.mapPan } };
+      } else if (pointers.size === 1 && game.mapMode) {
+        drag = { x: event.clientX, y: event.clientY, moved: false, pan: { ...game.mapPan } };
       } else if (pointers.size === 1) {
-        drag = { x: e.clientX, y: e.clientY, moved: false, flight: true };
+        drag = { x: event.clientX, y: event.clientY, moved: false, flight: true };
       }
     });
-    view.addEventListener('pointermove', (e) => {
-      if (!pointers.has(e.pointerId)) return;
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    view.addEventListener('pointermove', (event) => {
+      if (!pointers.has(event.pointerId)) {
+        return;
+      }
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
       if (pinch && pointers.size >= 2) {
-        const ratio = spread() / pinch.d;
+        const ratio = spread() / pinch.startSpread;
         zoomBy(ratio / pinch.last);
         pinch.last = ratio;
         return;
       }
-      if (!drag) return;
-      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (Math.hypot(dx, dy) > 4) drag.moved = true;
-      if (drag.moved && !drag.flight) G.mapPan = { x: drag.pan.x - dx / G.mapCam.s, y: drag.pan.y + dy / G.mapCam.s };
+      if (!drag) {
+        return;
+      }
+      const deltaX = event.clientX - drag.x;
+      const deltaY = event.clientY - drag.y;
+      if (Math.hypot(deltaX, deltaY) > 4) {
+        drag.moved = true;
+      }
+      if (drag.moved && !drag.flight) {
+        game.mapPan = {
+          x: drag.pan.x - deltaX / game.mapCamera.scale,
+          y: drag.pan.y + deltaY / game.mapCamera.scale,
+        };
+      }
     });
-    const end = (e) => {
-      pointers.delete(e.pointerId);
+    const end = (event) => {
+      pointers.delete(event.pointerId);
       if (pinch) {
-        if (pointers.size < 2) pinch = null;
+        if (pointers.size < 2) {
+          pinch = null;
+        }
         drag = null; // lifting a finger after a pinch is not a click
         return;
       }
-      if (drag && !drag.moved && e.type === 'pointerup') {
-        const r = view.getBoundingClientRect();
-        if (drag.flight) pickPart(e.clientX - r.left, e.clientY - r.top);
-        else FS.UI.mapClick(e.clientX - r.left, e.clientY - r.top);
+      if (drag && !drag.moved && event.type === 'pointerup') {
+        const bounds = view.getBoundingClientRect();
+        if (drag.flight) {
+          pickPart(event.clientX - bounds.left, event.clientY - bounds.top);
+        } else {
+          Flatspace.UI.mapClick(event.clientX - bounds.left, event.clientY - bounds.top);
+        }
       }
       drag = null;
     };
@@ -124,56 +203,85 @@
     view.addEventListener('pointercancel', end);
 
     // right-click a part for its pop-up, as in the hangar
-    view.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      if (G.mapMode) return;
-      const r = view.getBoundingClientRect();
-      pickPart(e.clientX - r.left, e.clientY - r.top);
+    view.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      if (game.mapMode) {
+        return;
+      }
+      const bounds = view.getBoundingClientRect();
+      pickPart(event.clientX - bounds.left, event.clientY - bounds.top);
     });
 
-    view.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      zoomBy(Math.pow(1.0015, -e.deltaY));
-    }, { passive: false });
+    view.addEventListener(
+      'wheel',
+      (event) => {
+        event.preventDefault();
+        zoomBy(Math.pow(1.0015, -event.deltaY));
+      },
+      { passive: false },
+    );
   }
 
-  I.init = () => {
-    window.addEventListener('keydown', (e) => onKey(e, true));
-    window.addEventListener('keyup', (e) => onKey(e, false));
-    window.addEventListener('blur', () => { G.keys = {}; G.touch = {}; });
-    setupPointer($('view'));
+  Input.initialise = () => {
+    window.addEventListener('keydown', (event) => onKey(event, true));
+    window.addEventListener('keyup', (event) => onKey(event, false));
+    window.addEventListener('blur', () => {
+      game.keys = {};
+      game.touch = {};
+    });
+    setupPointer(byId('view'));
 
-    $('btnMap').addEventListener('click', () => FS.UI.setMapMode(!G.mapMode));
-    $('btnWarpUp').addEventListener('click', () => G.changeWarp(1));
-    $('btnWarpDown').addEventListener('click', () => G.changeWarp(-1));
-    $('btnRecover').addEventListener('click', () => FS.UI.recover());
-    $('btnMenu').addEventListener('click', () => FS.UI.menu());
-    $('btnNodeWarp').addEventListener('click', G.warpToNode);
-    $('btnNodeDel').addEventListener('click', G.deleteNode);
-    document.querySelectorAll('#nodePanel .stepper button').forEach((b) =>
-      b.addEventListener('click', () => {
-        G.editNode(b.dataset.k, parseFloat(b.dataset.d));
-        FS.HUD.updateNode(G);
-      }));
-    document.querySelectorAll('.sasbtn').forEach((b) =>
-      b.addEventListener('click', () => {
-        const ves = G.vessel;
-        if (!ves) return;
-        const m = b.dataset.mode;
-        if (m === 'toggle') { ves.sas = !ves.sas; ves.sasTarget = ves.angle; }
-        else { ves.sas = true; ves.sasMode = m; ves.sasTarget = ves.angle; }
-      }));
-    document.querySelectorAll('.tbtn').forEach((b) => {
-      const k = b.dataset.touch;
-      if (k === 'stage') { b.addEventListener('click', stage); return; }
-      b.addEventListener('pointerdown', (e) => { e.preventDefault(); G.touch[k] = true; });
-      ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, () => (G.touch[k] = false)));
+    byId('mapButton').addEventListener('click', () => Flatspace.UI.setMapMode(!game.mapMode));
+    byId('warpUpButton').addEventListener('click', () => game.changeWarp(1));
+    byId('warpDownButton').addEventListener('click', () => game.changeWarp(-1));
+    byId('recoverButton').addEventListener('click', () => Flatspace.UI.recover());
+    byId('menuButton').addEventListener('click', () => Flatspace.UI.menu());
+    byId('warpToNodeButton').addEventListener('click', game.warpToNode);
+    byId('deleteNodeButton').addEventListener('click', game.deleteNode);
+    document.querySelectorAll('#nodePanel .stepper button').forEach((button) =>
+      button.addEventListener('click', () => {
+        game.editNode(button.dataset.component, parseFloat(button.dataset.change));
+        Flatspace.HUD.updateNode(game);
+      }),
+    );
+    document.querySelectorAll('.stability-assist-button').forEach((button) =>
+      button.addEventListener('click', () => {
+        const vessel = game.vessel;
+        if (!vessel) {
+          return;
+        }
+        const mode = button.dataset.mode;
+        if (mode === 'toggle') {
+          vessel.stabilityAssist = !vessel.stabilityAssist;
+          vessel.stabilityAssistTarget = vessel.angle;
+        } else {
+          vessel.stabilityAssist = true;
+          vessel.stabilityAssistMode = mode;
+          vessel.stabilityAssistTarget = vessel.angle;
+        }
+      }),
+    );
+    document.querySelectorAll('.touch-button').forEach((button) => {
+      const touchName = button.dataset.touch;
+      if (touchName === 'stage') {
+        button.addEventListener('click', stage);
+        return;
+      }
+      button.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        game.touch[touchName] = true;
+      });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach((eventName) =>
+        button.addEventListener(eventName, () => (game.touch[touchName] = false)),
+      );
     });
 
     // Buttons should not keep keyboard focus in flight, or Space would press them.
-    document.addEventListener('click', (e) => {
-      const b = e.target.closest && e.target.closest('#flight button');
-      if (b) b.blur();
+    document.addEventListener('click', (event) => {
+      const button = event.target.closest && event.target.closest('#flight button');
+      if (button) {
+        button.blur();
+      }
     });
   };
 })();
