@@ -253,12 +253,23 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
                 const facing = normalAcross * sun3DAcross + normalAlong * sun3DAlong + normalOut * sun3DOut;
                 const brightness = sunlit * Math.max(0, facing);
                 const brightestTone = toneCount(litRamp[pixel]) - 1;
-                let newTone = litTone[pixel] + Math.round(-2 + 3 * brightness); //-2 and 3 set the contrast (min max brightness type)
+                let newTone = litTone[pixel] + Math.round(-2 + 2 * brightness); //-2 and 3 set the contrast (min max brightness type)
                 if (litRamp[pixel] === metalRamp && brightness > 0.93) newTone = brightestTone; //0.93 is like the tolerance of the shine
                 litTone[pixel] = FS.clamp(newTone, 0, brightestTone);
             }
         }
         return toImage({ width: sprite.width, height: sprite.height, solid: sprite.solid, ramp: litRamp, tone: litTone});
+    }
+
+    // -------- zoomed out sprites
+
+    function halve(sprite) {
+        const width = Math.ceil(sprite.width / 2);
+        const height = Math.ceil(sprite.height / 2);
+        const half = blankSprite(sprite.id + '-half', width, height);
+        const outlineRamp = new Int16Array(width * height).fill(-1);
+        const outlineTone = new Uint8Array( width * height);
+        
     }
 
     FS.Sprites = {PIXELS_PER_METRE, RAMP_NAMES, SKINS, parse, profile, tank, applySkin, toImage, light };

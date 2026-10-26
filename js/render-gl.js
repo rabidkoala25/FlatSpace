@@ -1132,24 +1132,22 @@
     if (vessel.nozzles) {
       vessel.nozzles.forEach((nozzle) => glowMap.set(nozzle.part, nozzle.power));
     }
+    const sunlit = Math.round(lightAt(vesseo) *4) / 4;
+    const SUN_STEP = FS.TAU / 32;
+    const noTint = [1, 1, 1, tint ? tint[3] : 1];
     for (const part of vessel.parts) {
-      const glow = Math.round((glowMap.get(part) || 0) * 2) / 2;
-      const atlasEntry = partSprite(part, pixelsPerMetre, glow);
+      const glow = Math.round((glowMap.get(part) || 0) *2) /2;
+      const noseAngle = vessel.angle + part.rot;
+      const sunStep = ((Math.round(noseAngle / SUN_STEP)%32)+32)%32;
+      const atlasEntry = partSprite(part, pixelsPerMetre, glow, sunStep, sunlit);
       if (!atlasEntry) {
         continue;
+
       }
-      const screenAt = toScreen(part.c.x, -part.c.y);
-      sprites.sprite(
-        atlasEntry,
-        screenAt.x,
-        screenAt.y,
-        size,
-        drawAngle - part.rot,
-        atlasEntry.ox,
-        atlasEntry.oy,
-        tint,
-        !!part.flip,
-      );
+      const screenAt = toScreen(part.c.x, part.c.y);
+      const spriteTint = atlasEntry.lit ? noTint : tint;
+      sprites.sprite(atlasEntry, screenAt.x, screenAt.y, size, drawAngle - part.rot, atlasEntry.ox, atlasEntry.oy, spriteTint, !!part.flip);
+      
     }
   }
 
