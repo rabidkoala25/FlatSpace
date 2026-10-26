@@ -5,7 +5,7 @@
 // drawn by the WebGL renderer (baked sprites, sky, planets, particles) uses these colours,
 // and gradients are made by ordered dithering between neighbouring entries, never by
 // blending into in-between colours.
-window.FS = window.FS || {};
+window.Flatspace = window.Flatspace || {};
 (function () {
   const RAMPS = {
     // greys and metals: hull white at the top, deep shadow at the bottom
@@ -30,7 +30,7 @@ window.FS = window.FS || {};
     red: ['#e2402f'],
   };
 
-  const hexRGB = (hex) => [
+  const hexToRGB = (hex) => [
     parseInt(hex.slice(1, 3), 16),
     parseInt(hex.slice(3, 5), 16),
     parseInt(hex.slice(5, 7), 16),
@@ -38,7 +38,7 @@ window.FS = window.FS || {};
   const ramps = {};
   const all = [];
   for (const [name, list] of Object.entries(RAMPS)) {
-    ramps[name] = list.map(hexRGB);
+    ramps[name] = list.map(hexToRGB);
     for (const colour of ramps[name]) {
       all.push(colour);
     }
@@ -76,7 +76,7 @@ window.FS = window.FS || {};
     return best;
   }
 
-  // Pick from a ramp at position t in [0, 1], dithering between the two nearest entries
+  // Pick from a ramp at a position in [0, 1], dithering between the two nearest entries
   // with the Bayer threshold at pixel (x, y).
   function dither(ramp, fraction, pixelX, pixelY) {
     const position = Math.min(Math.max(fraction, 0), 1) * (ramp.length - 1);
@@ -114,5 +114,5 @@ window.FS = window.FS || {};
 
   const toCss = (colour) => `rgb(${colour[0]},${colour[1]},${colour[2]})`;
 
-  FS.Palette = { ramps, all, hex: RAMPS, BAYER, bayer, nearest, dither, snapImage, css: toCss };
+  Flatspace.Palette = { ramps, all, hex: RAMPS, BAYER, bayer, nearest, dither, snapImage, css: toCss };
 })();

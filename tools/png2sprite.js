@@ -1,15 +1,15 @@
 // turns my pixel art into a sprite file
 
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
-const vm = require('vm');
+const virtualMachine = require('vm');
 const { PNG } = require('pngjs');
 const ROOT = path.join(__dirname, '..');
 
 //load palette
 global.window = global;
-vm.runInThisContext(fs.readFileSync(path.join(ROOT, 'art/palette.js'), 'utf8'), { filename: 'art/palette.js' });
-const Palette = FS.Palette;
+virtualMachine.runInThisContext(fileSystem.readFileSync(path.join(ROOT, 'art/palette.js'), 'utf8'), { filename: 'art/palette.js' });
+const Palette = Flatspace.Palette;
 
 //skin markers are magenta and allow for scaling and easy development of part styles that can stretch
 
@@ -27,7 +27,7 @@ const LEGEND_CHARACTERS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#
 
 //reads png into rows of characters based on colours
 function readRows(pngFile, legend, coloursUsed) {
-    const image = PNG.sync.read(fs.readFileSync(pngFile));
+    const image = PNG.sync.read(fileSystem.readFileSync(pngFile));
     const rgba = image.data;
     const rows = [];
     for (let rowNumber = 0; rowNumber < image.height; rowNumber++) {
@@ -62,9 +62,9 @@ function readRows(pngFile, legend, coloursUsed) {
 // writes art/sprites/<id>.js
 function writeSprite(id, drawing) {
     const outputPath = path.join(ROOT, 'art/sprites', id + '.js');
-    const fileText = `// thy will hath been done. edit thy png then run thy code once more. \n` + `FS.SPRITES = FS.SPRITES || {};\n` + `FS.SPRITES['${id}'] = ${JSON.stringify(drawing, null, 2)};\n`;
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true});
-    fs.writeFileSync(outputPath, fileText);
+    const fileText = `// thy will hath been done. edit thy png then run thy code once more. \n` + `Flatspace.SPRITES = Flatspace.SPRITES || {};\n` + `Flatspace.SPRITES['${id}'] = ${JSON.stringify(drawing, null, 2)};\n`;
+    fileSystem.mkdirSync(path.dirname(outputPath), { recursive: true});
+    fileSystem.writeFileSync(outputPath, fileText);
     console.log('wrote ' + path.relative(ROOT, outputPath));
 
 }

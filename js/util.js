@@ -1,48 +1,48 @@
 // util.js — shared helpers: vectors, maths, formatting.
-// Everything in the game lives on one global object, FS, so the files can be
+// Everything in the game lives on one global object, Flatspace, so the files can be
 // loaded with ordinary <script> tags (no build step needed).
-window.FS = window.FS || {};
+window.Flatspace = window.Flatspace || {};
 
 // Game version, shown in the hangar and the flight menu. Bump it with each roadmap step.
-FS.VERSION = '0.7.0';
+Flatspace.VERSION = '0.8.0';
 
-FS.G0 = 9.80665; // standard gravity, used for specific impulse
-FS.TAU = Math.PI * 2;
+Flatspace.STANDARD_GRAVITY = 9.80665; // standard gravity, used for specific impulse
+Flatspace.TAU = Math.PI * 2;
 
-FS.vec = {
+Flatspace.Vector = {
   add: (first, second) => ({ x: first.x + second.x, y: first.y + second.y }),
-  sub: (first, second) => ({ x: first.x - second.x, y: first.y - second.y }),
+  subtract: (first, second) => ({ x: first.x - second.x, y: first.y - second.y }),
   scale: (vector, factor) => ({ x: vector.x * factor, y: vector.y * factor }),
   dot: (first, second) => first.x * second.x + first.y * second.y,
   cross: (first, second) => first.x * second.y - first.y * second.x,
-  len: (vector) => Math.hypot(vector.x, vector.y),
-  norm: (vector) => {
+  length: (vector) => Math.hypot(vector.x, vector.y),
+  normalise: (vector) => {
     const length = Math.hypot(vector.x, vector.y) || 1;
     return { x: vector.x / length, y: vector.y / length };
   },
   fromAngle: (angle, length = 1) => ({ x: Math.cos(angle) * length, y: Math.sin(angle) * length }),
   angle: (vector) => Math.atan2(vector.y, vector.x),
   // rotate a vector 90° counter-clockwise
-  perp: (vector) => ({ x: -vector.y, y: vector.x }),
+  perpendicular: (vector) => ({ x: -vector.y, y: vector.x }),
 };
 
-FS.clamp = (value, low, high) => (value < low ? low : value > high ? high : value);
-FS.lerp = (start, end, fraction) => start + (end - start) * fraction;
-FS.smoothstep = (edge0, edge1, value) => {
-  const fraction = FS.clamp((value - edge0) / (edge1 - edge0), 0, 1);
+Flatspace.clamp = (value, low, high) => (value < low ? low : value > high ? high : value);
+Flatspace.interpolate = (start, end, fraction) => start + (end - start) * fraction;
+Flatspace.smoothstep = (edge0, edge1, value) => {
+  const fraction = Flatspace.clamp((value - edge0) / (edge1 - edge0), 0, 1);
   return fraction * fraction * (3 - 2 * fraction);
 };
 
 // wrap an angle into (-PI, PI]
-FS.wrapAngle = (angle) => {
-  angle = (angle + Math.PI) % FS.TAU;
+Flatspace.wrapAngle = (angle) => {
+  angle = (angle + Math.PI) % Flatspace.TAU;
   if (angle < 0) {
-    angle += FS.TAU;
+    angle += Flatspace.TAU;
   }
   return angle - Math.PI;
 };
 
-FS.fmtDist = (metres) => {
+Flatspace.formatDistance = (metres) => {
   const size = Math.abs(metres);
   if (!isFinite(metres)) {
     return '∞';
@@ -56,10 +56,10 @@ FS.fmtDist = (metres) => {
   return (metres / 1e6).toFixed(2) + ' Mm';
 };
 
-FS.fmtSpeed = (speed) => (Math.abs(speed) < 1000 ? speed.toFixed(1) : speed.toFixed(0)) + ' m/s';
+Flatspace.formatSpeed = (speed) => (Math.abs(speed) < 1000 ? speed.toFixed(1) : speed.toFixed(0)) + ' m/s';
 
 // One Aster day is 6 hours (the planet's rotation period, rounded).
-FS.fmtTime = (seconds, withDays = true) => {
+Flatspace.formatTime = (seconds, withDays = true) => {
   if (!isFinite(seconds)) {
     return '—';
   }
@@ -69,7 +69,7 @@ FS.fmtTime = (seconds, withDays = true) => {
   seconds -= days * 21600;
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
+  const wholeSeconds = Math.floor(seconds % 60);
   const twoDigits = (number) => String(number).padStart(2, '0');
   let out =
     (days > 0 && withDays ? days + 'd ' : '') +
@@ -77,11 +77,11 @@ FS.fmtTime = (seconds, withDays = true) => {
     ':' +
     twoDigits(minutes) +
     ':' +
-    twoDigits(secs);
+    twoDigits(wholeSeconds);
   return (negative ? '-' : '') + out;
 };
 
-FS.fmtDuration = (seconds) => {
+Flatspace.formatDuration = (seconds) => {
   if (!isFinite(seconds)) {
     return '—';
   }
@@ -91,11 +91,11 @@ FS.fmtDuration = (seconds) => {
   if (seconds < 3600) {
     return Math.floor(seconds / 60) + 'm ' + Math.floor(seconds % 60) + 's';
   }
-  return FS.fmtTime(seconds);
+  return Flatspace.formatTime(seconds);
 };
 
 // Deterministic hash → [0,1), used by terrain noise and starfields.
-FS.hash = (index, seed) => {
+Flatspace.hash = (index, seed) => {
   let hash = Math.imul(index | 0, 374761393) ^ Math.imul(seed | 0, 668265263);
   hash = Math.imul(hash ^ (hash >>> 13), 1274126177);
   hash ^= hash >>> 16;
@@ -103,7 +103,7 @@ FS.hash = (index, seed) => {
 };
 
 // Small seeded random generator (mulberry32).
-FS.rng = (seed) => () => {
+Flatspace.seededRandom = (seed) => () => {
   seed |= 0;
   seed = (seed + 0x6d2b79f5) | 0;
   let state = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -111,7 +111,7 @@ FS.rng = (seed) => () => {
   return ((state ^ (state >>> 14)) >>> 0) / 4294967296;
 };
 
-FS.store = {
+Flatspace.store = {
   get(key, fallback) {
     try {
       const stored = localStorage.getItem(key);

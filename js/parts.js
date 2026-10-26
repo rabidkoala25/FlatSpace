@@ -1,22 +1,26 @@
 // parts.js — part lookup, engine maths and how parts are drawn.
 // The part stats live in data/parts.js; the part tree, staging and Δv are in partgraph.js.
 (function () {
-  const STANDARD_GRAVITY = FS.G0;
+  const STANDARD_GRAVITY = Flatspace.STANDARD_GRAVITY;
 
-  const PARTS = FS.DATA.parts; // stats live in data/parts.js
+  const PARTS = Flatspace.DATA.parts; // stats live in data/parts.js
   const BY_ID = {};
   PARTS.forEach((partType) => (BY_ID[partType.id] = partType));
-  FS.PARTS = PARTS;
-  FS.PART = BY_ID;
-  FS.PART_CATS = ['Command', 'Fuel', 'Engines', 'Structural', 'Utility'];
+  Flatspace.PARTS = PARTS;
+  Flatspace.PART = BY_ID;
+  Flatspace.PART_CATEGORIES = ['Command', 'Fuel', 'Engines', 'Structural', 'Utility'];
 
-  FS.partMass = (part) => (part.dry ?? part.def.mass) + part.fuel + part.solid;
+  Flatspace.partMass = (part) => (part.dry ?? part.type.mass) + part.fuel + part.solid;
 
   // Engine thrust and mass flow at a given pressure (atm).
-  FS.engineThrust = (engine, pressure, throttle = 1) => {
-    const mdot = (engine.vac / (engine.ispVac * STANDARD_GRAVITY)) * throttle;
-    const specificImpulse = Math.max(0, engine.ispVac - (engine.ispVac - engine.ispAsl) * pressure);
-    return { F: mdot * specificImpulse * STANDARD_GRAVITY, mdot, isp: specificImpulse };
+  Flatspace.engineThrust = (engine, pressure, throttle = 1) => {
+    const massFlowRate = (engine.vacuumThrust / (engine.vacuumSpecificImpulse * STANDARD_GRAVITY)) * throttle;
+    const specificImpulse = Math.max(
+      0,
+      engine.vacuumSpecificImpulse -
+        (engine.vacuumSpecificImpulse - engine.seaLevelSpecificImpulse) * pressure,
+    );
+    return { force: massFlowRate * specificImpulse * STANDARD_GRAVITY, massFlowRate, specificImpulse };
   };
 
   // ---- Drawing ----
@@ -29,13 +33,13 @@
     return gradient;
   }
 
-  // Draw part p with its top at y, its axis along +y pointing down the rocket, centred on x = 0.
-  // Widths come from FS.relayout (p.w, p.tw). px = size of one screen pixel in metres.
-  FS.drawPart = (context, part, y, pixelSize, opts = {}) => {
-    const partType = part.def;
-    const width = part.w || (partType.w === 'auto' ? 1.25 : partType.w);
-    const topWidth = part.tw || partType.topW || width;
-    const height = part.len || partType.len;
+  // Draw a part with its top at y, its axis along +y pointing down the rocket, centred on x = 0.
+  // Widths come from Flatspace.relayout (part.width, part.topWidth). pixelSize = size of one screen pixel in metres.
+  Flatspace.drawPart = (context, part, y, pixelSize, options = {}) => {
+    const partType = part.type;
+    const width = part.width || (partType.width === 'auto' ? 1.25 : partType.width);
+    const topWidth = part.topWidth || partType.topWidth || width;
+    const height = part.length || partType.length;
     const halfWidth = width / 2;
     const topHalfWidth = topWidth / 2;
     context.lineWidth = pixelSize * 1.2;
@@ -61,7 +65,7 @@
       context.fillRect(-halfWidth, y + height - 0.12, width, 0.12);
       // window
       context.beginPath();
-      context.arc(-0.08, y + height * 0.45, 0.15, 0, FS.TAU);
+      context.arc(-0.08, y + height * 0.45, 0.15, 0, Flatspace.TAU);
       context.fillStyle = '#9fd8ff';
       context.fill();
       context.stroke();
@@ -170,8 +174,8 @@
         context.fillRect(-halfWidth * 0.15, y + height * 0.3, halfWidth * 0.3, height * 0.4);
       }
       // fuel gauge overlay
-      if (opts.showFuel && partType.fuel) {
-        const fuelFraction = part.fuel / (part.cap || partType.fuel);
+      if (options.showFuel && partType.fuel) {
+        const fuelFraction = part.fuel / (part.fuelCapacity || partType.fuel);
         context.fillStyle = 'rgba(255,190,80,0.18)';
         context.fillRect(-halfWidth, y + height * (1 - fuelFraction), width, height * fuelFraction);
       }
@@ -190,26 +194,43 @@
       context.fill();
       context.stroke();
     } else if (partType.engine) {
-      const mountH = height * (partType.vacuum ? 0.25 : 0.32);
-      trap(topHalfWidth, halfWidth * 0.75, y, mountH);
+      const mountHeight = height * (partType.vacuum ? 0.25 : 0.32);
+      trap(topHalfWidth, halfWidth * 0.75, y, mountHeight);
       context.fillStyle = cylinderGradient(context, -halfWidth, halfWidth, '#50555d', '#848a93', '#2c2f34');
       context.fill();
       context.stroke();
-      const nTop = partType.vacuum ? halfWidth * 0.22 : halfWidth * 0.32;
-      const nBot = partType.vacuum ? halfWidth * 0.8 : halfWidth * 0.85;
+      const nozzleTopHalfWidth = partType.vacuum ? halfWidth * 0.22 : halfWidth * 0.32;
+      const nozzleBottomHalfWidth = partType.vacuum ? halfWidth * 0.8 : halfWidth * 0.85;
       context.beginPath();
-      context.moveTo(-nTop, y + mountH);
-      context.lineTo(nTop, y + mountH);
-      context.quadraticCurveTo(nTop * 1.05, y + height * 0.7, nBot, y + height);
-      context.lineTo(-nBot, y + height);
-      context.quadraticCurveTo(-nTop * 1.05, y + height * 0.7, -nTop, y + mountH);
+      context.moveTo(-nozzleTopHalfWidth, y + mountHeight);
+      context.lineTo(nozzleTopHalfWidth, y + mountHeight);
+      context.quadraticCurveTo(
+        nozzleTopHalfWidth * 1.05,
+        y + height * 0.7,
+        nozzleBottomHalfWidth,
+        y + height,
+      );
+      context.lineTo(-nozzleBottomHalfWidth, y + height);
+      context.quadraticCurveTo(
+        -nozzleTopHalfWidth * 1.05,
+        y + height * 0.7,
+        -nozzleTopHalfWidth,
+        y + mountHeight,
+      );
       context.closePath();
-      context.fillStyle = cylinderGradient(context, -nBot, nBot, '#3d4046', '#9aa0a8', '#202226');
+      context.fillStyle = cylinderGradient(
+        context,
+        -nozzleBottomHalfWidth,
+        nozzleBottomHalfWidth,
+        '#3d4046',
+        '#9aa0a8',
+        '#202226',
+      );
       context.fill();
       context.stroke();
-      if (opts.glow > 0) {
-        context.fillStyle = `rgba(255,150,60,${0.5 * opts.glow})`;
-        context.fillRect(-nBot * 0.8, y + height - 0.12, nBot * 1.6, 0.1);
+      if (options.glow > 0) {
+        context.fillStyle = `rgba(255,150,60,${0.5 * options.glow})`;
+        context.fillRect(-nozzleBottomHalfWidth * 0.8, y + height - 0.12, nozzleBottomHalfWidth * 1.6, 0.1);
       }
     } else if (partType.decoupler) {
       context.save();
@@ -274,7 +295,7 @@
       context.fillStyle = '#888';
       context.fillRect(-halfWidth, y, width, height);
     }
-    if (opts.selected) {
+    if (options.selected) {
       context.strokeStyle = '#ffb547';
       context.lineWidth = pixelSize * 2.5;
       context.setLineDash([pixelSize * 6, pixelSize * 4]);
@@ -289,5 +310,5 @@
   };
 
   // Sample craft
-  FS.SAMPLE_CRAFT = FS.DATA.sampleCraft;
+  Flatspace.SAMPLE_CRAFT = Flatspace.DATA.sampleCraft;
 })();

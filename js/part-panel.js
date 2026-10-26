@@ -8,10 +8,10 @@
 // decoupler crossfeed; parachute opening height; whether the part fires in staging; and for
 // floating parts, whether they launch with the craft. In flight: thrust limit, gimbal,
 // crossfeed and parachute height can still be changed, and engines, decouplers and
-// parachutes can be used directly. Hangar changes go through FS.Editor so they reach mirror
+// parachutes can be used directly. Hangar changes go through Flatspace.Editor so they reach mirror
 // twins and undo.
 (function () {
-  const PartPanel = (FS.PartPanel = {});
+  const PartPanel = (Flatspace.PartPanel = {});
   const byId = (elementId) => document.getElementById(elementId);
   const SKIN_NAMES = {
     white: 'White',
@@ -20,11 +20,11 @@
     roll: 'Roll pattern',
     steel: 'Bare steel',
   };
-  const panels = []; // { part, ctx: 'editor' | 'flight', el, pinned, off: {x, y} | null }
+  const panels = []; // { part, screen: 'editor' | 'flight', element, pinned, offset: {x, y} | null }
   let hangarEditor = null;
   const host = (screen) => (screen === 'editor' ? document.querySelector('#editor .hangar') : byId('flight'));
 
-  PartPanel.init = (editor) => {
+  PartPanel.initialise = (editor) => {
     hangarEditor = editor;
   };
 
@@ -43,29 +43,29 @@
   // A part was selected (null: nothing selected). Unpinned pop-ups give way to the new one.
   PartPanel.select = (part, screen = 'editor') => {
     for (const panel of panels.slice()) {
-      if (panel.ctx === screen && !panel.pinned && panel.part !== part) {
+      if (panel.screen === screen && !panel.pinned && panel.part !== part) {
         PartPanel.close(panel);
       }
     }
     if (!part) {
       return;
     }
-    const have = panels.find((panel) => panel.ctx === screen && panel.part === part);
+    const have = panels.find((panel) => panel.screen === screen && panel.part === part);
     if (have) {
-      have.el.classList.add('flash');
-      setTimeout(() => have.el.classList.remove('flash'), 300);
+      have.element.classList.add('flash');
+      setTimeout(() => have.element.classList.remove('flash'), 300);
       return;
     }
-    const panel = { part, ctx: screen, el: makeElement('div', 'part-panel'), pinned: false, off: null };
-    panel.el.setAttribute('role', 'dialog');
-    panel.el.setAttribute('aria-label', `${part.def.name} settings`);
-    panel.el.addEventListener('keydown', (event) => {
+    const panel = { part, screen, element: makeElement('div', 'part-panel'), pinned: false, offset: null };
+    panel.element.setAttribute('role', 'dialog');
+    panel.element.setAttribute('aria-label', `${part.type.name} settings`);
+    panel.element.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         PartPanel.close(panel);
         event.stopPropagation();
       }
     });
-    host(screen).appendChild(panel.el);
+    host(screen).appendChild(panel.element);
     panels.push(panel);
     PartPanel.build(panel);
   };
@@ -75,25 +75,25 @@
     if (panelIndex >= 0) {
       panels.splice(panelIndex, 1);
     }
-    panel.el.remove();
-    const line = lineFor(panel.ctx, false);
+    panel.element.remove();
+    const line = lineFor(panel.screen, false);
     if (line) {
       line.innerHTML = '';
     }
   };
   PartPanel.closeAll = (screen) => {
     for (const panel of panels.slice()) {
-      if (!screen || panel.ctx === screen) {
+      if (!screen || panel.screen === screen) {
         PartPanel.close(panel);
       }
     }
   };
-  PartPanel.isOpen = (screen = 'editor') => panels.some((panel) => panel.ctx === screen);
-  PartPanel.panels = (screen) => panels.filter((panel) => !screen || panel.ctx === screen);
+  PartPanel.isOpen = (screen = 'editor') => panels.some((panel) => panel.screen === screen);
+  PartPanel.panels = (screen) => panels.filter((panel) => !screen || panel.screen === screen);
   // Rebuild every pop-up (after undo, load, or a change elsewhere); close those whose part is gone.
   PartPanel.rebuildAll = (screen, alive) => {
     for (const panel of panels.slice()) {
-      if (panel.ctx !== screen) {
+      if (panel.screen !== screen) {
         continue;
       }
       if (!alive(panel.part)) {
@@ -111,10 +111,10 @@
     if (!hostElement) {
       return null;
     }
-    let lineLayer = hostElement.querySelector(':scope > svg.pp-lines');
+    let lineLayer = hostElement.querySelector(':scope > svg.part-panel-lines');
     if (!lineLayer && make) {
       lineLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      lineLayer.setAttribute('class', 'pp-lines');
+      lineLayer.setAttribute('class', 'part-panel-lines');
       lineLayer.setAttribute('aria-hidden', 'true');
       hostElement.appendChild(lineLayer);
     }
@@ -122,7 +122,7 @@
   }
 
   // Called every redraw: where = (part) => its point on screen, in the host's pixels, or
-  // null if it can't be shown. hidden hides every pop-up of ctx (while dragging a part).
+  // null if it can't be shown. hidden hides every pop-up of that screen (while dragging a part).
   PartPanel.layout = (screen, where, hidden = false) => {
     const hostElement = host(screen);
     if (!hostElement) {
@@ -132,36 +132,36 @@
     const hostHeight = hostElement.clientHeight;
     const lineLayer = lineFor(
       screen,
-      panels.some((panel) => panel.ctx === screen),
+      panels.some((panel) => panel.screen === screen),
     );
     let lines = '';
     for (const panel of panels) {
-      if (panel.ctx !== screen) {
+      if (panel.screen !== screen) {
         continue;
       }
       const anchor = hidden ? null : where(panel.part);
-      panel.el.hidden = !anchor;
+      panel.element.hidden = !anchor;
       if (!anchor) {
         continue;
       }
       if (panel.live) {
         panel.live();
       }
-      const panelWidth = panel.el.offsetWidth || 270;
-      const panelHeight = panel.el.offsetHeight || 200;
-      if (!panel.off) {
-        panel.off = {
+      const panelWidth = panel.element.offsetWidth || 270;
+      const panelHeight = panel.element.offsetHeight || 200;
+      if (!panel.offset) {
+        panel.offset = {
           x: anchor.x + 60 + panelWidth < hostWidth ? 60 : -60 - panelWidth,
           y: -panelHeight / 2,
         };
       }
-      const panelX = FS.clamp(anchor.x + panel.off.x, 4, Math.max(4, hostWidth - panelWidth - 4));
-      const panelY = FS.clamp(anchor.y + panel.off.y, 4, Math.max(4, hostHeight - panelHeight - 4));
-      panel.el.style.left = panelX + 'px';
-      panel.el.style.top = panelY + 'px';
+      const panelX = Flatspace.clamp(anchor.x + panel.offset.x, 4, Math.max(4, hostWidth - panelWidth - 4));
+      const panelY = Flatspace.clamp(anchor.y + panel.offset.y, 4, Math.max(4, hostHeight - panelHeight - 4));
+      panel.element.style.left = panelX + 'px';
+      panel.element.style.top = panelY + 'px';
       // the line meets the pop-up's nearest edge
-      const lineEndX = FS.clamp(anchor.x, panelX, panelX + panelWidth);
-      const lineEndY = FS.clamp(anchor.y, panelY, panelY + panelHeight);
+      const lineEndX = Flatspace.clamp(anchor.x, panelX, panelX + panelWidth);
+      const lineEndY = Flatspace.clamp(anchor.y, panelY, panelY + panelHeight);
       if (Math.hypot(lineEndX - anchor.x, lineEndY - anchor.y) > 6) {
         lines += `<line x1="${anchor.x.toFixed(1)}" y1="${anchor.y.toFixed(1)}" x2="${lineEndX.toFixed(1)}" y2="${lineEndY.toFixed(1)}"/><circle cx="${anchor.x.toFixed(1)}" cy="${anchor.y.toFixed(1)}" r="3.5"/>`;
       }
@@ -179,7 +179,12 @@
         return;
       }
       event.preventDefault();
-      const start = { x: event.clientX, y: event.clientY, ox: panel.off.x, oy: panel.off.y };
+      const start = {
+        x: event.clientX,
+        y: event.clientY,
+        startOffsetX: panel.offset.x,
+        startOffsetY: panel.offset.y,
+      };
       try {
         handle.setPointerCapture(event.pointerId);
       } catch (error) {
@@ -189,8 +194,11 @@
         if (moveEvent.pointerId !== event.pointerId) {
           return;
         }
-        panel.off = { x: start.ox + moveEvent.clientX - start.x, y: start.oy + moveEvent.clientY - start.y };
-        if (panel.ctx === 'editor') {
+        panel.offset = {
+          x: start.startOffsetX + moveEvent.clientX - start.x,
+          y: start.startOffsetY + moveEvent.clientY - start.y,
+        };
+        if (panel.screen === 'editor') {
           hangarEditor.render();
         }
       };
@@ -211,9 +219,9 @@
   // ---------- Controls ----------
   // A labelled slider. onInput runs while dragging (no undo step); onChange when let go.
   function slider(container, label, min, max, step, value, format, onInput, onChange) {
-    const row = makeElement('label', 'pp-row');
-    const top = makeElement('span', 'pp-label');
-    const out = makeElement('output', 'pp-val', format(value));
+    const row = makeElement('label', 'part-panel-row');
+    const top = makeElement('span', 'part-panel-label');
+    const out = makeElement('output', 'part-panel-value', format(value));
     top.append(makeElement('span', '', label), out);
     const range = makeElement('input');
     Object.assign(range, { type: 'range', min, max, step, value });
@@ -231,13 +239,13 @@
     return range;
   }
   function choices(container, label, list, current, onPick) {
-    const wrap = makeElement('div', 'pp-row');
-    wrap.appendChild(makeElement('span', 'pp-label', label));
-    const group = makeElement('div', 'pp-choices');
+    const wrap = makeElement('div', 'part-panel-row');
+    wrap.appendChild(makeElement('span', 'part-panel-label', label));
+    const group = makeElement('div', 'part-panel-choices');
     group.setAttribute('role', 'group');
     group.setAttribute('aria-label', label);
     for (const [value, text, extra] of list) {
-      const button = makeElement('button', 'pp-choice' + (extra ? ' ' + extra : ''), text);
+      const button = makeElement('button', 'part-panel-choice' + (extra ? ' ' + extra : ''), text);
       button.type = 'button';
       button.setAttribute('aria-pressed', String(value === current));
       button.addEventListener('click', () => onPick(value));
@@ -247,10 +255,10 @@
     container.appendChild(wrap);
   }
   function toggle(container, label, isOn, onSet, hint) {
-    const button = makeElement('button', 'pp-toggle');
+    const button = makeElement('button', 'part-panel-toggle');
     button.type = 'button';
     button.setAttribute('aria-pressed', String(!!isOn));
-    button.append(makeElement('span', 'pp-switch'), makeElement('span', '', label));
+    button.append(makeElement('span', 'part-panel-switch'), makeElement('span', '', label));
     if (hint) {
       button.title = hint;
     }
@@ -258,7 +266,7 @@
     container.appendChild(button);
   }
   function action(container, label, onClick, kind = '') {
-    const button = makeElement('button', 'pp-action ' + kind, label);
+    const button = makeElement('button', 'part-panel-action ' + kind, label);
     button.type = 'button';
     button.addEventListener('click', onClick);
     container.appendChild(button);
@@ -269,12 +277,12 @@
   const tonnes = (kilograms) => (kilograms / 1000).toFixed(kilograms < 1000 ? 3 : 2) + ' t';
   PartPanel.build = (panel) => {
     const part = panel.part;
-    const partType = part.def;
-    const container = panel.el;
+    const partType = part.type;
+    const container = panel.element;
     container.innerHTML = '';
-    const head = makeElement('div', 'pp-head');
+    const head = makeElement('div', 'part-panel-head');
     head.appendChild(makeElement('h3', '', partType.name));
-    const pinButton = makeElement('button', 'pp-pin', '📌');
+    const pinButton = makeElement('button', 'part-panel-pin', '📌');
     pinButton.type = 'button';
     pinButton.title = 'Pin: keep this open when another part is selected';
     pinButton.setAttribute('aria-label', 'Pin');
@@ -284,7 +292,7 @@
       pinButton.setAttribute('aria-pressed', String(panel.pinned));
       container.classList.toggle('pinned', panel.pinned);
     });
-    const closeButton = makeElement('button', 'pp-close', '×');
+    const closeButton = makeElement('button', 'part-panel-close', '×');
     closeButton.type = 'button';
     closeButton.setAttribute('aria-label', 'Close');
     closeButton.addEventListener('click', () => PartPanel.close(panel));
@@ -293,7 +301,7 @@
     container.classList.toggle('pinned', panel.pinned);
     makeDraggable(panel, head);
     panel.live = null;
-    if (panel.ctx === 'flight') {
+    if (panel.screen === 'flight') {
       buildFlight(panel, container);
     } else {
       buildEditor(panel, container);
@@ -302,7 +310,7 @@
 
   function buildEditor(panel, container) {
     const part = panel.part;
-    const partType = part.def;
+    const partType = part.type;
     const rebuild = () => {
       if (panels.includes(panel)) {
         PartPanel.build(panel);
@@ -310,12 +318,12 @@
     };
     const info = makeElement(
       'p',
-      'pp-sub',
-      `${tonnes(FS.partMass(part))}${part.cap ? ` · ${tonnes(part.fuel)} of ${tonnes(part.cap)} fuel` : ''}`,
+      'part-panel-subtitle',
+      `${tonnes(Flatspace.partMass(part))}${part.fuelCapacity ? ` · ${tonnes(part.fuel)} of ${tonnes(part.fuelCapacity)} fuel` : ''}`,
     );
     container.appendChild(info);
-    if (FS.Build.twinOf(hangarEditor.parts, part)) {
-      container.appendChild(makeElement('p', 'pp-note', 'Changes apply to its mirror twin too.'));
+    if (Flatspace.Build.twinOf(hangarEditor.parts, part)) {
+      container.appendChild(makeElement('p', 'part-panel-note', 'Changes apply to its mirror twin too.'));
     }
     // a floating part: launch it with the craft, or leave it behind
     let root = part;
@@ -323,7 +331,7 @@
       root = root.parent;
     }
     if (root !== hangarEditor.parts[0]) {
-      container.appendChild(makeElement('p', 'pp-note', 'Floating: not attached to the craft.'));
+      container.appendChild(makeElement('p', 'part-panel-note', 'Floating: not attached to the craft.'));
       choices(
         container,
         'At launch',
@@ -340,37 +348,37 @@
       );
     }
     if (partType.stretch) {
-      const max = FS.MAX_TANK_LEN;
-      const lenRange = slider(
+      const max = Flatspace.MAX_TANK_LENGTH;
+      const lengthSlider = slider(
         container,
         'Length',
-        FS.LEN_STEP,
+        Flatspace.LENGTH_STEP,
         max,
-        FS.LEN_STEP,
-        part.len,
+        Flatspace.LENGTH_STEP,
+        part.length,
         (value) => `${(+value).toFixed(2)} m`,
         (value) => {
           hangarEditor.setLength(part, value, false);
-          return part.len;
+          return part.length;
         },
         () => {
           hangarEditor.changed();
           rebuild();
         },
       );
-      const step = makeElement('div', 'pp-steps');
+      const step = makeElement('div', 'part-panel-steps');
       for (const [label, change] of [
-        ['−0.25', -FS.LEN_STEP],
-        ['+0.25', FS.LEN_STEP],
+        ['−0.25', -Flatspace.LENGTH_STEP],
+        ['+0.25', Flatspace.LENGTH_STEP],
         ['−1', -1],
         ['+1', 1],
       ]) {
-        const button = makeElement('button', 'pp-choice', label);
+        const button = makeElement('button', 'part-panel-choice', label);
         button.type = 'button';
         button.setAttribute('aria-label', `${change > 0 ? 'Lengthen' : 'Shorten'} by ${Math.abs(change)} m`);
         button.addEventListener('click', () => {
-          hangarEditor.setLength(part, FS.clamp(part.len + change, FS.LEN_STEP, max));
-          lenRange.value = part.len;
+          hangarEditor.setLength(part, Flatspace.clamp(part.length + change, Flatspace.LENGTH_STEP, max));
+          lengthSlider.value = part.length;
           rebuild();
         });
         step.appendChild(button);
@@ -379,7 +387,7 @@
       choices(
         container,
         'Width',
-        FS.TANK_WIDTHS.map((width) => [width, width + ' m']),
+        Flatspace.TANK_WIDTHS.map((width) => [width, width + ' m']),
         part.size,
         (width) => {
           hangarEditor.setWidth(part, width);
@@ -389,7 +397,7 @@
       choices(
         container,
         'Look',
-        FS.TANK_SKINS.map((skinName) => [skinName, SKIN_NAMES[skinName], 'skin skin-' + skinName]),
+        Flatspace.TANK_SKINS.map((skinName) => [skinName, SKIN_NAMES[skinName], 'skin skin-' + skinName]),
         part.skin,
         (skinName) => {
           hangarEditor.setSetting(part, 'skin', skinName);
@@ -408,7 +416,7 @@
         (value) => `${value}%`,
         (value) => {
           hangarEditor.setSetting(part, 'fill', value / 100, false);
-          info.textContent = `${tonnes(FS.partMass(part))} · ${tonnes(part.fuel)} of ${tonnes(part.cap)} fuel`;
+          info.textContent = `${tonnes(Flatspace.partMass(part))} · ${tonnes(part.fuel)} of ${tonnes(part.fuelCapacity)} fuel`;
         },
         (value) => hangarEditor.setSetting(part, 'fill', value / 100),
       );
@@ -430,29 +438,29 @@
     }
     if (partType.chute) {
       chuteSlider(container, part, (value, record) =>
-        hangarEditor.setSetting(part, 'chuteAlt', value, record),
+        hangarEditor.setSetting(part, 'chuteAltitude', value, record),
       );
     }
-    if (FS.stageable(part) && root === hangarEditor.parts[0]) {
+    if (Flatspace.stageable(part) && root === hangarEditor.parts[0]) {
       const staged = !(typeof part.stage === 'number' && part.stage < 0);
       toggle(
         container,
         'Fires in staging',
         staged,
         (isOn) => {
-          FS.StagingEditor.setStaged(part, isOn);
+          Flatspace.StagingEditor.setStaged(part, isOn);
           rebuild();
         },
         'Turn off to leave this part out of the stage list.',
       );
     }
-    if (!container.querySelector('input, .pp-choice, .pp-toggle')) {
-      container.appendChild(makeElement('p', 'pp-note', 'This part has no settings.'));
+    if (!container.querySelector('input, .part-panel-choice, .part-panel-toggle')) {
+      container.appendChild(makeElement('p', 'part-panel-note', 'This part has no settings.'));
     }
   }
 
   function engineSliders(container, part, set) {
-    const engine = part.def.engine;
+    const engine = part.type.engine;
     if (!engine) {
       return;
     }
@@ -463,7 +471,7 @@
       100,
       5,
       Math.round(part.limit * 100),
-      (value) => `${value}% · ${((engine.vac * value) / 100000).toFixed(0)} kN`,
+      (value) => `${value}% · ${((engine.vacuumThrust * value) / 100000).toFixed(0)} kN`,
       (value) => {
         set('limit', value / 100, false);
       },
@@ -492,7 +500,7 @@
       100,
       3000,
       50,
-      part.chuteAlt,
+      part.chuteAltitude,
       (value) => `${value} m above ground`,
       (value) => {
         set(value, false);
@@ -504,18 +512,18 @@
   // In flight: live readouts, the settings that can still change, and actions.
   function buildFlight(panel, container) {
     const part = panel.part;
-    const partType = part.def;
-    const game = FS.game;
+    const partType = part.type;
+    const game = Flatspace.game;
     const vessel = () => game.vessel;
-    const status = makeElement('p', 'pp-sub', '');
+    const status = makeElement('p', 'part-panel-subtitle', '');
     container.appendChild(status);
     const set = (setting, value) => {
       part[setting] = value;
     };
     panel.live = () => {
-      const bits = [tonnes(FS.partMass(part))];
-      if (part.cap) {
-        bits.push(`${tonnes(part.fuel)} of ${tonnes(part.cap)} fuel`);
+      const bits = [tonnes(Flatspace.partMass(part))];
+      if (part.fuelCapacity) {
+        bits.push(`${tonnes(part.fuel)} of ${tonnes(part.fuelCapacity)} fuel`);
       }
       if (partType.engine) {
         bits.push(
@@ -531,7 +539,9 @@
         );
       }
       if (partType.chute) {
-        bits.push({ stowed: 'packed', armed: 'armed', semi: 'half open', full: 'open' }[part.chute] || '');
+        bits.push(
+          { stowed: 'packed', armed: 'armed', halfOpen: 'half open', full: 'open' }[part.chute] || '',
+        );
       }
       const summary = bits.join(' · ');
       if (status.textContent !== summary) {
@@ -581,7 +591,7 @@
       );
     }
     if (partType.chute) {
-      chuteSlider(container, part, (value) => set('chuteAlt', value));
+      chuteSlider(container, part, (value) => set('chuteAltitude', value));
       if (part.chute === 'stowed') {
         action(
           container,
@@ -598,27 +608,27 @@
 
   // ---------- Craft files ----------
   // Export and import craft as files, or as text to paste into a chat or a forum post.
-  const CraftFiles = (FS.CraftFiles = {});
+  const CraftFiles = (Flatspace.CraftFiles = {});
   const showMessage = (text, bad) => {
-    const messageElement = byId('cfMsg');
+    const messageElement = byId('craftFilesMessage');
     messageElement.textContent = text;
     messageElement.classList.toggle('bad', !!bad);
   };
 
   CraftFiles.open = () => {
-    const hangarEditor = FS.Editor;
-    byId('cfText').value = '';
+    const hangarEditor = Flatspace.Editor;
+    byId('craftFilesText').value = '';
     showMessage(`“${hangarEditor.name}”, ${hangarEditor.parts.length} parts.`);
     byId('craftFiles').hidden = false;
-    byId('cfDownload').focus();
+    byId('craftFilesDownload').focus();
   };
   CraftFiles.close = () => {
     byId('craftFiles').hidden = true;
   };
 
-  CraftFiles.init = () => {
-    const hangarEditor = FS.Editor;
-    byId('cfClose').addEventListener('click', CraftFiles.close);
+  CraftFiles.initialise = () => {
+    const hangarEditor = Flatspace.Editor;
+    byId('craftFilesClose').addEventListener('click', CraftFiles.close);
     byId('craftFiles').addEventListener('click', (event) => {
       if (event.target.id === 'craftFiles') {
         CraftFiles.close();
@@ -629,8 +639,8 @@
         CraftFiles.close();
       }
     });
-    byId('cfDownload').addEventListener('click', () => {
-      const json = FS.craftToJSON(hangarEditor.name, hangarEditor.parts);
+    byId('craftFilesDownload').addEventListener('click', () => {
+      const json = Flatspace.craftToJSON(hangarEditor.name, hangarEditor.parts);
       try {
         const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
         const link = document.createElement('a');
@@ -645,8 +655,8 @@
         showMessage('Your browser could not create the file. Use "Copy as text" instead.', true);
       }
     });
-    byId('cfOpen').addEventListener('click', () => byId('cfFile').click());
-    byId('cfFile').addEventListener('change', (event) => {
+    byId('craftFilesOpen').addEventListener('click', () => byId('craftFilesFile').click());
+    byId('craftFilesFile').addEventListener('change', (event) => {
       const file = event.target.files && event.target.files[0];
       if (!file) {
         return;
@@ -657,10 +667,10 @@
       reader.readAsText(file);
       event.target.value = '';
     });
-    byId('cfCopy').addEventListener('click', () => {
-      const text = FS.craftToText(hangarEditor.name, hangarEditor.parts);
-      byId('cfText').value = text;
-      byId('cfText').select();
+    byId('craftFilesCopy').addEventListener('click', () => {
+      const text = Flatspace.craftToText(hangarEditor.name, hangarEditor.parts);
+      byId('craftFilesText').value = text;
+      byId('craftFilesText').select();
       const done = () =>
         showMessage('Copied. Paste it anywhere; anyone can load it with "Load pasted text".');
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -671,11 +681,11 @@
         showMessage('Select the text below and copy it.');
       }
     });
-    byId('cfPaste').addEventListener('click', () => {
-      const text = byId('cfText').value.trim();
+    byId('craftFilesPaste').addEventListener('click', () => {
+      const text = byId('craftFilesText').value.trim();
       if (!text) {
         showMessage('Paste craft text into the box first.', true);
-        byId('cfText').focus();
+        byId('craftFilesText').focus();
         return;
       }
       CraftFiles.importText(text);
@@ -684,21 +694,21 @@
 
   // Load a craft from file or pasted text into the hangar.
   CraftFiles.importText = (text) => {
-    const result = FS.craftFromText(text);
+    const result = Flatspace.craftFromText(text);
     if (result.error) {
       showMessage(result.error, true);
       return false;
     }
-    const parts = FS.partsFromSerial(result.parts);
+    const parts = Flatspace.partsFromSerial(result.parts);
     if (!parts.length) {
       showMessage('That craft has no parts this version of the game knows.', true);
       return false;
     }
-    FS.Editor.load(result.name, parts);
+    Flatspace.Editor.load(result.name, parts);
     showMessage(
       `Loaded “${result.name}”${result.skipped ? `, without ${result.skipped} unknown part${result.skipped > 1 ? 's' : ''}` : ''}.`,
     );
-    FS.Editor.say(`Loaded “${result.name}” from a craft file.`);
+    Flatspace.Editor.say(`Loaded “${result.name}” from a craft file.`);
     setTimeout(CraftFiles.close, 700);
     return true;
   };

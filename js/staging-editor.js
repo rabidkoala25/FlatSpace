@@ -4,21 +4,21 @@
 // which are saved with the craft. Parts can be dragged between stages (as chips), stages
 // moved up or down, added and removed, parts left out of staging, and everything reset.
 (function () {
-  const StagingEditor = (FS.StagingEditor = {});
+  const StagingEditor = (Flatspace.StagingEditor = {});
   const byId = (elementId) => document.getElementById(elementId);
   let hangarEditor = null;
   StagingEditor.emptyStages = 0; // empty stages added with "+ Stage", shown until parts are dragged in
 
-  StagingEditor.init = (editor) => {
+  StagingEditor.initialise = (editor) => {
     hangarEditor = editor;
-    byId('btnStageAdd').addEventListener('click', () => StagingEditor.add());
-    byId('btnStageReset').addEventListener('click', () => StagingEditor.reset());
+    byId('addStageButton').addEventListener('click', () => StagingEditor.add());
+    byId('resetStagesButton').addEventListener('click', () => StagingEditor.reset());
   };
 
   // ---------- Operations (also used by tests) ----------
   const custom = () => {
-    if (!FS.customStaging(hangarEditor.main())) {
-      FS.freezeStaging(hangarEditor.main());
+    if (!Flatspace.customStaging(hangarEditor.main())) {
+      Flatspace.freezeStaging(hangarEditor.main());
     }
   };
   const maxStage = () =>
@@ -42,7 +42,7 @@
     }
   }
 
-  // Move parts to stage k (0 = fires first), 'new' (a new last stage) or 'none' (left out).
+  // Move parts to a stage number (0 = fires first), 'new' (a new last stage) or 'none' (left out).
   StagingEditor.move = (parts, stage) => {
     custom();
     if (stage === 'none') {
@@ -59,7 +59,7 @@
     hangarEditor.changed();
   };
 
-  // Swap stage k with the one before (d = -1) or after (d = +1).
+  // Swap a stage with the one before (direction -1) or after (direction +1).
   StagingEditor.shift = (stage, direction) => {
     custom();
     const otherStage = stage + direction;
@@ -76,7 +76,7 @@
     hangarEditor.changed();
   };
 
-  // Remove stage k: its parts join the next stage (or the previous one, if it was last).
+  // Remove a stage: its parts join the next stage (or the previous one, if it was last).
   StagingEditor.remove = (stage) => {
     custom();
     const last = maxStage();
@@ -103,7 +103,7 @@
     hangarEditor.updateStats();
   };
   StagingEditor.reset = () => {
-    FS.resetStaging(hangarEditor.main());
+    Flatspace.resetStaging(hangarEditor.main());
     StagingEditor.emptyStages = 0;
     hangarEditor.changed();
     hangarEditor.say('Staging is automatic again.');
@@ -111,7 +111,7 @@
 
   // Put a part (and its mirror twin) in or out of staging.
   StagingEditor.setStaged = (part, staged) => {
-    const twin = FS.Build.twinOf(hangarEditor.main(), part);
+    const twin = Flatspace.Build.twinOf(hangarEditor.main(), part);
     custom();
     const parts = [part, twin].filter(Boolean);
     if (staged) {
@@ -130,10 +130,10 @@
 
   // In custom staging, new stageable parts (just added) go into a new last stage together.
   StagingEditor.assignNew = (parts) => {
-    if (!FS.customStaging(parts)) {
+    if (!Flatspace.customStaging(parts)) {
       return 0;
     }
-    const fresh = parts.filter((part) => FS.stageable(part) && typeof part.stage !== 'number');
+    const fresh = parts.filter((part) => Flatspace.stageable(part) && typeof part.stage !== 'number');
     if (!fresh.length) {
       return 0;
     }
@@ -154,7 +154,7 @@
       if (seen.has(part)) {
         continue;
       }
-      const twin = FS.Build.twinOf(hangarEditor.main(), part);
+      const twin = Flatspace.Build.twinOf(hangarEditor.main(), part);
       const group = twin && parts.includes(twin) ? [part, twin] : [part];
       group.forEach((groupPart) => seen.add(groupPart));
       out.push(group);
@@ -171,24 +171,25 @@
     const part = group[0];
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'stg-chip ' + (part.def.engine ? 'eng' : part.def.decoupler ? 'dec' : 'chute');
-    button.textContent = (group.length > 1 ? group.length + '× ' : '') + shortName(part.def);
+    button.className =
+      'stage-chip ' + (part.type.engine ? 'engine' : part.type.decoupler ? 'decoupler' : 'chute');
+    button.textContent = (group.length > 1 ? group.length + '× ' : '') + shortName(part.type);
     button.title = editable
       ? 'Drag to another stage. Click to select it. [ and ] move it a stage up or down.'
-      : part.def.name;
+      : part.type.name;
     button.setAttribute(
       'aria-label',
-      `${group.length > 1 ? group.length + ' ' : ''}${part.def.name}${editable ? ', press [ or ] to move between stages' : ''}`,
+      `${group.length > 1 ? group.length + ' ' : ''}${part.type.name}${editable ? ', press [ or ] to move between stages' : ''}`,
     );
-    if (group.includes(hangarEditor.sel)) {
-      button.classList.add('sel');
+    if (group.includes(hangarEditor.selected)) {
+      button.classList.add('selected');
     }
     button.addEventListener('click', () => {
       if (dragged) {
         return;
       }
-      hangarEditor.sel = part;
-      FS.PartPanel.select(part, 'editor');
+      hangarEditor.selected = part;
+      Flatspace.PartPanel.select(part, 'editor');
       hangarEditor.render();
     });
     if (editable) {
@@ -210,22 +211,24 @@
   }
   // stage index of a part in automatic staging (before the first edit)
   function stageIndexOf(part) {
-    return FS.stagesOf(hangarEditor.main()).findIndex((stage) => stage.parts.includes(part));
+    return Flatspace.stagesOf(hangarEditor.main()).findIndex((stage) => stage.parts.includes(part));
   }
   const maxStageNow = () =>
-    FS.customStaging(hangarEditor.main()) ? maxStage() : FS.stagesOf(hangarEditor.main()).length - 1;
+    Flatspace.customStaging(hangarEditor.main())
+      ? maxStage()
+      : Flatspace.stagesOf(hangarEditor.main()).length - 1;
 
   // ---------- Dragging chips ----------
   let drag = null;
   let dragged = false;
-  function startChipDrag(event, group, src) {
+  function startChipDrag(event, group, sourceChip) {
     if (event.button !== 0) {
       return;
     }
     dragged = false;
-    drag = { group, x: event.clientX, y: event.clientY, src, ghost: null, id: event.pointerId };
+    drag = { group, x: event.clientX, y: event.clientY, sourceChip, ghost: null, id: event.pointerId };
     try {
-      src.setPointerCapture(event.pointerId);
+      sourceChip.setPointerCapture(event.pointerId);
     } catch (error) {
       /* old browsers */
     }
@@ -241,8 +244,8 @@
       return;
     }
     if (!drag.ghost && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 5) {
-      drag.ghost = drag.src.cloneNode(true);
-      drag.ghost.classList.add('stg-ghost');
+      drag.ghost = drag.sourceChip.cloneNode(true);
+      drag.ghost.classList.add('stage-ghost');
       document.body.appendChild(drag.ghost);
       dragged = true;
     }
@@ -288,10 +291,10 @@
   StagingEditor.render = (parts, stages, vacuumStats, seaLevelStats, editable) => {
     const list = byId('stageList');
     list.innerHTML = '';
-    const isCustom = FS.customStaging(parts);
+    const isCustom = Flatspace.customStaging(parts);
     const shown = isCustom
-      ? FS.customStages(parts, true)
-      : stages.map((stage, index) => Object.assign({ index: index }, stage));
+      ? Flatspace.customStages(parts, true)
+      : stages.map((stage, index) => Object.assign({ index }, stage));
     for (let emptyIndex = 0; emptyIndex < StagingEditor.emptyStages && isCustom && editable; emptyIndex++) {
       shown.push({
         parts: [],
@@ -303,8 +306,8 @@
       });
     }
     byId('stageMode').textContent = isCustom ? 'Custom' : 'Automatic';
-    byId('btnStageReset').hidden = !isCustom || !editable;
-    byId('btnStageAdd').hidden = !editable;
+    byId('resetStagesButton').hidden = !isCustom || !editable;
+    byId('addStageButton').hidden = !editable;
 
     let real = 0;
     shown.forEach((stage, stageIndex) => {
@@ -319,7 +322,7 @@
       }
       if (stage.engines.length) {
         const names = {};
-        stage.engines.forEach((part) => (names[part.def.name] = (names[part.def.name] || 0) + 1));
+        stage.engines.forEach((part) => (names[part.type.name] = (names[part.type.name] || 0) + 1));
         what.push(
           'Ignite ' +
             Object.entries(names)
@@ -334,29 +337,29 @@
         what.push('Deploy parachutes');
       }
       let deltaVText = '';
-      let nums = '';
+      let statsHtml = '';
       if (stage.parts.length) {
         const vacuumStage = vacuumStats.events[real];
         const seaLevelStage = seaLevelStats.events[real];
         real++;
-        if (vacuumStage && (stage.engines.length || vacuumStage.dv > 0.5)) {
-          deltaVText = `${vacuumStage.dv.toFixed(0)} m/s`;
-          const twrCls = real === 1 && seaLevelStage.twr < 1 ? ' class="bad"' : '';
-          nums = `<span${twrCls}>TWR ${seaLevelStage.twr.toFixed(2)}</span><span>ASL ${seaLevelStage.dv.toFixed(0)}</span><span>${vacuumStage.time.toFixed(0)} s</span>`;
+        if (vacuumStage && (stage.engines.length || vacuumStage.deltaV > 0.5)) {
+          deltaVText = `${vacuumStage.deltaV.toFixed(0)} m/s`;
+          const thrustToWeightClass = real === 1 && seaLevelStage.thrustToWeight < 1 ? ' class="bad"' : '';
+          statsHtml = `<span${thrustToWeightClass}>TWR ${seaLevelStage.thrustToWeight.toFixed(2)}</span><span>ASL ${seaLevelStage.deltaV.toFixed(0)}</span><span>${vacuumStage.time.toFixed(0)} s</span>`;
         }
       }
-      listItem.innerHTML = `<header><span class="sn">Stage ${stageIndex + 1}</span><span class="dv">${deltaVText}</span></header><div class="what">${stage.parts.length ? what.join(' · ') : 'Empty: drag parts here'}</div>${nums ? `<div class="nums">${nums}</div>` : ''}`;
+      listItem.innerHTML = `<header><span class="stage-number">Stage ${stageIndex + 1}</span><span class="delta-v">${deltaVText}</span></header><div class="what">${stage.parts.length ? what.join(' · ') : 'Empty: drag parts here'}</div>${statsHtml ? `<div class="stage-numbers">${statsHtml}</div>` : ''}`;
       const chips = document.createElement('div');
-      chips.className = 'stg-chips';
+      chips.className = 'stage-chips';
       units(stage.parts).forEach((group) => chips.appendChild(chip(group, editable)));
       listItem.appendChild(chips);
       if (editable) {
         const tools = document.createElement('div');
-        tools.className = 'stg-tools';
+        tools.className = 'stage-tools';
         const makeButton = (text, label, onClick, disabled) => {
           const button = document.createElement('button');
           button.type = 'button';
-          button.className = 'stg-tool';
+          button.className = 'stage-tool';
           button.textContent = text;
           button.title = label;
           button.setAttribute('aria-label', `${label} (stage ${stageIndex + 1})`);
@@ -395,11 +398,11 @@
     if (editable) {
       const unstaged = parts.filter((part) => part.stage === -1);
       const listItem = document.createElement('li');
-      listItem.className = 'stage-card stg-off';
+      listItem.className = 'stage-card stage-off';
       listItem.dataset.stage = 'none';
-      listItem.innerHTML = `<header><span class="sn">Not staged</span></header><div class="what">${unstaged.length ? 'Left out of the stage list' : 'Drop parts here to leave them out of staging'}</div>`;
+      listItem.innerHTML = `<header><span class="stage-number">Not staged</span></header><div class="what">${unstaged.length ? 'Left out of the stage list' : 'Drop parts here to leave them out of staging'}</div>`;
       const chips = document.createElement('div');
-      chips.className = 'stg-chips';
+      chips.className = 'stage-chips';
       units(unstaged).forEach((group) => chips.appendChild(chip(group, true)));
       listItem.appendChild(chips);
       list.appendChild(listItem);

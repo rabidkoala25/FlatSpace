@@ -2,7 +2,7 @@
 // Skipped when Playwright or a Chromium build isn't available. To run it on your own
 // computer: "npm install playwright" and "npx playwright install chromium".
 // Set CHROMIUM=/path/to/chrome to use a particular browser.
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
 const { ROOT, check, done } = require('./lib');
 
@@ -16,14 +16,14 @@ try {
 const chromiumPath =
   process.env.CHROMIUM ||
   ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((candidatePath) =>
-    fs.existsSync(candidatePath),
+    fileSystem.existsSync(candidatePath),
   );
 const url = (page, query = '') => 'file://' + path.join(ROOT, page).replace(/\\/g, '/') + query;
 
 // Inside the page: how much of the craft is drawn in exact palette colours, and the craft's
 // pixels, around its centre on screen (device pixels, read back from the WebGL canvas).
 function readCraft() {
-  const game = FS.game;
+  const game = Flatspace.game;
   const viewCanvas = document.getElementById('view');
   const copyCanvas = document.createElement('canvas');
   copyCanvas.width = viewCanvas.width;
@@ -31,15 +31,15 @@ function readCraft() {
   const graphics = copyCanvas.getContext('2d');
   graphics.drawImage(viewCanvas, 0, 0);
   const pixelRatio = viewCanvas.width / viewCanvas.clientWidth;
-  const screenPoint = FS.Renderer.partToScreen(game.cam, game.vessel, game.t, { x: 0, y: 0 });
-  const radius = Math.min(160, game.vessel.layout.height * game.cam.s * 0.6) * pixelRatio;
+  const screenPoint = Flatspace.Renderer.partToScreen(game.camera, game.vessel, game.time, { x: 0, y: 0 });
+  const radius = Math.min(160, game.vessel.layout.height * game.camera.scale * 0.6) * pixelRatio;
   const startX = Math.max(0, Math.round(screenPoint.x * pixelRatio - radius));
   const startY = Math.max(0, Math.round(screenPoint.y * pixelRatio - radius));
   const width = Math.min(viewCanvas.width - startX, Math.round(radius * 2));
   const height = Math.min(viewCanvas.height - startY, Math.round(radius * 2));
   const pixels = graphics.getImageData(startX, startY, width, height).data;
-  const paletteColours = new Set(FS.Palette.all.map((colour) => colour.join(',')));
-  const night = new Set(FS.Palette.ramps.night.map((colour) => colour.join(',')));
+  const paletteColours = new Set(Flatspace.Palette.all.map((colour) => colour.join(',')));
+  const night = new Set(Flatspace.Palette.ramps.night.map((colour) => colour.join(',')));
   let craft = 0;
   let exact = 0;
   const samples = [];
@@ -55,7 +55,7 @@ function readCraft() {
       exact++;
     }
   }
-  return { craft, exact: exact / Math.max(1, craft), px: samples };
+  return { craft, exact: exact / Math.max(1, craft), pixels: samples };
 }
 
 (async () => {
@@ -81,18 +81,18 @@ function readCraft() {
   await page.goto(url('index.html', '?debug'));
   await page.waitForTimeout(1200);
   check(
-    await page.evaluate(() => FS.Renderer === FS.RenderGL),
+    await page.evaluate(() => Flatspace.Renderer === Flatspace.RenderGL),
     'with WebGL2 the game draws with the WebGL renderer',
   );
-  check(await page.evaluate(() => !document.querySelector('.gl-notice')), 'and shows no fallback notice');
+  check(await page.evaluate(() => !document.querySelector('.webgl-notice')), 'and shows no fallback notice');
 
   // crisp: zoomed in, the craft's art pixels are flat palette colours, with blends only at
   // their edges
   await page.evaluate(() => {
-    const game = FS.game;
+    const game = Flatspace.game;
     game.paused = true;
-    game.vessel.sas = false;
-    game.vessel.omega = 0;
+    game.vessel.stabilityAssist = false;
+    game.vessel.angularVelocity = 0;
     game.zoom = 5;
   });
   await page.waitForTimeout(150);
@@ -105,27 +105,27 @@ function readCraft() {
   // no shimmer: turning by 0.05° moves edges smoothly; no screen pixel jumps between colours
   for (const zoom of [1.6, 5]) {
     await page.evaluate((zoomValue) => {
-      FS.game.zoom = zoomValue;
+      Flatspace.game.zoom = zoomValue;
     }, zoom);
     await page.waitForTimeout(500); // the camera eases to the new zoom
-    const level = await page.evaluate(() => FS.Renderer.stats().level);
-    const startAngle = await page.evaluate(() => FS.game.vessel.angle);
+    const level = await page.evaluate(() => Flatspace.Renderer.stats().level);
+    const startAngle = await page.evaluate(() => Flatspace.game.vessel.angle);
     let pops = 0;
-    let prev = null;
+    let previousFrame = null;
     let total = 0;
     for (let frame = 0; frame < 8; frame++) {
       await page.evaluate(
         (angle) => {
-          FS.game.vessel.angle = angle;
+          Flatspace.game.vessel.angle = angle;
         },
         startAngle + (frame * 0.05 * Math.PI) / 180,
       );
       await page.waitForTimeout(80);
       const now = await page.evaluate(readCraft);
-      if (prev) {
-        for (let index = 0; index < now.px.length; index++) {
-          const current = now.px[index];
-          const previous = prev.px[index];
+      if (previousFrame) {
+        for (let index = 0; index < now.pixels.length; index++) {
+          const current = now.pixels[index];
+          const previous = previousFrame.pixels[index];
           if (!current || !previous) {
             continue;
           }
@@ -141,7 +141,7 @@ function readCraft() {
           }
         }
       }
-      prev = now;
+      previousFrame = now;
     }
     check(
       total > 1000 && pops / total < 0.002,
@@ -151,16 +151,16 @@ function readCraft() {
 
   // the pixel-size setting coarsens the grid
   await page.evaluate(() => {
-    FS.game.zoom = 1.6;
+    Flatspace.game.zoom = 1.6;
   });
   await page.waitForTimeout(600);
   const coarseLevel = await page.evaluate(() => {
-    FS.RenderGL.setPixelSize(3);
-    return new Promise((resolve) => setTimeout(() => resolve(FS.Renderer.stats().level), 200));
+    Flatspace.RenderGL.setPixelSize(3);
+    return new Promise((resolve) => setTimeout(() => resolve(Flatspace.Renderer.stats().level), 200));
   });
   const fineLevel = await page.evaluate(() => {
-    FS.RenderGL.setPixelSize(1.5);
-    return new Promise((resolve) => setTimeout(() => resolve(FS.Renderer.stats().level), 200));
+    Flatspace.RenderGL.setPixelSize(1.5);
+    return new Promise((resolve) => setTimeout(() => resolve(Flatspace.Renderer.stats().level), 200));
   });
   check(
     coarseLevel > fineLevel,
@@ -169,25 +169,25 @@ function readCraft() {
 
   // the map draws the planets
   await page.evaluate(() => {
-    FS.game.paused = false;
+    Flatspace.game.paused = false;
   });
   await page.keyboard.press('m');
   await page.waitForTimeout(300);
   const map = await page.evaluate(() => {
-    const game = FS.game;
+    const game = Flatspace.game;
     const viewCanvas = document.getElementById('view');
     const copyCanvas = document.createElement('canvas');
     copyCanvas.width = viewCanvas.width;
     copyCanvas.height = viewCanvas.height;
     const graphics = copyCanvas.getContext('2d');
     graphics.drawImage(viewCanvas, 0, 0);
-    const asterCentre = FS.bodyAbs(FS.root, game.t);
-    const screenPoint = FS.Renderer.worldToScreen(game.mapCam, asterCentre.x, asterCentre.y);
+    const asterCentre = Flatspace.bodyAbsolutePosition(Flatspace.root, game.time);
+    const screenPoint = Flatspace.Renderer.worldToScreen(game.mapCamera, asterCentre.x, asterCentre.y);
     const pixel = graphics.getImageData(Math.round(screenPoint.x), Math.round(screenPoint.y), 1, 1).data;
     return {
       mapMode: game.mapMode,
       centre: [pixel[0], pixel[1], pixel[2]],
-      night: FS.Palette.ramps.night.map((colour) => colour.join(',')),
+      night: Flatspace.Palette.ramps.night.map((colour) => colour.join(',')),
     };
   });
   check(
@@ -203,7 +203,9 @@ function readCraft() {
   await page.goto(url('index.html', '?canvas2d'));
   await page.waitForTimeout(400);
   check(
-    await page.evaluate(() => FS.Renderer === FS.Render && !document.querySelector('.gl-notice')),
+    await page.evaluate(
+      () => Flatspace.Renderer === Flatspace.Render && !document.querySelector('.webgl-notice'),
+    ),
     '?canvas2d uses the Canvas 2D renderer',
   );
 
@@ -213,11 +215,11 @@ function readCraft() {
   await page.waitForTimeout(600);
   const gallery = await page.evaluate(() => ({
     swatches: document.querySelectorAll('.ramp span').length,
-    n: FS.Palette.all.length,
+    colourCount: Flatspace.Palette.all.length,
   }));
   check(
-    gallery.swatches === gallery.n && errors.length === 0,
-    `the gallery shows all ${gallery.n} palette colours and the sprites without errors`,
+    gallery.swatches === gallery.colourCount && errors.length === 0,
+    `the gallery shows all ${gallery.colourCount} palette colours and the sprites without errors`,
   );
 
   await browser.close();

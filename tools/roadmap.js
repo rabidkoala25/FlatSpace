@@ -1,11 +1,11 @@
 // tools/roadmap.js — draws docs/roadmap.svg from the status table in PLAN.md (section 4.5).
 // Run after finishing a step:  node tools/roadmap.js
 // A step counts as done when its status cell contains ✅, in progress when it contains ◐.
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const plan = fs.readFileSync(path.join(ROOT, 'PLAN.md'), 'utf8');
+const plan = fileSystem.readFileSync(path.join(ROOT, 'PLAN.md'), 'utf8');
 
 // Short labels that fit inside a step block.
 const SHORT = {
@@ -117,16 +117,17 @@ if (next && next.status === 'todo') {
 const counted = all.filter((step) => step.id !== 'P');
 const doneCount = counted.filter((step) => step.status === 'done').length;
 const version =
-  (fs.readFileSync(path.join(ROOT, 'js/util.js'), 'utf8').match(/FS\.VERSION = '([^']+)'/) || [])[1] || '';
+  (fileSystem.readFileSync(path.join(ROOT, 'js/util.js'), 'utf8').match(/Flatspace\.VERSION = '([^']+)'/) ||
+    [])[1] || '';
 
 // ---- Draw ----
 const COLOURS = {
-  bg: '#0b1222',
+  background: '#0b1222',
   panel: '#111a2f',
   rail: '#26324d',
   ink: '#e6edf7',
-  ink2: '#9aa8c2',
-  ink3: '#6c7a96',
+  inkMid: '#9aa8c2',
+  inkLight: '#6c7a96',
   done: '#3fb68b',
   doneInk: '#062317',
   next: '#ffb547',
@@ -156,26 +157,26 @@ out.push(`<title id="t">Flatspace Program roadmap</title>`);
 out.push(
   `<desc id="d">${doneCount} of ${counted.length} roadmap steps done${next ? '. Next: ' + next.id + ' ' + escapeXml(next.name) : ''}.</desc>`,
 );
-out.push(`<rect width="${SVG_WIDTH}" height="${SVG_HEIGHT}" rx="14" fill="${COLOURS.bg}"/>`);
+out.push(`<rect width="${SVG_WIDTH}" height="${SVG_HEIGHT}" rx="14" fill="${COLOURS.background}"/>`);
 
 // header
 out.push(
   `<text x="28" y="44" font-family="${FONT}" font-size="22" font-weight="700" fill="${COLOURS.ink}">Flatspace Program roadmap</text>`,
 );
 out.push(
-  `<text x="28" y="70" font-family="${FONT}" font-size="13" fill="${COLOURS.ink2}">${version ? 'v' + version + ' · ' : ''}${doneCount} of ${counted.length} steps done${next ? ' · next: ' + next.id + ' ' + escapeXml(next.name) : ''}</text>`,
+  `<text x="28" y="70" font-family="${FONT}" font-size="13" fill="${COLOURS.inkMid}">${version ? 'v' + version + ' · ' : ''}${doneCount} of ${counted.length} steps done${next ? ' · next: ' + next.id + ' ' + escapeXml(next.name) : ''}</text>`,
 );
-const barW = 352;
-const barX = SVG_WIDTH - 28 - barW;
+const BAR_WIDTH = 352;
+const barX = SVG_WIDTH - 28 - BAR_WIDTH;
 const barY = 52;
 out.push(
-  `<rect x="${barX}" y="${barY}" width="${barW}" height="8" rx="4" fill="${COLOURS.todoFill}" stroke="${COLOURS.todoLine}"/>`,
+  `<rect x="${barX}" y="${barY}" width="${BAR_WIDTH}" height="8" rx="4" fill="${COLOURS.todoFill}" stroke="${COLOURS.todoLine}"/>`,
 );
 out.push(
-  `<rect x="${barX}" y="${barY}" width="${Math.max(8, (barW * doneCount) / counted.length).toFixed(1)}" height="8" rx="4" fill="${COLOURS.done}"/>`,
+  `<rect x="${barX}" y="${barY}" width="${Math.max(8, (BAR_WIDTH * doneCount) / counted.length).toFixed(1)}" height="8" rx="4" fill="${COLOURS.done}"/>`,
 );
 out.push(
-  `<text x="${barX + barW}" y="${barY - 8}" text-anchor="end" font-family="${MONO}" font-size="12" fill="${COLOURS.ink2}">${Math.round((100 * doneCount) / counted.length)}%</text>`,
+  `<text x="${barX + BAR_WIDTH}" y="${barY - 8}" text-anchor="end" font-family="${MONO}" font-size="12" fill="${COLOURS.inkMid}">${Math.round((100 * doneCount) / counted.length)}%</text>`,
 );
 
 // rail linking the phases, top to bottom
@@ -193,13 +194,13 @@ phases.forEach((phase, phaseIndex) => {
     `<circle cx="44" cy="${rowY + BOX_HEIGHT / 2}" r="15" fill="${complete ? COLOURS.done : COLOURS.panel}" stroke="${complete ? COLOURS.done : active ? COLOURS.next : COLOURS.todoLine}" stroke-width="2"/>`,
   );
   out.push(
-    `<text x="44" y="${rowY + BOX_HEIGHT / 2 + 5}" text-anchor="middle" font-family="${MONO}" font-size="13" font-weight="700" fill="${complete ? COLOURS.doneInk : active ? COLOURS.next : COLOURS.ink2}">${phase.id}</text>`,
+    `<text x="44" y="${rowY + BOX_HEIGHT / 2 + 5}" text-anchor="middle" font-family="${MONO}" font-size="13" font-weight="700" fill="${complete ? COLOURS.doneInk : active ? COLOURS.next : COLOURS.inkMid}">${phase.id}</text>`,
   );
   out.push(
     `<text x="70" y="${rowY + 19}" font-family="${FONT}" font-size="13.5" font-weight="700" fill="${COLOURS.ink}">${escapeXml(PHASE_TITLE[phase.id] || phase.id)}</text>`,
   );
   out.push(
-    `<text x="70" y="${rowY + 37}" font-family="${FONT}" font-size="11.5" fill="${COLOURS.ink3}">${phase.id === 'P' ? 'done' : `${done} of ${phase.steps.length} done`}</text>`,
+    `<text x="70" y="${rowY + 37}" font-family="${FONT}" font-size="11.5" fill="${COLOURS.inkLight}">${phase.id === 'P' ? 'done' : `${done} of ${phase.steps.length} done`}</text>`,
   );
 
   phase.steps.forEach((step, stepIndex) => {
@@ -208,9 +209,9 @@ phases.forEach((phase, phaseIndex) => {
     const line =
       step.status === 'done' ? COLOURS.done : step.status === 'todo' ? COLOURS.todoLine : COLOURS.next;
     const idInk =
-      step.status === 'done' ? COLOURS.doneInk : step.status === 'todo' ? COLOURS.ink2 : COLOURS.next;
+      step.status === 'done' ? COLOURS.doneInk : step.status === 'todo' ? COLOURS.inkMid : COLOURS.next;
     const nameInk =
-      step.status === 'done' ? COLOURS.doneInk : step.status === 'todo' ? COLOURS.ink3 : COLOURS.ink;
+      step.status === 'done' ? COLOURS.doneInk : step.status === 'todo' ? COLOURS.inkLight : COLOURS.ink;
     out.push(`<g><title>${step.id} · ${escapeXml(step.name)}</title>`);
     out.push(
       `<rect x="${boxX}" y="${rowY}" width="${BOX_WIDTH}" height="${BOX_HEIGHT}" rx="7" fill="${fill}" stroke="${line}" stroke-width="${step.status === 'todo' ? 1 : 2}"${step.status === 'doing' ? ' stroke-dasharray="4 3"' : ''}/>`,
@@ -255,15 +256,15 @@ for (const [status, label] of key) {
     );
   }
   out.push(
-    `<text x="${legendX + 30}" y="${legendY}" font-family="${FONT}" font-size="12" fill="${COLOURS.ink2}">${label}</text>`,
+    `<text x="${legendX + 30}" y="${legendY}" font-family="${FONT}" font-size="12" fill="${COLOURS.inkMid}">${label}</text>`,
   );
   legendX += 30 + label.length * 7 + 26;
 }
 out.push(
-  `<text x="${SVG_WIDTH - 28}" y="${legendY}" text-anchor="end" font-family="${FONT}" font-size="12" fill="${COLOURS.ink3}">Each step is one work session · details in PLAN.md</text>`,
+  `<text x="${SVG_WIDTH - 28}" y="${legendY}" text-anchor="end" font-family="${FONT}" font-size="12" fill="${COLOURS.inkLight}">Each step is one work session · details in PLAN.md</text>`,
 );
 out.push('</svg>');
 
-fs.mkdirSync(path.join(ROOT, 'docs'), { recursive: true });
-fs.writeFileSync(path.join(ROOT, 'docs/roadmap.svg'), out.join('\n') + '\n');
+fileSystem.mkdirSync(path.join(ROOT, 'docs'), { recursive: true });
+fileSystem.writeFileSync(path.join(ROOT, 'docs/roadmap.svg'), out.join('\n') + '\n');
 console.log(`docs/roadmap.svg: ${doneCount}/${counted.length} steps done, next ${next ? next.id : 'none'}`);

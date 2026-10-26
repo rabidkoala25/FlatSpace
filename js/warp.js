@@ -1,15 +1,15 @@
 // warp.js — time warp: allowed rates, on-rails versus physics warp, and warping to a time.
 (function () {
-  const game = FS.game;
-  const WARP = (FS.WARP_RATES = [1, 5, 10, 50, 100, 1000, 10000, 100000]); // on rails
-  const PHYS_WARP = (FS.PHYS_WARP_RATES = [1, 2, 3, 4]); // physics warp
+  const game = Flatspace.game;
+  const WARP = (Flatspace.WARP_RATES = [1, 5, 10, 50, 100, 1000, 10000, 100000]); // on rails
+  const PHYSICS_WARP = (Flatspace.PHYSICS_WARP_RATES = [1, 2, 3, 4]); // physics warp
 
   // Highest warp level allowed for this craft where it is now.
-  game.allowedWarpIdx = (vessel) => {
+  game.allowedWarpIndex = (vessel) => {
     if (vessel.landed) {
       return 6;
     }
-    return Math.min(FS.maxWarpIndex(vessel.body, vessel.altitude), WARP.length - 1);
+    return Math.min(Flatspace.maxWarpIndex(vessel.body, vessel.altitude), WARP.length - 1);
   };
 
   // Can the craft go on rails (coasting in vacuum, or landed)?
@@ -24,30 +24,30 @@
       return false;
     }
     const body = vessel.body;
-    if (body.atmo && vessel.altitude < body.atmo.height) {
+    if (body.atmosphere && vessel.altitude < body.atmosphere.height) {
       return false;
     }
-    return game.allowedWarpIdx(vessel) >= 1;
+    return game.allowedWarpIndex(vessel) >= 1;
   };
 
   // Decide between rails and physics for this frame, and clamp the warp level to what's allowed.
   game.useRails = () => {
     const vessel = game.vessel;
-    const railsOK = game.warpIdx > 0 && game.canRails(vessel);
-    if (railsOK && game.warpIdx > game.allowedWarpIdx(vessel)) {
-      game.warpIdx = game.allowedWarpIdx(vessel);
+    const railsOK = game.warpIndex > 0 && game.canRails(vessel);
+    if (railsOK && game.warpIndex > game.allowedWarpIndex(vessel)) {
+      game.warpIndex = game.allowedWarpIndex(vessel);
     }
-    if (!railsOK && game.warpIdx > 3) {
-      game.warpIdx = 3;
+    if (!railsOK && game.warpIndex > 3) {
+      game.warpIndex = 3;
     }
-    return railsOK && WARP[game.warpIdx] > 4;
+    return railsOK && WARP[game.warpIndex] > 4;
   };
 
   game.effectiveRate = () => {
-    if (!game.vessel || game.warpIdx === 0) {
+    if (!game.vessel || game.warpIndex === 0) {
       return 1;
     }
-    return game.onRails ? WARP[game.warpIdx] : PHYS_WARP[Math.min(game.warpIdx, 3)];
+    return game.onRails ? WARP[game.warpIndex] : PHYSICS_WARP[Math.min(game.warpIndex, 3)];
   };
 
   game.changeWarp = (change) => {
@@ -56,11 +56,11 @@
       return;
     }
     game.warpTarget = null;
-    let newIndex = game.warpIdx + change;
+    let newIndex = game.warpIndex + change;
     if (newIndex < 0) {
       newIndex = 0;
     }
-    const max = game.canRails(vessel) ? game.allowedWarpIdx(vessel) : 3;
+    const max = game.canRails(vessel) ? game.allowedWarpIndex(vessel) : 3;
     if (newIndex > max) {
       newIndex = max;
       if (change > 0) {
@@ -73,17 +73,17 @@
         );
       }
     }
-    game.warpIdx = newIndex;
+    game.warpIndex = newIndex;
   };
 
   game.stopWarp = () => {
-    game.warpIdx = 0;
+    game.warpIndex = 0;
     game.warpTarget = null;
   };
 
-  // Warp until game time t, slowing down as it gets close.
+  // Warp until a game time, slowing down as it gets close.
   game.warpTo = (targetTime) => {
-    if (targetTime <= game.t + 1) {
+    if (targetTime <= game.time + 1) {
       return false;
     }
     game.warpTarget = targetTime;
@@ -95,7 +95,7 @@
       return;
     }
     const vessel = game.vessel;
-    const timeLeft = game.warpTarget - game.t;
+    const timeLeft = game.warpTarget - game.time;
     if (timeLeft <= 0.5) {
       game.stopWarp();
       return;
@@ -107,6 +107,6 @@
         break;
       }
     }
-    game.warpIdx = Math.min(want, game.canRails(vessel) ? game.allowedWarpIdx(vessel) : 3);
+    game.warpIndex = Math.min(want, game.canRails(vessel) ? game.allowedWarpIndex(vessel) : 3);
   };
 })();

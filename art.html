@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Flatspace Art Gallery</title>
 <style>
-  :root { --bg: #090c1c; --panel: #111a33; --ink: #e6ecf8; --dim: #8e9ab8; --line: #1c2a4f; --accent: #f0c84a; }
+  :root { --background: #090c1c; --panel: #111a33; --ink: #e6ecf8; --dim: #8e9ab8; --line: #1c2a4f; --accent: #f0c84a; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, sans-serif; }
+  body { margin: 0; background: var(--background); color: var(--ink); font: 15px/1.5 system-ui, sans-serif; }
   header { padding: 20px 16px 8px; max-width: 1100px; margin: 0 auto; }
   h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: 0.02em; }
   h2 { font-size: 16px; margin: 28px 0 10px; color: var(--accent); letter-spacing: 0.04em; text-transform: uppercase; }
@@ -41,18 +41,18 @@
     <button type="button" data-scale="4" aria-pressed="true">4×</button>
     <button type="button" id="spin" aria-pressed="true">Turning</button>
   </div>
-  <canvas id="gal" height="560" aria-label="All part sprites, turning"></canvas>
-  <p class="note" id="msg"></p>
+  <canvas id="gallery" height="560" aria-label="All part sprites, turning"></canvas>
+  <p class="note" id="message"></p>
 </main>
-<script src="js/util.js?v=0.7.0"></script>
-<script src="data/parts.js?v=0.7.0"></script>
-<script src="js/parts.js?v=0.7.0"></script>
-<script src="js/partgraph.js?v=0.7.0"></script>
-<script src="art/palette.js?v=0.7.0"></script>
-<script src="js/gl.js?v=0.7.0"></script>
+<script src="js/util.js?v=0.8.0"></script>
+<script src="data/parts.js?v=0.8.0"></script>
+<script src="js/parts.js?v=0.8.0"></script>
+<script src="js/partgraph.js?v=0.8.0"></script>
+<script src="art/palette.js?v=0.8.0"></script>
+<script src="js/gl.js?v=0.8.0"></script>
 <script>
 (function () {
-  const Palette = FS.Palette;
+  const Palette = Flatspace.Palette;
   // ---- palette swatches ----
   const host = document.getElementById('palette');
   for (const [name, list] of Object.entries(Palette.hex)) {
@@ -64,29 +64,29 @@
   document.getElementById('count').textContent = Palette.all.length + ' colours in ' + Object.keys(Palette.hex).length + ' ramps.';
 
   // ---- sprites ----
-  const galleryCanvas = document.getElementById('gal');
+  const galleryCanvas = document.getElementById('gallery');
   const webgl = galleryCanvas.getContext('webgl2', { antialias: false, premultipliedAlpha: true, alpha: false });
-  if (!webgl) { document.getElementById('msg').textContent = 'This browser has no WebGL2, so the sprites can’t be shown.'; return; }
-  const sprites = new FS.GL.Sprites(webgl, 2048);
+  if (!webgl) { document.getElementById('message').textContent = 'This browser has no WebGL2, so the sprites can’t be shown.'; return; }
+  const sprites = new Flatspace.WebGL.Sprites(webgl, 2048);
   const PIXELS_PER_METRE = 16;
-  const partIds = Object.keys(FS.PART);
+  const partIds = Object.keys(Flatspace.PART);
   const parts = partIds.map((partId) => {
-    const part = FS.newPart(partId);
-    FS.relayout([part]);
+    const part = Flatspace.newPart(partId);
+    Flatspace.relayout([part]);
     return part;
   });
   // one stretched tank in each look, to show the skins
-  for (const skin of FS.TANK_SKINS) { const part = FS.newPart('t400', { skin }); FS.relayout([part]); parts.push(part); }
+  for (const skin of Flatspace.TANK_SKINS) { const part = Flatspace.newPart('t400', { skin }); Flatspace.relayout([part]); parts.push(part); }
   const bake = (part) => {
-    const partType = part.def, width = part.w || 1.25, topWidth = part.tw || partType.topW || width, length = part.len || partType.len;
+    const partType = part.type, width = part.width || 1.25, topWidth = part.topWidth || partType.topWidth || width, length = part.length || partType.length;
     const key = `${partType.id}|${part.skin || ''}`;
     let atlasEntry = sprites.atlas.get(key);
     if (atlasEntry) return atlasEntry;
-    const halfW = Math.max(width, topWidth) / 2 + (partType.fin ? 0.9 : 0.1);
-    const halfWidthPixels = Math.ceil(halfW * PIXELS_PER_METRE), top = Math.ceil(0.6 * PIXELS_PER_METRE);
-    const image = FS.GL.bake(halfWidthPixels * 2, top + Math.ceil((length + 0.3) * PIXELS_PER_METRE), (graphics) => { graphics.setTransform(PIXELS_PER_METRE, 0, 0, PIXELS_PER_METRE, halfWidthPixels, top); FS.drawPart(graphics, part, 0, 1 / PIXELS_PER_METRE, {}); });
+    const halfWidth = Math.max(width, topWidth) / 2 + (partType.fin ? 0.9 : 0.1);
+    const halfWidthPixels = Math.ceil(halfWidth * PIXELS_PER_METRE), top = Math.ceil(0.6 * PIXELS_PER_METRE);
+    const image = Flatspace.WebGL.bake(halfWidthPixels * 2, top + Math.ceil((length + 0.3) * PIXELS_PER_METRE), (graphics) => { graphics.setTransform(PIXELS_PER_METRE, 0, 0, PIXELS_PER_METRE, halfWidthPixels, top); Flatspace.drawPart(graphics, part, 0, 1 / PIXELS_PER_METRE, {}); });
     atlasEntry = sprites.atlas.add(key, image);
-    atlasEntry.ox = halfWidthPixels; atlasEntry.oy = top + (length / 2) * PIXELS_PER_METRE;
+    atlasEntry.originX = halfWidthPixels; atlasEntry.originY = top + (length / 2) * PIXELS_PER_METRE;
     return atlasEntry;
   };
   let scale = 4, spin = true, angle = 0, last = performance.now();
@@ -112,26 +112,26 @@
     sprites.begin(galleryCanvas.width, galleryCanvas.height);
     const cell = scale * pixelRatio; // device px per art pixel
     // flow layout: each sprite gets a square slot as wide as its turning circle
-    let cursorX = 0, cursorY = 0, rowH = 0;
+    let cursorX = 0, cursorY = 0, rowHeight = 0;
     const gap = 16 * pixelRatio;
     const placed = parts.map((part, index) => {
       const atlasEntry = bake(part);
       if (!atlasEntry) return null;
-      const radius = Math.hypot(Math.max(atlasEntry.ox, atlasEntry.w - atlasEntry.ox), Math.max(atlasEntry.oy, atlasEntry.h - atlasEntry.oy)) * cell;
+      const radius = Math.hypot(Math.max(atlasEntry.originX, atlasEntry.width - atlasEntry.originX), Math.max(atlasEntry.originY, atlasEntry.height - atlasEntry.originY)) * cell;
       const size = radius * 2 + gap;
-      if (cursorX + size > galleryCanvas.width && cursorX > 0) { cursorX = 0; cursorY += rowH; rowH = 0; }
-      const placement = { e: atlasEntry, cx: cursorX + size / 2, cy: cursorY + size / 2, i: index };
-      cursorX += size; rowH = Math.max(rowH, size);
+      if (cursorX + size > galleryCanvas.width && cursorX > 0) { cursorX = 0; cursorY += rowHeight; rowHeight = 0; }
+      const placement = { entry: atlasEntry, centreX: cursorX + size / 2, centreY: cursorY + size / 2, index: index };
+      cursorX += size; rowHeight = Math.max(rowHeight, size);
       return placement;
     });
-    const needH = Math.ceil((cursorY + rowH) / pixelRatio);
-    if (Math.abs(galleryCanvas.clientHeight - needH) > 2) { galleryCanvas.style.height = needH + 'px'; requestAnimationFrame(frame); return; }
-    for (const placement of placed) if (placement) sprites.sprite(placement.e, placement.cx, placement.cy, cell, angle + placement.i * 0.37, placement.e.ox, placement.e.oy, null);
+    const neededHeight = Math.ceil((cursorY + rowHeight) / pixelRatio);
+    if (Math.abs(galleryCanvas.clientHeight - neededHeight) > 2) { galleryCanvas.style.height = neededHeight + 'px'; requestAnimationFrame(frame); return; }
+    for (const placement of placed) if (placement) sprites.sprite(placement.entry, placement.centreX, placement.centreY, cell, angle + placement.index * 0.37, placement.entry.originX, placement.entry.originY, null);
     sprites.flush();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-  FS.Gallery = { setAngle: (newAngle) => { angle = newAngle; spin = false; }, setScale: (newScale) => { scale = newScale; } };
+  Flatspace.Gallery = { setAngle: (newAngle) => { angle = newAngle; spin = false; }, setScale: (newScale) => { scale = newScale; } };
 })();
 </script>
 </body>

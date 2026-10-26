@@ -1,10 +1,10 @@
 // input.js — keyboard, mouse and touch controls for the flight scene.
-// Turns player input into changes on the game state (FS.game) and calls the page
-// helpers in FS.UI (set up by main.js) for menus and map actions.
+// Turns player input into changes on the game state (Flatspace.game) and calls the page
+// helpers in Flatspace.UI (set up by main.js) for menus and map actions.
 (function () {
-  const game = FS.game;
+  const game = Flatspace.game;
   const byId = (elementId) => document.getElementById(elementId);
-  const Input = (FS.Input = {});
+  const Input = (Flatspace.Input = {});
 
   // Held controls, applied every frame before the simulation steps.
   Input.apply = (timeStep) => {
@@ -14,13 +14,13 @@
     }
     const keys = game.keys;
     const touch = game.touch;
-    if (keys.Shift || touch.thrUp) {
+    if (keys.Shift || touch.throttleUp) {
       vessel.throttle = Math.min(1, vessel.throttle + timeStep * 0.9);
     }
-    if (keys.Control || touch.thrDown) {
+    if (keys.Control || touch.throttleDown) {
       vessel.throttle = Math.max(0, vessel.throttle - timeStep * 0.9);
     }
-    vessel.rot =
+    vessel.rotation =
       (keys.a || keys.ArrowLeft || touch.left ? 1 : 0) - (keys.d || keys.ArrowRight || touch.right ? 1 : 0);
   };
 
@@ -55,7 +55,7 @@
     const vessel = game.vessel;
     if (!byId('dialog').hidden) {
       if (event.key === 'Escape') {
-        FS.UI.hideDialog();
+        Flatspace.UI.hideDialog();
       }
       return;
     }
@@ -71,11 +71,11 @@
         vessel.throttle = 0;
         break;
       case 't':
-        vessel.sas = !vessel.sas;
-        vessel.sasTarget = vessel.angle;
+        vessel.stabilityAssist = !vessel.stabilityAssist;
+        vessel.stabilityAssistTarget = vessel.angle;
         break;
       case 'm':
-        FS.UI.setMapMode(!game.mapMode);
+        Flatspace.UI.setMapMode(!game.mapMode);
         break;
       case '.':
         game.changeWarp(1);
@@ -97,11 +97,11 @@
       case 'Tab':
         event.preventDefault();
         if (game.mapMode) {
-          FS.UI.cycleFocus();
+          Flatspace.UI.cycleFocus();
         }
         break;
       case 'Escape':
-        FS.UI.menu();
+        Flatspace.UI.menu();
         break;
       case 'F3':
         event.preventDefault();
@@ -117,18 +117,18 @@
     if (!vessel || game.mapMode) {
       return;
     }
-    const local = FS.Renderer.screenToPart(game.cam, vessel, game.t, x, y);
-    const point = FS.vec.add(local, vessel.layout.com);
-    const hit = FS.Build.partAt(vessel.parts, point, 8 / Math.max(game.cam.s, 0.01));
-    FS.PartPanel.select(hit, 'flight');
+    const local = Flatspace.Renderer.screenToPart(game.camera, vessel, game.time, x, y);
+    const point = Flatspace.Vector.add(local, vessel.layout.centreOfMass);
+    const hit = Flatspace.Build.partAt(vessel.parts, point, 8 / Math.max(game.camera.scale, 0.01));
+    Flatspace.PartPanel.select(hit, 'flight');
   }
 
-  // Zoom the map or the flight view by factor f.
+  // Zoom the map or the flight view by a factor.
   function zoomBy(factor) {
     if (game.mapMode) {
-      game.mapCam.s = FS.clamp(game.mapCam.s * factor, 1e-7, 0.5);
+      game.mapCamera.scale = Flatspace.clamp(game.mapCamera.scale * factor, 1e-7, 0.5);
     } else {
-      game.zoom = FS.clamp(game.zoom * factor, 1e-6, 30);
+      game.zoom = Flatspace.clamp(game.zoom * factor, 1e-6, 30);
     }
   }
 
@@ -146,7 +146,7 @@
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
       view.setPointerCapture(event.pointerId);
       if (pointers.size === 2) {
-        pinch = { d: spread(), last: 1 };
+        pinch = { startSpread: spread(), last: 1 };
         drag = null;
       } else if (pointers.size === 1 && game.mapMode) {
         drag = { x: event.clientX, y: event.clientY, moved: false, pan: { ...game.mapPan } };
@@ -160,7 +160,7 @@
       }
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
       if (pinch && pointers.size >= 2) {
-        const ratio = spread() / pinch.d;
+        const ratio = spread() / pinch.startSpread;
         zoomBy(ratio / pinch.last);
         pinch.last = ratio;
         return;
@@ -174,7 +174,10 @@
         drag.moved = true;
       }
       if (drag.moved && !drag.flight) {
-        game.mapPan = { x: drag.pan.x - deltaX / game.mapCam.s, y: drag.pan.y + deltaY / game.mapCam.s };
+        game.mapPan = {
+          x: drag.pan.x - deltaX / game.mapCamera.scale,
+          y: drag.pan.y + deltaY / game.mapCamera.scale,
+        };
       }
     });
     const end = (event) => {
@@ -191,7 +194,7 @@
         if (drag.flight) {
           pickPart(event.clientX - bounds.left, event.clientY - bounds.top);
         } else {
-          FS.UI.mapClick(event.clientX - bounds.left, event.clientY - bounds.top);
+          Flatspace.UI.mapClick(event.clientX - bounds.left, event.clientY - bounds.top);
         }
       }
       drag = null;
@@ -219,7 +222,7 @@
     );
   }
 
-  Input.init = () => {
+  Input.initialise = () => {
     window.addEventListener('keydown', (event) => onKey(event, true));
     window.addEventListener('keyup', (event) => onKey(event, false));
     window.addEventListener('blur', () => {
@@ -228,20 +231,20 @@
     });
     setupPointer(byId('view'));
 
-    byId('btnMap').addEventListener('click', () => FS.UI.setMapMode(!game.mapMode));
-    byId('btnWarpUp').addEventListener('click', () => game.changeWarp(1));
-    byId('btnWarpDown').addEventListener('click', () => game.changeWarp(-1));
-    byId('btnRecover').addEventListener('click', () => FS.UI.recover());
-    byId('btnMenu').addEventListener('click', () => FS.UI.menu());
-    byId('btnNodeWarp').addEventListener('click', game.warpToNode);
-    byId('btnNodeDel').addEventListener('click', game.deleteNode);
+    byId('mapButton').addEventListener('click', () => Flatspace.UI.setMapMode(!game.mapMode));
+    byId('warpUpButton').addEventListener('click', () => game.changeWarp(1));
+    byId('warpDownButton').addEventListener('click', () => game.changeWarp(-1));
+    byId('recoverButton').addEventListener('click', () => Flatspace.UI.recover());
+    byId('menuButton').addEventListener('click', () => Flatspace.UI.menu());
+    byId('warpToNodeButton').addEventListener('click', game.warpToNode);
+    byId('deleteNodeButton').addEventListener('click', game.deleteNode);
     document.querySelectorAll('#nodePanel .stepper button').forEach((button) =>
       button.addEventListener('click', () => {
-        game.editNode(button.dataset.k, parseFloat(button.dataset.d));
-        FS.HUD.updateNode(game);
+        game.editNode(button.dataset.component, parseFloat(button.dataset.change));
+        Flatspace.HUD.updateNode(game);
       }),
     );
-    document.querySelectorAll('.sasbtn').forEach((button) =>
+    document.querySelectorAll('.stability-assist-button').forEach((button) =>
       button.addEventListener('click', () => {
         const vessel = game.vessel;
         if (!vessel) {
@@ -249,16 +252,16 @@
         }
         const mode = button.dataset.mode;
         if (mode === 'toggle') {
-          vessel.sas = !vessel.sas;
-          vessel.sasTarget = vessel.angle;
+          vessel.stabilityAssist = !vessel.stabilityAssist;
+          vessel.stabilityAssistTarget = vessel.angle;
         } else {
-          vessel.sas = true;
-          vessel.sasMode = mode;
-          vessel.sasTarget = vessel.angle;
+          vessel.stabilityAssist = true;
+          vessel.stabilityAssistMode = mode;
+          vessel.stabilityAssistTarget = vessel.angle;
         }
       }),
     );
-    document.querySelectorAll('.tbtn').forEach((button) => {
+    document.querySelectorAll('.touch-button').forEach((button) => {
       const touchName = button.dataset.touch;
       if (touchName === 'stage') {
         button.addEventListener('click', stage);

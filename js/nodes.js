@@ -1,10 +1,10 @@
 // nodes.js — maneuver nodes: placing them on any part of the predicted path, editing them,
 // tracking the burn, and keeping them when the craft changes sphere of influence.
 (function () {
-  const Vector = FS.vec;
-  const game = FS.game;
+  const Vector = Flatspace.Vector;
+  const game = Flatspace.game;
 
-  // Seconds of burning needed for dv m/s with the current stage's engines.
+  // Seconds of burning needed for a Δv (m/s) with the current stage's engines.
   game.burnTime = (deltaV) => {
     const vessel = game.vessel;
     if (!vessel) {
@@ -13,9 +13,9 @@
     let totalThrust = 0;
     let massFlow = 0;
     for (const engine of vessel.activeEngines()) {
-      const thrust = FS.partThrust(engine, FS.pressure(vessel.body, vessel.altitude), 1);
-      totalThrust += thrust.F;
-      massFlow += thrust.mdot;
+      const thrust = Flatspace.partThrust(engine, Flatspace.pressure(vessel.body, vessel.altitude), 1);
+      totalThrust += thrust.force;
+      massFlow += thrust.massFlowRate;
     }
     if (totalThrust <= 0) {
       return Infinity;
@@ -24,7 +24,7 @@
     return ((vessel.mass * exhaustSpeed) / totalThrust) * (1 - Math.exp(-deltaV / exhaustSpeed));
   };
 
-  // Which predicted patch the path is on at time t, or null if the path doesn't reach t.
+  // Which predicted patch the path is on at a given time, or null if the path doesn't reach it.
   game.patchAt = (time) => {
     const patches = game.patches;
     if (!patches) {
@@ -32,20 +32,20 @@
     }
     for (let patchIndex = 0; patchIndex < patches.length; patchIndex++) {
       const patch = patches[patchIndex];
-      const start = patchIndex === 0 ? -Infinity : patch.tStart;
-      if (time >= start && time <= patch.tEnd) {
-        return { patch: patch, index: patchIndex };
+      const start = patchIndex === 0 ? -Infinity : patch.startTime;
+      if (time >= start && time <= patch.endTime) {
+        return { patch, index: patchIndex };
       }
     }
     return null;
   };
 
-  game.createNode = (tNode) => {
+  game.createNode = (nodeTime) => {
     const keep =
-      game.node && Vector.len(game.node.applied) < 0.01
-        ? { pro: game.node.pro, rad: game.node.rad }
-        : { pro: 0, rad: 0 };
-    game.node = { t: tNode, pro: keep.pro, rad: keep.rad, applied: { x: 0, y: 0 } };
+      game.node && Vector.length(game.node.applied) < 0.01
+        ? { prograde: game.node.prograde, radial: game.node.radial }
+        : { prograde: 0, radial: 0 };
+    game.node = { time: nodeTime, prograde: keep.prograde, radial: keep.radial, applied: { x: 0, y: 0 } };
     if (!game.refreshNode(true)) {
       game.node = null;
       return null;
@@ -56,8 +56,8 @@
   game.deleteNode = () => {
     game.node = null;
     game.nodePatches = null;
-    if (game.vessel && game.vessel.sasMode === 'maneuver') {
-      game.vessel.sasMode = 'stability';
+    if (game.vessel && game.vessel.stabilityAssistMode === 'maneuver') {
+      game.vessel.stabilityAssistMode = 'stability';
     }
   };
 
@@ -68,39 +68,54 @@
     if (!node) {
       return false;
     }
-    const hit = game.patchAt(node.t);
+    const hit = game.patchAt(node.time);
     if (!hit) {
       return false;
     }
-    const state = FS.orbitState(hit.patch.orbit, node.t);
+    const state = Flatspace.orbitState(hit.patch.orbit, node.time);
     node.body = hit.patch.body;
     node.patchIndex = hit.index;
     // later patches are drawn around where their body is when the patch starts
-    node.originT = hit.index === 0 ? null : hit.patch.tStart;
-    node.r = state.r;
-    const prog = Vector.norm(state.v);
-    const rhat = Vector.norm(state.r);
-    let radOut = Vector.sub(rhat, Vector.scale(prog, Vector.dot(rhat, prog)));
-    radOut = Vector.len(radOut) > 1e-9 ? Vector.norm(radOut) : Vector.perp(prog);
-    if (Vector.len(node.applied) < 0.01 || full) {
-      node.dvVec = Vector.add(Vector.scale(prog, node.pro), Vector.scale(radOut, node.rad));
+    node.originTime = hit.index === 0 ? null : hit.patch.startTime;
+    node.position = state.position;
+    const progradeDirection = Vector.normalise(state.velocity);
+    const upDirection = Vector.normalise(state.position);
+    let radialOutDirection = Vector.subtract(
+      upDirection,
+      Vector.scale(progradeDirection, Vector.dot(upDirection, progradeDirection)),
+    );
+    radialOutDirection =
+      Vector.length(radialOutDirection) > 1e-9
+        ? Vector.normalise(radialOutDirection)
+        : Vector.perpendicular(progradeDirection);
+    if (Vector.length(node.applied) < 0.01 || full) {
+      node.burnVector = Vector.add(
+        Vector.scale(progradeDirection, node.prograde),
+        Vector.scale(radialOutDirection, node.radial),
+      );
     }
-    node.remaining = Vector.sub(node.dvVec, node.applied);
-    game.nodePatches = FS.predictPatches(node.body, state.r, Vector.add(state.v, node.remaining), node.t, 3);
+    node.remaining = Vector.subtract(node.burnVector, node.applied);
+    game.nodePatches = Flatspace.predictPatches(
+      node.body,
+      state.position,
+      Vector.add(state.velocity, node.remaining),
+      node.time,
+      3,
+    );
     return true;
   };
 
-  // Change the node: k is 'pro', 'rad' (m/s) or 't' (seconds).
+  // Change the node: field is 'prograde', 'radial' (m/s) or 'time' (seconds).
   game.editNode = (field, change) => {
     const node = game.node;
     if (!node) {
       return;
     }
-    const before = { t: node.t, pro: node.pro, rad: node.rad };
-    if (field === 't') {
+    const before = { time: node.time, prograde: node.prograde, radial: node.radial };
+    if (field === 'time') {
       const last = game.patches && game.patches[game.patches.length - 1];
-      const tMax = last && isFinite(last.tEnd) ? last.tEnd - 1 : Infinity;
-      node.t = FS.clamp(node.t + change, game.t + 1, tMax);
+      const latestTime = last && isFinite(last.endTime) ? last.endTime - 1 : Infinity;
+      node.time = Flatspace.clamp(node.time + change, game.time + 1, latestTime);
     } else {
       node[field] += change;
     }
@@ -116,8 +131,8 @@
     if (!game.node) {
       return;
     }
-    const burnSeconds = game.burnTime(Math.hypot(game.node.pro, game.node.rad));
-    if (!game.warpTo(game.node.t - (isFinite(burnSeconds) ? burnSeconds / 2 : 0) - 15)) {
+    const burnSeconds = game.burnTime(Math.hypot(game.node.prograde, game.node.radial));
+    if (!game.warpTo(game.node.time - (isFinite(burnSeconds) ? burnSeconds / 2 : 0) - 15)) {
       game.message('Node is too close to warp to.', '', 1800);
     }
   };
@@ -139,19 +154,24 @@
       return;
     }
     // Stop time warp shortly before the burn
-    if (game.warpIdx > 0 && !node.warned && node.patchIndex === 0) {
-      const burnSeconds = game.burnTime(Vector.len(node.remaining || { x: node.pro, y: node.rad }));
-      const start = node.t - (isFinite(burnSeconds) ? burnSeconds / 2 : 0);
-      if (game.t >= start - 10) {
+    if (game.warpIndex > 0 && !node.warned && node.patchIndex === 0) {
+      const burnSeconds = game.burnTime(
+        Vector.length(node.remaining || { x: node.prograde, y: node.radial }),
+      );
+      const start = node.time - (isFinite(burnSeconds) ? burnSeconds / 2 : 0);
+      if (game.time >= start - 10) {
         game.stopWarp();
         node.warned = true;
         game.message('Maneuver burn coming up.', '', 2500);
       }
     }
     // Burn progress
-    node.remaining = Vector.sub(node.dvVec, node.applied);
-    const started = Vector.len(node.applied) > 0.05;
-    if (started && (Vector.len(node.remaining) < 0.15 || Vector.dot(node.remaining, node.dvVec) < 0)) {
+    node.remaining = Vector.subtract(node.burnVector, node.applied);
+    const started = Vector.length(node.applied) > 0.05;
+    if (
+      started &&
+      (Vector.length(node.remaining) < 0.15 || Vector.dot(node.remaining, node.burnVector) < 0)
+    ) {
       vessel.throttle = 0;
       game.deleteNode();
       game.message('Burn complete. Throttle cut.', '', 2500);
@@ -159,11 +179,11 @@
   };
 
   // After an SOI change the predicted path is rebuilt; the node stays if the new path still reaches it.
-  game.on('soi', ({ vessel }) => {
+  game.on('sphere-change', ({ vessel }) => {
     if (vessel !== game.vessel || !game.node || vessel.landed) {
       return;
     }
-    game.patches = FS.predictPatches(vessel.body, vessel.r, vessel.v, game.t, 3);
+    game.patches = Flatspace.predictPatches(vessel.body, vessel.position, vessel.velocity, game.time, 3);
     if (!game.refreshNode(false)) {
       game.deleteNode();
       game.message('Maneuver node removed: your new path no longer reaches it.', '', 3000);

@@ -9,9 +9,9 @@
 // a slowly turning rocket from shimmering, without blurring it.
 //
 // Colours are premultiplied by alpha throughout.
-window.FS = window.FS || {};
+window.Flatspace = window.Flatspace || {};
 (function () {
-  const glKit = (FS.GL = {});
+  const glKit = (Flatspace.WebGL = {});
 
   glKit.supported = () => {
     try {
@@ -21,23 +21,23 @@ window.FS = window.FS || {};
     }
   };
 
-  function compile(webgl, type, src) {
+  function compile(webgl, type, source) {
     const shader = webgl.createShader(type);
-    webgl.shaderSource(shader, src);
+    webgl.shaderSource(shader, source);
     webgl.compileShader(shader);
     if (!webgl.getShaderParameter(shader, webgl.COMPILE_STATUS)) {
       throw new Error(
-        'Shader: ' + webgl.getShaderInfoLog(shader) + '\n' + src.split('\n').slice(0, 3).join(' '),
+        'Shader: ' + webgl.getShaderInfoLog(shader) + '\n' + source.split('\n').slice(0, 3).join(' '),
       );
     }
     return shader;
   }
-  // A program with its uniform locations looked up by name (prog.u.uName).
-  glKit.program = (webgl, vertexSource, fragmentSource, attribs) => {
+  // A program with its uniform locations looked up by name (program.uniforms.name).
+  glKit.program = (webgl, vertexSource, fragmentSource, attributes) => {
     const program = webgl.createProgram();
     webgl.attachShader(program, compile(webgl, webgl.VERTEX_SHADER, vertexSource));
     webgl.attachShader(program, compile(webgl, webgl.FRAGMENT_SHADER, fragmentSource));
-    attribs.forEach((attributeName, attributeIndex) =>
+    attributes.forEach((attributeName, attributeIndex) =>
       webgl.bindAttribLocation(program, attributeIndex, attributeName),
     );
     webgl.linkProgram(program);
@@ -51,67 +51,67 @@ window.FS = window.FS || {};
       const name = info.name.replace(/\[0\]$/, '');
       uniforms[name] = webgl.getUniformLocation(program, info.name);
     }
-    return { p: program, u: uniforms };
+    return { program, uniforms };
   };
 
   // GLSL pieces shared by several shaders.
   glKit.GLSL_BAYER = `
     float bayer4(vec2 cell) {
-      ivec2 i = ivec2(mod(floor(cell), 4.0));
-      int k = i.y * 4 + i.x;
-      int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
-      return (float(m[k]) + 0.5) / 16.0;
+      ivec2 cellInGrid = ivec2(mod(floor(cell), 4.0));
+      int orderIndex = cellInGrid.y * 4 + cellInGrid.x;
+      int bayerOrder[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+      return (float(bayerOrder[orderIndex]) + 0.5) / 16.0;
     }
     // Between two palette steps: solid for most of the way, dithered only near the change,
     // so gradients read as bands with a dithered seam rather than as noise.
-    bool stepUp(float fr, vec2 cell) {
-      return clamp((fr - 0.5) / 0.32 + 0.5, 0.0, 1.0) > bayer4(cell);
+    bool stepUp(float fraction, vec2 cell) {
+      return clamp((fraction - 0.5) / 0.32 + 0.5, 0.0, 1.0) > bayer4(cell);
     }`;
 
   // ---------- Sprites ----------
   const SPRITE_VS = `#version 300 es
-    layout(location = 0) in vec2 aPos;   // device pixels
-    layout(location = 1) in vec2 aUV;    // atlas texels
-    layout(location = 2) in vec4 aTint;  // rgb multiply, a = how much is drawn (dithered)
-    uniform vec2 uView;
-    out vec2 vUV;
-    out vec4 vTint;
+    layout(location = 0) in vec2 vertexPosition;   // device pixels
+    layout(location = 1) in vec2 vertexAtlasPoint;    // atlas texels
+    layout(location = 2) in vec4 vertexTint;  // rgb multiply, a = how much is drawn (dithered)
+    uniform vec2 viewSize;
+    out vec2 atlasPoint;
+    out vec4 spriteTint;
     void main() {
-      vec2 c = aPos / uView * 2.0 - 1.0;
-      gl_Position = vec4(c.x, -c.y, 0.0, 1.0);
-      vUV = aUV;
-      vTint = aTint;
+      vec2 clipPosition = vertexPosition / viewSize * 2.0 - 1.0;
+      gl_Position = vec4(clipPosition.x, -clipPosition.y, 0.0, 1.0);
+      atlasPoint = vertexAtlasPoint;
+      spriteTint = vertexTint;
     }`;
   const SPRITE_FS = `#version 300 es
     precision highp float;
-    uniform sampler2D uTex;
-    uniform vec2 uAtlas;
-    in vec2 vUV;
-    in vec4 vTint;
-    out vec4 o;
+    uniform sampler2D atlasTexture;
+    uniform vec2 atlasSize;
+    in vec2 atlasPoint;
+    in vec4 spriteTint;
+    out vec4 fragmentColour;
     ${glKit.GLSL_BAYER}
     void main() {
-      vec2 px = vUV;
+      vec2 texel = atlasPoint;
       // size of one screen pixel in texels, along each texture axis
-      vec2 d = vec2(length(vec2(dFdx(px.x), dFdy(px.x))), length(vec2(dFdx(px.y), dFdy(px.y))));
-      vec2 seam = floor(px + 0.5);
-      px = seam + clamp((px - seam) / max(d, vec2(1e-4)), -0.5, 0.5);
-      vec4 c = texture(uTex, px / uAtlas);
+      vec2 screenPixelSize = vec2(length(vec2(dFdx(texel.x), dFdy(texel.x))), length(vec2(dFdx(texel.y), dFdy(texel.y))));
+      vec2 seam = floor(texel + 0.5);
+      texel = seam + clamp((texel - seam) / max(screenPixelSize, vec2(1e-4)), -0.5, 0.5);
+      vec4 colour = texture(atlasTexture, texel / atlasSize);
       // fading out by dither pattern on the art-pixel grid, not by transparency
-      if (vTint.a < 0.999 && vTint.a <= bayer4(vUV)) discard;
-      if (c.a < 0.004) discard;
-      o = vec4(c.rgb * vTint.rgb, c.a);
+      if (spriteTint.a < 0.999 && spriteTint.a <= bayer4(atlasPoint)) discard;
+      if (colour.a < 0.004) discard;
+      fragmentColour = vec4(colour.rgb * spriteTint.rgb, colour.a);
     }`;
 
   // Texture atlas: a shelf packer over one big texture. Sprites are baked on demand and
   // cached by key; when the atlas is full it is cleared and refilled with what's in use.
   class Atlas {
     constructor(webgl, size, onReset) {
-      this.gl = webgl;
+      this.webgl = webgl;
       this.size = size;
       this.onReset = onReset;
-      this.tex = webgl.createTexture();
-      webgl.bindTexture(webgl.TEXTURE_2D, this.tex);
+      this.texture = webgl.createTexture();
+      webgl.bindTexture(webgl.TEXTURE_2D, this.texture);
       webgl.texImage2D(
         webgl.TEXTURE_2D,
         0,
@@ -131,13 +131,13 @@ window.FS = window.FS || {};
       this.resets = 0;
     }
     clear() {
-      const webgl = this.gl;
+      const webgl = this.webgl;
       this.map = new Map();
       this.x = 0;
       this.y = 0;
-      this.rowH = 0;
+      this.rowHeight = 0;
       // wipe to transparent, so padding around every sprite is clean
-      webgl.bindTexture(webgl.TEXTURE_2D, this.tex);
+      webgl.bindTexture(webgl.TEXTURE_2D, this.texture);
       const blank = new Uint8Array(this.size * 64 * 4);
       for (let rowY = 0; rowY < this.size; rowY += 64) {
         webgl.texSubImage2D(
@@ -156,10 +156,10 @@ window.FS = window.FS || {};
     get(key) {
       return this.map.get(key);
     }
-    // Add a canvas (or ImageData) under key; returns {x, y, w, h} in texels, or null if it
+    // Add a canvas (or ImageData) under key; returns {x, y, width, height} in texels, or null if it
     // can never fit. 2 texels of clear padding go around every sprite.
     add(key, image) {
-      const webgl = this.gl;
+      const webgl = this.webgl;
       const padding = 2;
       const width = image.width;
       const height = image.height;
@@ -168,8 +168,8 @@ window.FS = window.FS || {};
       }
       if (this.x + width + padding * 2 > this.size) {
         this.x = 0;
-        this.y += this.rowH;
-        this.rowH = 0;
+        this.y += this.rowHeight;
+        this.rowHeight = 0;
       }
       if (this.y + height + padding * 2 > this.size) {
         this.resets++;
@@ -178,34 +178,38 @@ window.FS = window.FS || {};
         }
         this.clear();
       }
-      const entry = { x: this.x + padding, y: this.y + padding, w: width, h: height };
-      webgl.bindTexture(webgl.TEXTURE_2D, this.tex);
+      const entry = { x: this.x + padding, y: this.y + padding, width, height };
+      webgl.bindTexture(webgl.TEXTURE_2D, this.texture);
       webgl.pixelStorei(webgl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       webgl.texSubImage2D(webgl.TEXTURE_2D, 0, entry.x, entry.y, webgl.RGBA, webgl.UNSIGNED_BYTE, image);
       webgl.pixelStorei(webgl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
       this.x += width + padding * 2;
-      this.rowH = Math.max(this.rowH, height + padding * 2);
+      this.rowHeight = Math.max(this.rowHeight, height + padding * 2);
       this.map.set(key, entry);
       return entry;
     }
     used() {
-      return (this.y + this.rowH) / this.size;
+      return (this.y + this.rowHeight) / this.size;
     }
   }
 
   // Sprite batcher: textured quads in device pixels, flushed in as few draws as possible.
   class Sprites {
     constructor(webgl, atlasSize = 2048) {
-      this.gl = webgl;
-      this.prog = glKit.program(webgl, SPRITE_VS, SPRITE_FS, ['aPos', 'aUV', 'aTint']);
+      this.webgl = webgl;
+      this.program = glKit.program(webgl, SPRITE_VS, SPRITE_FS, [
+        'vertexPosition',
+        'vertexAtlasPoint',
+        'vertexTint',
+      ]);
       this.atlas = new Atlas(webgl, atlasSize, () => this.flush());
       this.max = 8192; // quads per draw
       this.data = new Float32Array(this.max * 4 * 8);
-      this.n = 0;
-      this.vao = webgl.createVertexArray();
-      webgl.bindVertexArray(this.vao);
-      this.vbo = webgl.createBuffer();
-      webgl.bindBuffer(webgl.ARRAY_BUFFER, this.vbo);
+      this.spriteCount = 0;
+      this.vertexArray = webgl.createVertexArray();
+      webgl.bindVertexArray(this.vertexArray);
+      this.vertexBuffer = webgl.createBuffer();
+      webgl.bindBuffer(webgl.ARRAY_BUFFER, this.vertexBuffer);
       webgl.bufferData(webgl.ARRAY_BUFFER, this.data.byteLength, webgl.DYNAMIC_DRAW);
       const stride = 8 * 4;
       webgl.enableVertexAttribArray(0);
@@ -218,8 +222,8 @@ window.FS = window.FS || {};
       for (let index = 0, vertex = 0; index < indices.length; index += 6, vertex += 4) {
         indices.set([vertex, vertex + 1, vertex + 2, vertex, vertex + 2, vertex + 3], index);
       }
-      this.ibo = webgl.createBuffer();
-      webgl.bindBuffer(webgl.ELEMENT_ARRAY_BUFFER, this.ibo);
+      this.indexBuffer = webgl.createBuffer();
+      webgl.bindBuffer(webgl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
       webgl.bufferData(webgl.ELEMENT_ARRAY_BUFFER, indices, webgl.STATIC_DRAW);
       webgl.bindVertexArray(null);
       this.draws = 0;
@@ -232,16 +236,16 @@ window.FS = window.FS || {};
       this.whiteCanvas = canvas;
     }
     begin(drawWidth, drawHeight) {
-      this.Wd = drawWidth;
-      this.Hd = drawHeight;
-      this.n = 0;
+      this.drawWidth = drawWidth;
+      this.drawHeight = drawHeight;
+      this.spriteCount = 0;
     }
     white() {
       return this.atlas.get('white') || this.atlas.add('white', this.whiteCanvas);
     }
-    // One quad: corners p0..p3 (device px, going round), the sprite entry e and an optional
-    // sub-rectangle u0,v0,u1,v1 in texels relative to it; tint [r,g,b,a].
-    quad(
+    // One quad: four corners (device px, going round), the sprite entry and an optional
+    // part of it (start and end texture points, in texels); tint [red, green, blue, alpha].
+    drawQuad(
       corner0,
       corner1,
       corner2,
@@ -250,14 +254,14 @@ window.FS = window.FS || {};
       tint,
       startU = 0,
       startV = 0,
-      endU = entry.w,
-      endV = entry.h,
+      endU = entry.width,
+      endV = entry.height,
     ) {
-      if (this.n >= this.max) {
+      if (this.spriteCount >= this.max) {
         this.flush();
       }
       const vertexData = this.data;
-      let offset = this.n * 32;
+      let offset = this.spriteCount * 32;
       const red = tint ? tint[0] : 1;
       const green = tint ? tint[1] : 1;
       const blue = tint ? tint[2] : 1;
@@ -276,9 +280,9 @@ window.FS = window.FS || {};
       putVertex(corner1, endU, startV);
       putVertex(corner2, endU, endV);
       putVertex(corner3, startU, endV);
-      this.n++;
+      this.spriteCount++;
     }
-    // A sprite of e.w × e.h texels drawn so each texel is `size` device px, centred on
+    // A sprite of entry.width × entry.height texels drawn so each texel is `size` device px, centred on
     // (cx, cy) in device px, turned by angle (radians, clockwise on screen), with the
     // sprite's own pixel (ox, oy) at the centre. flipX mirrors it.
     sprite(entry, centreX, centreY, size, angle, originX, originY, tint, flipX) {
@@ -293,70 +297,70 @@ window.FS = window.FS || {};
         };
       };
       if (flipX) {
-        this.quad(
+        this.drawQuad(
           cornerAt(0, 0),
-          cornerAt(entry.w, 0),
-          cornerAt(entry.w, entry.h),
-          cornerAt(0, entry.h),
+          cornerAt(entry.width, 0),
+          cornerAt(entry.width, entry.height),
+          cornerAt(0, entry.height),
           entry,
           tint,
-          entry.w,
+          entry.width,
           0,
           0,
-          entry.h,
+          entry.height,
         );
       } else {
-        this.quad(
+        this.drawQuad(
           cornerAt(0, 0),
-          cornerAt(entry.w, 0),
-          cornerAt(entry.w, entry.h),
-          cornerAt(0, entry.h),
+          cornerAt(entry.width, 0),
+          cornerAt(entry.width, entry.height),
+          cornerAt(0, entry.height),
           entry,
           tint,
         );
       }
     }
     flush() {
-      if (!this.n) {
+      if (!this.spriteCount) {
         return;
       }
-      const webgl = this.gl;
-      webgl.useProgram(this.prog.p);
-      webgl.uniform2f(this.prog.u.uView, this.Wd, this.Hd);
-      webgl.uniform2f(this.prog.u.uAtlas, this.atlas.size, this.atlas.size);
+      const webgl = this.webgl;
+      webgl.useProgram(this.program.program);
+      webgl.uniform2f(this.program.uniforms.viewSize, this.drawWidth, this.drawHeight);
+      webgl.uniform2f(this.program.uniforms.atlasSize, this.atlas.size, this.atlas.size);
       webgl.activeTexture(webgl.TEXTURE0);
-      webgl.bindTexture(webgl.TEXTURE_2D, this.atlas.tex);
-      webgl.uniform1i(this.prog.u.uTex, 0);
+      webgl.bindTexture(webgl.TEXTURE_2D, this.atlas.texture);
+      webgl.uniform1i(this.program.uniforms.atlasTexture, 0);
       webgl.enable(webgl.BLEND);
       webgl.blendFunc(webgl.ONE, webgl.ONE_MINUS_SRC_ALPHA);
-      webgl.bindVertexArray(this.vao);
-      webgl.bindBuffer(webgl.ARRAY_BUFFER, this.vbo);
-      webgl.bufferSubData(webgl.ARRAY_BUFFER, 0, this.data, 0, this.n * 32);
-      webgl.drawElements(webgl.TRIANGLES, this.n * 6, webgl.UNSIGNED_SHORT, 0);
+      webgl.bindVertexArray(this.vertexArray);
+      webgl.bindBuffer(webgl.ARRAY_BUFFER, this.vertexBuffer);
+      webgl.bufferSubData(webgl.ARRAY_BUFFER, 0, this.data, 0, this.spriteCount * 32);
+      webgl.drawElements(webgl.TRIANGLES, this.spriteCount * 6, webgl.UNSIGNED_SHORT, 0);
       webgl.bindVertexArray(null);
       this.draws++;
-      this.n = 0;
+      this.spriteCount = 0;
     }
   }
   glKit.Sprites = Sprites;
 
   // A full-screen pass: a fragment shader run over every pixel (sky, planets).
   const FULL_VS = `#version 300 es
-    const vec2 P[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
-    void main() { gl_Position = vec4(P[gl_VertexID], 0.0, 1.0); }`;
+    const vec2 CORNERS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+    void main() { gl_Position = vec4(CORNERS[gl_VertexID], 0.0, 1.0); }`;
   glKit.fullscreen = (webgl, fragmentSource) => {
-    const prog = glKit.program(webgl, FULL_VS, fragmentSource, []);
+    const program = glKit.program(webgl, FULL_VS, fragmentSource, []);
     const vertexArray = webgl.createVertexArray();
-    prog.draw = () => {
-      webgl.useProgram(prog.p);
+    program.draw = () => {
+      webgl.useProgram(program.program);
       webgl.bindVertexArray(vertexArray);
       webgl.drawArrays(webgl.TRIANGLES, 0, 3);
       webgl.bindVertexArray(null);
     };
-    return prog;
+    return program;
   };
 
-  // Upload a palette ramp (list of [r,g,b] 0–255) as a vec3 uniform array, padded to n.
+  // Upload a palette ramp (list of [red, green, blue], 0–255) as a vec3 uniform array, padded to count.
   glKit.rampUniform = (webgl, location, ramp, count = 8) => {
     const values = new Float32Array(count * 3);
     for (let index = 0; index < count; index++) {
@@ -369,7 +373,7 @@ window.FS = window.FS || {};
   };
 
   // ---------- Baking: vector drawings → palette pixel art ----------
-  // Draw with fn(ctx) on a canvas of w × h pixels, then snap it to the palette and to fully
+  // Draw with draw(context) on a canvas of width × height pixels, then snap it to the palette and to fully
   // opaque / fully clear pixels. Returns the canvas.
   glKit.bake = (width, height, draw, alphaCut) => {
     const canvas = document.createElement('canvas');
@@ -378,7 +382,7 @@ window.FS = window.FS || {};
     const graphics = canvas.getContext('2d');
     draw(graphics);
     const image = graphics.getImageData(0, 0, canvas.width, canvas.height);
-    FS.Palette.snapImage(image, alphaCut);
+    Flatspace.Palette.snapImage(image, alphaCut);
     graphics.putImageData(image, 0, 0);
     return canvas;
   };

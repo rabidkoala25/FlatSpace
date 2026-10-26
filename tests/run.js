@@ -2,11 +2,11 @@
 // Each test runs in its own Node process. The page test needs jsdom (npm install);
 // without it, that test is skipped rather than failed.
 const { spawnSync } = require('child_process');
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
 
 const testFolder = __dirname;
-const files = fs
+const files = fileSystem
   .readdirSync(testFolder)
   .filter((fileName) => /^test_.*\.js$/.test(fileName))
   .sort();
@@ -24,6 +24,6 @@ for (const fileName of files) {
   }
 }
 
-const secs = ((Date.now() - started) / 1000).toFixed(1);
-console.log(`\n${files.length - failed} of ${files.length} test files passed in ${secs} s.`);
+const seconds = ((Date.now() - started) / 1000).toFixed(1);
+console.log(`\n${files.length - failed} of ${files.length} test files passed in ${seconds} s.`);
 process.exit(failed ? 1 : 0);

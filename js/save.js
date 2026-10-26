@@ -1,14 +1,15 @@
 // save.js — versioned saves.
-// Everything the game stores is wrapped as { v: <format version>, data: <value> }.
+// Everything the game stores is wrapped as { version: <format version>, data: <value> }
+// (saves made before 0.8 used v instead of version, and still load).
 // When a format changes, bump its version below and add one migration step that
 // turns the old data into the new shape. Old saves are upgraded when they load.
 (function () {
   // Current format version for each stored key.
   const VERSIONS = {
-    'flatspace.current': 3, // the craft being built: { name, parts: [saved parts] }
-    'flatspace.crafts': 3, // saved craft: { [name]: [saved parts] }
+    'flatspace.current': 4, // the craft being built: { name, parts: [saved parts] }
+    'flatspace.crafts': 4, // saved craft: { [name]: [saved parts] }
     'flatspace.milestones': 1, // milestone keys: [string]
-    'flatspace.subassemblies': 1, // saved subassemblies: [{ name, parts: [saved parts] }]
+    'flatspace.subassemblies': 2, // saved subassemblies: [{ name, parts: [saved parts] }]
     'flatspace.settings': 1, // game settings: { pixelSize }
   };
 
@@ -17,7 +18,27 @@
   const renameIds = (partIds) =>
     Array.isArray(partIds) ? partIds.map((partId) => RENAMED_PARTS[partId] || partId) : partIds;
   // Step 2 → 3: a stack of part ids becomes a part tree (see partgraph.js for the format).
-  const stackToTree = (partIds) => FS.serialParts(FS.stackToParts(partIds));
+  const stackToTree = (partIds) => Flatspace.serialParts(Flatspace.stackToParts(partIds));
+
+  // Step 3 → 4: saved parts use full names (rot → rotation, len → length, sym → symmetryGroup,
+  // chuteAlt → chuteAltitude), the surface node is 'surface' instead of 'srf', and the side
+  // decoupler's id is 'sidedecoupler' instead of 'radec'.
+  const OLD_FIELD_NAMES = { rot: 'rotation', len: 'length', sym: 'symmetryGroup', chuteAlt: 'chuteAltitude' };
+  const OLD_PART_IDS = { radec: 'sidedecoupler' };
+  const fullNames = (savedParts) =>
+    Array.isArray(savedParts)
+      ? savedParts.map((savedPart) => {
+          const renamed = {};
+          for (const [field, value] of Object.entries(savedPart)) {
+            renamed[OLD_FIELD_NAMES[field] || field] = value;
+          }
+          if (renamed.node === 'srf') {
+            renamed.node = 'surface';
+          }
+          renamed.id = OLD_PART_IDS[renamed.id] || renamed.id;
+          return renamed;
+        })
+      : savedParts;
 
   // MIGRATIONS[key][n] upgrades data from version n to version n + 1.
   // Version 0 is anything saved before saves were versioned (the prototype).
@@ -26,6 +47,7 @@
       (data) => data, // 0 → 1: wrapped, same shape
       (data) => Object.assign({}, data, { parts: renameIds(data.parts) }), // 1 → 2: renamed part ids
       (data) => Object.assign({}, data, { parts: stackToTree(data.parts) }), // 2 → 3: part tree
+      (data) => Object.assign({}, data, { parts: fullNames(data.parts) }), // 3 → 4: full field names
     ],
     'flatspace.crafts': [
       (data) => data,
@@ -43,22 +65,40 @@
         }
         return out;
       },
+      (data) => {
+        const out = {};
+        for (const name of Object.keys(data || {})) {
+          out[name] = fullNames(data[name]);
+        }
+        return out;
+      },
     ],
     'flatspace.milestones': [(data) => data],
-    'flatspace.subassemblies': [(data) => data],
+    'flatspace.subassemblies': [
+      (data) => data,
+      (data) =>
+        Array.isArray(data)
+          ? data.map((subassembly) => Object.assign({}, subassembly, { parts: fullNames(subassembly.parts) }))
+          : data,
+    ],
     'flatspace.settings': [(data) => data],
   };
 
   // Upgrade stored data to the current version. Returns undefined if it can't be read.
-  FS.migrate = (key, stored) => {
+  Flatspace.migrate = (key, stored) => {
     if (stored === undefined || stored === null) {
       return undefined;
     }
     let version = 0;
     let data = stored;
-    if (typeof stored === 'object' && !Array.isArray(stored) && 'v' in stored && 'data' in stored) {
-      version = stored.v;
-      data = stored.data;
+    if (typeof stored === 'object' && !Array.isArray(stored) && 'data' in stored) {
+      if ('version' in stored) {
+        version = stored.version;
+        data = stored.data;
+      } else if ('v' in stored) {
+        version = stored.v; // saved before 0.8
+        data = stored.data;
+      }
     }
     const target = VERSIONS[key] || 0;
     if (version > target) {
@@ -76,15 +116,15 @@
   };
 
   // Read a stored value, upgraded to the current format, or the fallback.
-  FS.store.load = (key, fallback) => {
-    const data = FS.migrate(key, FS.store.get(key, undefined));
+  Flatspace.store.load = (key, fallback) => {
+    const data = Flatspace.migrate(key, Flatspace.store.get(key, undefined));
     return data === undefined ? fallback : data;
   };
 
   // Write a value in the current format.
-  FS.store.save = (key, data) => FS.store.set(key, { v: VERSIONS[key] || 0, data });
+  Flatspace.store.save = (key, data) => Flatspace.store.set(key, { version: VERSIONS[key] || 0, data });
 
-  FS.SAVE_VERSIONS = VERSIONS;
+  Flatspace.SAVE_VERSIONS = VERSIONS;
 
   // ---------- Craft files ----------
   // A craft file is JSON: { format: 'flatspace-craft', version, game, name, parts }, where
@@ -95,18 +135,18 @@
   const craftObject = (name, parts) => ({
     format: 'flatspace-craft',
     version: VERSIONS['flatspace.current'],
-    game: FS.VERSION,
+    game: Flatspace.VERSION,
     name,
-    parts: FS.serialParts(parts),
+    parts: Flatspace.serialParts(parts),
   });
-  FS.craftToJSON = (name, parts) => JSON.stringify(craftObject(name, parts), null, 1);
-  FS.craftToText = (name, parts) =>
+  Flatspace.craftToJSON = (name, parts) => JSON.stringify(craftObject(name, parts), null, 1);
+  Flatspace.craftToText = (name, parts) =>
     PREFIX + btoa(unescape(encodeURIComponent(JSON.stringify(craftObject(name, parts)))));
 
   // Read a craft file or share text. Returns { name, parts } (saved parts, upgraded to the
   // current format, with unknown parts and everything attached to them left out, counted
   // in skipped) or { error }.
-  FS.craftFromText = (text) => {
+  Flatspace.craftFromText = (text) => {
     let craft;
     try {
       text = String(text).trim();
@@ -123,8 +163,8 @@
     if ((craft.version || 0) > VERSIONS['flatspace.current']) {
       return { error: 'That craft was made with a newer version of the game. Update the game to load it.' };
     }
-    const data = FS.migrate('flatspace.current', {
-      v: craft.version || 0,
+    const data = Flatspace.migrate('flatspace.current', {
+      version: craft.version || 0,
       data: { name: craft.name, parts: craft.parts },
     });
     if (!data || !Array.isArray(data.parts)) {
@@ -137,7 +177,7 @@
       if (partIndex < 0 || depth > list.length) {
         return false;
       }
-      if (drop.has(partIndex) || !FS.PART[list[partIndex].id]) {
+      if (drop.has(partIndex) || !Flatspace.PART[list[partIndex].id]) {
         return true;
       }
       return isDropped(list[partIndex].parent, depth + 1);

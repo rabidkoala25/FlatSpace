@@ -5,14 +5,14 @@
 // render check (done)
 // pixel matching (done)
 
-window.FS = window.FS || {};
-FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
+window.Flatspace = window.Flatspace || {};
+Flatspace.SPRITES = Flatspace.SPRITES || {}; // the drawn sprites from art/sprites/ go here
 (function () {
     const PIXELS_PER_METRE = 16; // pixels per metre
 
-    const RAMP_NAMES = Object.keys(FS.Palette.ramps);
+    const RAMP_NAMES = Object.keys(Flatspace.Palette.ramps);
     const rampNumber = (rampName) => RAMP_NAMES.indexOf(rampName);
-    const toneCount = (rampNum) => FS.Palette.ramps[RAMP_NAMES[rampNum]].length;
+    const toneCount = (rampIndex) => Flatspace.Palette.ramps[RAMP_NAMES[rampIndex]].length;
     const SKIN_RAMP = 255; // a pixel whose colour comes from the tank's skin later
     //empty sprite template
 
@@ -59,10 +59,10 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
                     sprite.tone[pixel] = toneNumber + 4;
 
                 } else {
-                    const rampNum = rampNumber(rampName);
-                    if (rampNum < 0) throw new Error(`sprite with id ${id}: unknown ramp '${rampName}'`);
-                    if (toneNumber < 0 || toneNumber >= toneCount(rampNum)) throw new Error(`sprite with id ${id}: ramp '${rampName}' has no tone ${toneNumber}`);
-                    sprite.ramp[pixel] = rampNum;
+                    const rampIndex = rampNumber(rampName);
+                    if (rampIndex < 0) throw new Error(`sprite with id ${id}: unknown ramp '${rampName}'`);
+                    if (toneNumber < 0 || toneNumber >= toneCount(rampIndex)) throw new Error(`sprite with id ${id}: ramp '${rampName}' has no tone ${toneNumber}`);
+                    sprite.ramp[pixel] = rampIndex;
                     sprite.tone[pixel] = toneNumber;
 
                 }
@@ -85,7 +85,7 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
                 const runHalfWidth = (runEnd - runStart + 1) / 2;
                 for (let runColumn = runStart; runColumn <= runEnd; runColumn++) {
                     const pixel = rowNumber * sprite.width + runColumn;
-                    sprite.normalAcross[pixel] = Math.round(FS.clamp((runColumn + 0.5 - runCentre) / runHalfWidth, -1, 1) * 127);
+                    sprite.normalAcross[pixel] = Math.round(Flatspace.clamp((runColumn + 0.5 - runCentre) / runHalfWidth, -1, 1) * 127);
                     sprite.normalAlong[pixel] = 0;
 
                 }
@@ -97,7 +97,7 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
         const width = Math.round(2 * widestHalfWidth * PIXELS_PER_METRE);
         const height = Math.max(1, Math.round(length * PIXELS_PER_METRE));
         const sprite = blankSprite(id, width, height);
-        const rampNum = rampNumber(rampName);
+        const rampIndex = rampNumber(rampName);
         for (let rowNumber = 0; rowNumber < height; rowNumber++){
             const howFarDown = (rowNumber + 0.5) / height; // 0 at the top, 1 at the bottom
             const halfWidthPixels = halfWidthAt(howFarDown) * PIXELS_PER_METRE;
@@ -110,9 +110,9 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
                 if (Math.abs(distanceFromMiddle) > halfWidthPixels) continue;
                 const pixel = rowNumber * width + column;
                 sprite.solid[pixel] = 1;
-                sprite.ramp[pixel] = rampNum;
+                sprite.ramp[pixel] = rampIndex;
                 sprite.tone[pixel] = tone;
-                sprite.normalAcross[pixel] = Math.round(FS.clamp(distanceFromMiddle / halfWidthPixels, -1, 1) * 127);
+                sprite.normalAcross[pixel] = Math.round(Flatspace.clamp(distanceFromMiddle / halfWidthPixels, -1, 1) * 127);
                 sprite.normalAlong[pixel] = Math.round(tilt * 127);
 
             }
@@ -142,9 +142,9 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
                 } else {
                     [rampName, baseTone] = SKINS[skinName] || SKINS.white;
                 }
-                const rampNum = rampNumber(rampName);
-                sprite.ramp[pixel] = rampNum;
-                sprite.tone[pixel] = FS.clamp(baseTone + (sprite.tone[pixel] - 4), 0, toneCount(rampNum) - 1);
+                const rampIndex = rampNumber(rampName);
+                sprite.ramp[pixel] = rampIndex;
+                sprite.tone[pixel] = Flatspace.clamp(baseTone + (sprite.tone[pixel] - 4), 0, toneCount(rampIndex) - 1);
 
             }
         }
@@ -173,7 +173,7 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
 
     function tank(width, length, skinName) {
         const id = TANK_ART[width];
-        const drawing = id && FS.SPRITES[id];
+        const drawing = id && Flatspace.SPRITES[id];
         if (!drawing) return null;
         const caps = TANK_CAPS[id];
         const drawnRows = drawing.rows;
@@ -204,7 +204,7 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
         const rgba = new Uint8ClampedArray(sprite.width * sprite.height * 4);
         for (let pixel = 0; pixel < sprite.width * sprite.height; pixel++) {
             if (!sprite.solid[pixel]) continue;
-            const colour = FS.Palette.ramps[RAMP_NAMES[sprite.ramp[pixel]]][sprite.tone[pixel]];
+            const colour = Flatspace.Palette.ramps[RAMP_NAMES[sprite.ramp[pixel]]][sprite.tone[pixel]];
             rgba[pixel * 4] = colour[0];
             rgba[pixel * 4 + 1] = colour[1];
             rgba[pixel * 4 + 2] = colour[2];
@@ -246,7 +246,7 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
                     // the outline stays dark so the shape still shows
                     const heat = (rowNumber - nozzleStartRow + 1) / (sprite.height - nozzleStartRow); // just above 0 at the top of the nozzle, 1 at the exit
                     litRamp[pixel] = orangeRamp;
-                    litTone[pixel] = FS.clamp(1 + Math.round(heat * glow * 4), 0, toneCount(orangeRamp) - 1); // 1 and 4 set how dim and how bright it gets
+                    litTone[pixel] = Flatspace.clamp(1 + Math.round(heat * glow * 4), 0, toneCount(orangeRamp) - 1); // 1 and 4 set how dim and how bright it gets
                     continue;
                 }
 
@@ -260,7 +260,7 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
                 const brightestTone = toneCount(litRamp[pixel]) - 1;
                 let newTone = litTone[pixel] + Math.round(-2 + 2 * brightness); //-2 and 3 set the contrast (min max brightness type)
                 if (litRamp[pixel] === metalRamp && brightness > 0.93) newTone = brightestTone; //0.93 is like the tolerance of the shine
-                litTone[pixel] = FS.clamp(newTone, 0, brightestTone);
+                litTone[pixel] = Flatspace.clamp(newTone, 0, brightestTone);
             }
         }
         return toImage({ width: sprite.width, height: sprite.height, solid: sprite.solid, ramp: litRamp, tone: litTone});
@@ -297,7 +297,7 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
                     solidPixels++;
 
                     const colour = sprite.ramp[pixel] *256 + sprite.tone[pixel];
-                    votes.set(colour, (CountQueuingStrategy.get(colour) || 0) +1);
+                    votes.set(colour, (votes.get(colour) || 0) +1);
 
                     acrossTotal += sprite.normalAcross[pixel];
                     alongTotal += sprite.normalAlong[pixel];
@@ -336,7 +336,7 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
                 if (!half.solid[halfPixel] || outlineRamp[halfPixel] < 0) continue;
                 
                 const solidAt = (otherColumn, otherRow) => otherColumn >= 0 && otherRow >= 0&&otherColumn<width && otherRow < height && half.solid[otherRow*width + otherColumn] === 1;
-                const onEdge = !(solidAt(column=1, row) && solidAt(column + 1, row) && solidAt(column, row -1) && solidAt(column, row +1));
+                const onEdge = !(solidAt(column - 1, row) && solidAt(column + 1, row) && solidAt(column, row -1) && solidAt(column, row +1));
 
                 if (onEdge) {
                     half.ramp[halfPixel] = outlineRamp[halfPixel];
@@ -349,6 +349,6 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
 
     
 
-    FS.Sprites = {PIXELS_PER_METRE, RAMP_NAMES, SKINS, parse, profile, tank, applySkin, toImage, light, halve };
+    Flatspace.Sprites = {PIXELS_PER_METRE, RAMP_NAMES, SKINS, parse, profile, tank, applySkin, toImage, light, halve };
 
 })();

@@ -1,8 +1,8 @@
 // tests/lib.js — loads the game's simulation code into Node, without a browser.
 // Each test file runs in its own process (see run.js), so state never leaks between tests.
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
-const vm = require('vm');
+const virtualMachine = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -39,12 +39,14 @@ function loadGame() {
   global.window = global;
   global.localStorage = memoryStorage();
   for (const fileName of SIM_FILES) {
-    vm.runInThisContext(fs.readFileSync(path.join(ROOT, fileName), 'utf8'), { filename: fileName });
+    virtualMachine.runInThisContext(fileSystem.readFileSync(path.join(ROOT, fileName), 'utf8'), {
+      filename: fileName,
+    });
   }
-  return global.FS;
+  return global.Flatspace;
 }
 
-// A stand-in for FS.game for tests that drive vessels directly: it records the events
+// A stand-in for Flatspace.game for tests that drive vessels directly: it records the events
 // vessels emit and collects dropped stages as debris, like sim.js does.
 function fakeGame() {
   const game = {

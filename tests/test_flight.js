@@ -1,13 +1,13 @@
 // Full flights: ascent to orbit, hopper with parachute landing, capsule reentry.
 const { loadGame, fakeGame, check, done } = require('./lib');
-const FS = loadGame();
-const Vector = FS.vec;
+const Flatspace = loadGame();
+const Vector = Flatspace.Vector;
 
 // --- Ascent to orbit with a scripted gravity turn (Orbiter I) ---
 {
   const game = fakeGame();
-  const craft = FS.SAMPLE_CRAFT.find((craft) => craft.name === 'Orbiter I');
-  const vessel = new FS.Vessel(craft.name, craft.parts, FS.root, { throttle: 1 });
+  const craft = Flatspace.SAMPLE_CRAFT.find((craft) => craft.name === 'Orbiter I');
+  const vessel = new Flatspace.Vessel(craft.name, craft.parts, Flatspace.root, { throttle: 1 });
   let time = 0;
   vessel.placeOnPad(time);
   vessel.stage(game);
@@ -17,29 +17,34 @@ const Vector = FS.vec;
   let reached = false;
   for (let step = 0; step < 600 / timeStep && !vessel.dead; step++) {
     const altitude = vessel.altitude;
-    const upAngle = Vector.angle(vessel.r);
+    const upAngle = Vector.angle(vessel.position);
     const pitch =
       altitude < 1000 ? 0 : Math.min((Math.PI / 2) * 0.95, ((altitude - 1000) / 45000) * (Math.PI / 2));
-    vessel.sasMode = 'stability';
-    vessel.sasTarget = upAngle - pitch; // east is clockwise
-    const orbit = FS.orbitFromState(vessel.r, vessel.v, vessel.body.mu, time);
-    if (!coasting && orbit.ap - FS.root.R > 85000) {
+    vessel.stabilityAssistMode = 'stability';
+    vessel.stabilityAssistTarget = upAngle - pitch; // east is clockwise
+    const orbit = Flatspace.orbitFromState(
+      vessel.position,
+      vessel.velocity,
+      vessel.body.gravityParameter,
+      time,
+    );
+    if (!coasting && orbit.apoapsis - Flatspace.root.radius > 85000) {
       vessel.throttle = 0;
       coasting = true;
     }
     if (coasting && !circularizing) {
-      vessel.sasTarget = Vector.angle(vessel.v);
-      if (FS.timeToNu(orbit, Math.PI, time) < 25 && altitude > 70000) {
+      vessel.stabilityAssistTarget = Vector.angle(vessel.velocity);
+      if (Flatspace.timeToTrueAnomaly(orbit, Math.PI, time) < 25 && altitude > 70000) {
         vessel.throttle = 1;
         circularizing = true;
       }
     }
-    if (circularizing && orbit.pe - FS.root.R > 75000) {
+    if (circularizing && orbit.periapsis - Flatspace.root.radius > 75000) {
       vessel.throttle = 0;
       reached = true;
       break;
     }
-    if (time > 1 && vessel.thrustNow === 0 && vessel.throttle > 0 && vessel.stageIdx < 2) {
+    if (time > 1 && vessel.thrustNow === 0 && vessel.throttle > 0 && vessel.stageIndex < 2) {
       vessel.stage(game);
     }
     vessel.step(timeStep, time, game);
@@ -59,14 +64,14 @@ const Vector = FS.vec;
 // --- Hopper: straight up, parachute down ---
 {
   const game = fakeGame();
-  const craft = FS.SAMPLE_CRAFT.find((craft) => craft.name === 'Hopper');
-  const vessel = new FS.Vessel(craft.name, craft.parts, FS.root, { throttle: 1 });
+  const craft = Flatspace.SAMPLE_CRAFT.find((craft) => craft.name === 'Hopper');
+  const vessel = new Flatspace.Vessel(craft.name, craft.parts, Flatspace.root, { throttle: 1 });
   let time = 0;
   let chute = false;
   vessel.placeOnPad(0);
   vessel.stage(game);
-  vessel.sasMode = 'stability';
-  vessel.sasTarget = Vector.angle(vessel.r) + 0.15;
+  vessel.stabilityAssistMode = 'stability';
+  vessel.stabilityAssistTarget = Vector.angle(vessel.position) + 0.15;
   for (let step = 0; step < 200000; step++) {
     vessel.step(0.02, time, game);
     time += 0.02;
@@ -76,12 +81,12 @@ const Vector = FS.vec;
     if (!chute && vessel.thrustNow === 0 && time > 5) {
       vessel.stage(game);
       chute = true;
-      vessel.sas = false;
+      vessel.stabilityAssist = false;
     }
   }
   check(
-    vessel.stats.maxAlt > 1500,
-    `Hopper hops above 1.5 km (got ${(vessel.stats.maxAlt / 1000).toFixed(1)} km)`,
+    vessel.stats.maxAltitude > 1500,
+    `Hopper hops above 1.5 km (got ${(vessel.stats.maxAltitude / 1000).toFixed(1)} km)`,
   );
   check(!vessel.dead && !!vessel.landed, 'Hopper lands safely under its parachute');
 }
@@ -89,14 +94,17 @@ const Vector = FS.vec;
 // --- Capsule reentry from 80 km with a low periapsis ---
 {
   const game = fakeGame();
-  const vessel = new FS.Vessel('Capsule', ['canopy', 'lark'], FS.root, {});
+  const vessel = new Flatspace.Vessel('Capsule', ['canopy', 'lark'], Flatspace.root, {});
   const startRadius = 680000;
   const semiMajorAxis = (startRadius + 625000) / 2;
-  vessel.r = { x: startRadius, y: 0 };
-  vessel.v = { x: 0, y: Math.sqrt(FS.root.mu * (2 / startRadius - 1 / semiMajorAxis)) };
+  vessel.position = { x: startRadius, y: 0 };
+  vessel.velocity = {
+    x: 0,
+    y: Math.sqrt(Flatspace.root.gravityParameter * (2 / startRadius - 1 / semiMajorAxis)),
+  };
   vessel.angle = Math.PI / 2 + 0.3;
   vessel.landed = null;
-  vessel.sas = false;
+  vessel.stabilityAssist = false;
   vessel.stage(game); // arm the parachute
   let time = 0;
   let maxHeat = 0;
@@ -112,10 +120,10 @@ const Vector = FS.vec;
 // --- Twin Boosters: side boosters through the atmosphere, then to orbit ---
 {
   const game = fakeGame();
-  const vessel = new FS.Vessel(
+  const vessel = new Flatspace.Vessel(
     'Twin Boosters',
-    FS.SAMPLE_CRAFT.find((craft) => craft.name === 'Twin Boosters').tree,
-    FS.root,
+    Flatspace.SAMPLE_CRAFT.find((craft) => craft.name === 'Twin Boosters').tree,
+    Flatspace.root,
     { throttle: 1 },
   );
   let time = 0;
@@ -124,42 +132,47 @@ const Vector = FS.vec;
   let coasting = false;
   let circularizing = false;
   let reached = false;
-  const dropAlt = [];
+  const dropAltitudes = [];
   for (let step = 0; step < 700 / 0.02 && !vessel.dead; step++) {
     const altitude = vessel.altitude;
     const pitch =
       altitude < 1000 ? 0 : Math.min((Math.PI / 2) * 0.95, ((altitude - 1000) / 45000) * (Math.PI / 2));
-    vessel.sasMode = 'stability';
-    vessel.sasTarget = Vector.angle(vessel.r) - pitch;
-    const orbit = FS.orbitFromState(vessel.r, vessel.v, vessel.body.mu, time);
-    if (!coasting && orbit.ap - FS.root.R > 85000) {
+    vessel.stabilityAssistMode = 'stability';
+    vessel.stabilityAssistTarget = Vector.angle(vessel.position) - pitch;
+    const orbit = Flatspace.orbitFromState(
+      vessel.position,
+      vessel.velocity,
+      vessel.body.gravityParameter,
+      time,
+    );
+    if (!coasting && orbit.apoapsis - Flatspace.root.radius > 85000) {
       vessel.throttle = 0;
       coasting = true;
     }
     if (coasting && !circularizing) {
-      vessel.sasTarget = Vector.angle(vessel.v);
-      if (FS.timeToNu(orbit, Math.PI, time) < 25 && altitude > 70000) {
+      vessel.stabilityAssistTarget = Vector.angle(vessel.velocity);
+      if (Flatspace.timeToTrueAnomaly(orbit, Math.PI, time) < 25 && altitude > 70000) {
         vessel.throttle = 1;
         circularizing = true;
       }
     }
-    if (circularizing && orbit.pe - FS.root.R > 75000) {
+    if (circularizing && orbit.periapsis - Flatspace.root.radius > 75000) {
       vessel.throttle = 0;
       reached = true;
       break;
     }
     // stage once whatever the next stage drops has run dry
-    const next = vessel.stages[vessel.stageIdx];
+    const next = vessel.stages[vessel.stageIndex];
     if (
       time > 1 &&
       vessel.throttle > 0 &&
       next &&
       next.decouple &&
       next.decouplers.every((decoupler) =>
-        FS.subtree(vessel.parts, decoupler).every((part) => part.fuel + part.solid < 1e-6),
+        Flatspace.subtree(vessel.parts, decoupler).every((part) => part.fuel + part.solid < 1e-6),
       )
     ) {
-      dropAlt.push(altitude);
+      dropAltitudes.push(altitude);
       vessel.stage(game);
     }
     vessel.step(0.02, time, game);
@@ -169,8 +182,8 @@ const Vector = FS.vec;
     time += 0.02;
   }
   check(
-    dropAlt.length >= 2 && dropAlt[0] < 15000,
-    `boosters drop low in the atmosphere (${(dropAlt[0] / 1000).toFixed(1)} km), then the core`,
+    dropAltitudes.length >= 2 && dropAltitudes[0] < 15000,
+    `boosters drop low in the atmosphere (${(dropAltitudes[0] / 1000).toFixed(1)} km), then the core`,
   );
   check(
     reached && !vessel.dead && vessel.situation() === 'Orbiting Aster',

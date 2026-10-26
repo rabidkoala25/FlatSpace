@@ -9,30 +9,30 @@
 
 //this reads the sprites and turns them into pixels
 
-const fs = require('fs');
+const fileSystem = require('fs');
 const path = require('path');
-const vm = require('vm');
+const virtualMachine = require('vm');
 const {ROOT, check, done} = require('./lib');
 
 // all sprites.js needs are util.js and palette.js
 
 global.window = global;
 for (const fileName of ['js/util.js', 'art/palette.js', 'js/sprites.js']) {
-    vm.runInThisContext(fs.readFileSync(path.join(ROOT, fileName), 'utf8'), {filename: fileName});
+    virtualMachine.runInThisContext(fileSystem.readFileSync(path.join(ROOT, fileName), 'utf8'), {filename: fileName});
 
 }
 // as i'm replacing all the sprites with my own art i should load them too to test it
 
 const spriteFolder = path.join(ROOT, 'art/sprites');
-const spriteFiles = fs.existsSync(spriteFolder) ? //idk wth this is i thought i could just use regular syntax here but i guess now we're asking questions
-fs.readdirSync(spriteFolder).filter((fileName) => fileName.endsWith('.js')) : [];
+const spriteFiles = fileSystem.existsSync(spriteFolder) ? //idk wth this is i thought i could just use regular syntax here but i guess now we're asking questions
+fileSystem.readdirSync(spriteFolder).filter((fileName) => fileName.endsWith('.js')) : [];
 for (const fileName of spriteFiles) {
-    vm.runInThisContext(fs.readFileSync(path.join(spriteFolder, fileName), 'utf8'), {filename: 'art/sprites/' + fileName});
+    virtualMachine.runInThisContext(fileSystem.readFileSync(path.join(spriteFolder, fileName), 'utf8'), {filename: 'art/sprites/' + fileName});
 
 }
 
-const Sprites = FS.Sprites;
-const Palette = FS.Palette;
+const Sprites = Flatspace.Sprites;
+const Palette = Flatspace.Palette;
 const same = (listA, listB) => listA.length === listB.length && listA.every((value, index) => value === listB[index]);
 const pixelColour = (image, column, row) => Array.from(image.data.slice((row * image.width + column) * 4, (row * image.width + column) * 4 + 4));
 function throws(run, expectedText) {
@@ -64,18 +64,18 @@ check(throws(() => Sprites.parse('dim', { legend: { a: ['gold', 9] }, rows: ['a'
 check(throws(() => Sprites.parse('what', { legend: { a: ['plaid', 1] }, rows: ['a'] }), "unknown ramp 'plaid'"), 'an unknown (0 IQ?) ramp throws correctly');
 
 //need to validate whether 16 pixels is indeed a meter or if the scientists lied to us
-vm.runInThisContext(fs.readFileSync(path.join(ROOT, 'data/parts.js'), 'utf8'), {filename: 'data/parts.js' })
-for (const part of FS.DATA.parts) {
-    const drawing = FS.SPRITES[part.id];
-    if (!drawing || !drawing.rows || typeof part.w !== 'number' || part.fin || part.radial) continue;
-    const widthPixels = Math.round(part.w * 16), heightPixels = Math.round(part.len * 16);
-    check(drawing.rows.length === heightPixels && drawing.rows[0].length === widthPixels, `art/sprites: ${part.id} is ${widthPixels} x ${heightPixels} px (${part.w} m x ${part.len} m)`);
+virtualMachine.runInThisContext(fileSystem.readFileSync(path.join(ROOT, 'data/parts.js'), 'utf8'), {filename: 'data/parts.js' })
+for (const part of Flatspace.DATA.parts) {
+    const drawing = Flatspace.SPRITES[part.id];
+    if (!drawing || !drawing.rows || typeof part.width !== 'number' || part.fin || part.radial) continue;
+    const widthPixels = Math.round(part.width * 16), heightPixels = Math.round(part.length * 16);
+    check(drawing.rows.length === heightPixels && drawing.rows[0].length === widthPixels, `art/sprites: ${part.id} is ${widthPixels} x ${heightPixels} px (${part.width} m x ${part.length} m)`);
 
 }
 
 // every hand drawn sprite parses
 
-for (const [id, drawing] of Object.entries(FS.SPRITES)) {
+for (const [id, drawing] of Object.entries(Flatspace.SPRITES)) {
     if (drawing.rows) check(!throws(() => Sprites.parse(id, drawing), ''), `art/sprites: ${id} parses correctly`);
     else check(drawing.top && drawing.body && drawing.bottom, `art/sprites: ${id} has top, body and bottom rows`);
 
@@ -101,7 +101,7 @@ check(shortTank.normalAlong.every((value) => value === 0), "a cylinder's sides a
 // im so done bro
 // --------- tank tests
 
-FS.SPRITES['tank-125'] = FS.SPRITES['tank-125'] || {
+Flatspace.SPRITES['tank-125'] = Flatspace.SPRITES['tank-125'] || {
     legend: {'.': null, K: ['metal', 1], S: ['skin', 0], s: ['skin', -1]},
     rows: [
         'KKKKKKKKKKKKKKKKKKKK',
@@ -128,7 +128,7 @@ check(Sprites.tank(1.25, 0.25, 'white').height === 4, 'a 0.25 tank is still 4px 
 const whiteTank = Sprites.tank(1.25, 2, 'white'), foamTank = Sprites.tank(1.25, 2, 'foam');
 check(same(Array.from(whiteTank.solid), Array.from(foamTank.solid)), 'changing the skin keeps the shape');
 check(!same(Array.from(whiteTank.ramp), Array.from(foamTank.ramp)), 'changing the skin changes the colours');
-check(whiteTank.ramp.every((rampNum) => rampNum !== 255), 'no skin placeholder is left after the skin is applied');
+check(whiteTank.ramp.every((rampIndex) => rampIndex !== 255), 'no skin placeholder is left after the skin is applied');
 check(Sprites.tank(0.7, 2, 'white') === null, "no width is null so old art is used");
 
 
@@ -215,7 +215,7 @@ check(halfCylinder.normalAcross[0] < 0 && halfCylinder.normalAcross[halfCylinder
 check(metalToneAt(Sprites.light(halfCylinder, 1, 0, 1), halfCylinder.width - 1, 0) >= metalToneAt(Sprites.light(halfCylinder, 1, 0, 1), 0, 0), 'a halved cylinder is still brighter on the sunny side');
 
 // every hand-drawn sprite can be halved twice
-for (const [id, drawing] of Object.entries(FS.SPRITES)) {
+for (const [id, drawing] of Object.entries(Flatspace.SPRITES)) {
     if (!drawing.rows) continue;
     const sprite = Sprites.parse(id, drawing);
     const quarter = Sprites.halve(Sprites.halve(sprite));

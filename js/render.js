@@ -2,24 +2,24 @@
 // Since step B1 the game draws with the WebGL2 renderer (render-gl.js); this one is the
 // fallback for browsers without WebGL2. The particle simulation here is shared by both.
 //
-// Renderer interface. The rest of the game only talks to FS.Renderer through these
+// Renderer interface. The rest of the game only talks to Flatspace.Renderer through these
 // methods, so renderers can be swapped:
 //   init(canvas, game)         set up, and subscribe to game events (explosions, SOI changes)
 //   resize()                   the canvas changed size
 //   size() -> {W, H}           canvas size in CSS pixels
-//   update(game)               advance visual-only state (particles) by game.frame.simDt
+//   update(game)               advance visual-only state (particles) by game.frame.simulationStep
 //   drawFlight(game)           draw the flight view
 //   drawMap(game)              draw the map view
-//   worldToScreen(cam, x, y)   world metres → screen pixels, for map clicks
-//   partToScreen(cam, ves, t, c)    a point on a craft (craft frame, from its centre of mass) → screen
-//   screenToPart(cam, ves, t, x, y) the reverse, for clicking parts in flight
+//   worldToScreen(camera, x, y)   world metres → screen pixels, for map clicks
+//   partToScreen(camera, vessel, time, point)  a point on a craft (craft frame, from its centre of mass) → screen
+//   screenToPart(camera, vessel, time, x, y) the reverse, for clicking parts in flight
 //   stats() -> {particles}     numbers for the F3 developer overlay
 // The renderer only reads game state; it never changes the simulation.
 (function () {
-  const Vector = FS.vec;
-  const FULL_TURN = FS.TAU;
-  const Render = (FS.Render = {});
-  FS.SUN_DIR = { x: 1, y: 0 }; // sunlight comes from +x (far away)
+  const Vector = Flatspace.Vector;
+  const FULL_TURN = Flatspace.TAU;
+  const Render = (Flatspace.Render = {});
+  Flatspace.SUN_DIRECTION = { x: 1, y: 0 }; // sunlight comes from +x (far away)
 
   let viewCanvas;
   let context;
@@ -29,13 +29,13 @@
   const stars = [];
   const sprites = {};
 
-  Render.init = (canvas, game) => {
+  Render.initialise = (canvas, game) => {
     viewCanvas = canvas;
     if (game) {
       subscribe(game);
     }
     context = canvas.getContext('2d');
-    const random = FS.rng(4242);
+    const random = Flatspace.seededRandom(4242);
     for (let starIndex = 0; starIndex < 700; starIndex++) {
       const angle = random() * FULL_TURN;
       const distance = Math.sqrt(random());
@@ -44,8 +44,8 @@
         x: Math.cos(angle) * distance,
         y: Math.sin(angle) * distance,
         size: Math.pow(random(), 6) * 1.8 + 0.4,
-        b: 0.35 + random() * 0.65,
-        c: temp < 0.15 ? '255,214,170' : temp > 0.85 ? '178,206,255' : '240,244,255',
+        brightness: 0.35 + random() * 0.65,
+        colour: temp < 0.15 ? '255,214,170' : temp > 0.85 ? '178,206,255' : '240,244,255',
       });
     }
     sprites.flame = makeSprite([
@@ -90,35 +90,35 @@
     viewCanvas.width = Math.round(viewWidth * pixelRatio);
     viewCanvas.height = Math.round(viewHeight * pixelRatio);
   };
-  Render.size = () => ({ W: viewWidth, H: viewHeight });
+  Render.size = () => ({ width: viewWidth, height: viewHeight });
 
   // ---- Camera transforms ----
-  // cam: {x, y (absolute metres), s (px per metre), rot (radians)}
+  // camera: {x, y (absolute metres), scale (px per metre), rotation (radians)}
   function worldToScreenPoint(camera, x, y) {
     const deltaX = x - camera.x;
     const deltaY = y - camera.y;
-    const cosRot = Math.cos(camera.rot);
-    const sinRot = Math.sin(camera.rot);
-    const rotatedX = deltaX * cosRot + deltaY * sinRot;
-    const rotatedY = -deltaX * sinRot + deltaY * cosRot;
-    return { x: viewWidth / 2 + rotatedX * camera.s, y: viewHeight / 2 - rotatedY * camera.s };
+    const cosRotation = Math.cos(camera.rotation);
+    const sinRotation = Math.sin(camera.rotation);
+    const rotatedX = deltaX * cosRotation + deltaY * sinRotation;
+    const rotatedY = -deltaX * sinRotation + deltaY * cosRotation;
+    return { x: viewWidth / 2 + rotatedX * camera.scale, y: viewHeight / 2 - rotatedY * camera.scale };
   }
-  Render.w2s = worldToScreenPoint;
   Render.worldToScreen = worldToScreenPoint;
-  Render.s2w = (camera, screenX, screenY) => {
-    const rotatedX = (screenX - viewWidth / 2) / camera.s;
-    const rotatedY = -(screenY - viewHeight / 2) / camera.s;
-    const cosRot = Math.cos(camera.rot);
-    const sinRot = Math.sin(camera.rot);
+  Render.worldToScreen = worldToScreenPoint;
+  Render.screenToWorld = (camera, screenX, screenY) => {
+    const rotatedX = (screenX - viewWidth / 2) / camera.scale;
+    const rotatedY = -(screenY - viewHeight / 2) / camera.scale;
+    const cosRotation = Math.cos(camera.rotation);
+    const sinRotation = Math.sin(camera.rotation);
     return {
-      x: camera.x + rotatedX * cosRot - rotatedY * sinRot,
-      y: camera.y + rotatedX * sinRot + rotatedY * cosRot,
+      x: camera.x + rotatedX * cosRotation - rotatedY * sinRotation,
+      y: camera.y + rotatedX * sinRotation + rotatedY * cosRotation,
     };
   };
-  // Set the context so that drawing in (abs - cam) metre coordinates works.
+  // Set the context so that drawing in (absolute - camera) metre coordinates works.
   function setWorld(camera) {
-    const cosScaled = Math.cos(camera.rot) * camera.s;
-    const sinScaled = Math.sin(camera.rot) * camera.s;
+    const cosScaled = Math.cos(camera.rotation) * camera.scale;
+    const sinScaled = Math.sin(camera.rotation) * camera.scale;
     context.setTransform(
       pixelRatio * cosScaled,
       pixelRatio * sinScaled,
@@ -138,9 +138,9 @@
       return;
     }
     const skyRadius = Math.hypot(viewWidth, viewHeight) * 0.55;
-    const rotation = rotate ? camera.rot : 0;
-    const cosRot = Math.cos(-rotation);
-    const sinRot = Math.sin(-rotation);
+    const rotation = rotate ? camera.rotation : 0;
+    const cosRotation = Math.cos(-rotation);
+    const sinRotation = Math.sin(-rotation);
     // faint galactic band
     context.save();
     context.globalAlpha = alpha * 0.5;
@@ -154,20 +154,20 @@
     context.fillRect(-skyRadius, -skyRadius * 0.35, skyRadius * 2, skyRadius * 0.7);
     context.restore();
     for (const star of stars) {
-      const starX = viewWidth / 2 + (star.x * cosRot - star.y * sinRot) * skyRadius;
-      const starY = viewHeight / 2 + (star.x * sinRot + star.y * cosRot) * skyRadius;
+      const starX = viewWidth / 2 + (star.x * cosRotation - star.y * sinRotation) * skyRadius;
+      const starY = viewHeight / 2 + (star.x * sinRotation + star.y * cosRotation) * skyRadius;
       if (starX < -2 || starY < -2 || starX > viewWidth + 2 || starY > viewHeight + 2) {
         continue;
       }
-      context.fillStyle = `rgba(${star.c},${star.b * alpha})`;
+      context.fillStyle = `rgba(${star.colour},${star.brightness * alpha})`;
       context.fillRect(starX, starY, star.size, star.size);
     }
   }
 
   // Lighting factor for a point on a body: 1 = noon, 0 = night.
   function sunlight(localUp) {
-    const sunDot = Vector.dot(localUp, FS.SUN_DIR);
-    return FS.smoothstep(-0.12, 0.25, sunDot);
+    const sunDot = Vector.dot(localUp, Flatspace.SUN_DIRECTION);
+    return Flatspace.smoothstep(-0.12, 0.25, sunDot);
   }
 
   // ---- Bodies ----
@@ -187,25 +187,25 @@
     if (body.ocean && height > 2550) {
       return body.colors.snow;
     }
-    if (height > (body.ocean ? 1900 : body.terrain.amp * 0.6)) {
+    if (height > (body.ocean ? 1900 : body.terrain.amplitude * 0.6)) {
       return body.colors.rock;
     }
     return body.colors.land;
   }
 
-  function drawBody(camera, body, time, opts = {}) {
-    const centre = FS.bodyAbs(body, time);
-    const relative = Vector.sub(centre, camera);
-    const dist = Vector.len(relative);
-    const radiusPixels = body.R * camera.s;
-    const viewR = Math.hypot(viewWidth, viewHeight) / 2 / camera.s;
-    const atmoH = body.atmo ? body.atmo.height : 0;
-    const maxH = body.terrain.amp * 2.5;
-    const rotation = FS.bodyRot(body, time);
-    const pixelSize = 1 / camera.s;
+  function drawBody(camera, body, time, options = {}) {
+    const centre = Flatspace.bodyAbsolutePosition(body, time);
+    const relative = Vector.subtract(centre, camera);
+    const distance = Vector.length(relative);
+    const radiusPixels = body.radius * camera.scale;
+    const viewRadius = Math.hypot(viewWidth, viewHeight) / 2 / camera.scale;
+    const atmosphereHeight = body.atmosphere ? body.atmosphere.height : 0;
+    const maxHeight = body.terrain.amplitude * 2.5;
+    const rotation = Flatspace.bodyRotation(body, time);
+    const pixelSize = 1 / camera.scale;
 
     if (radiusPixels < 4) {
-      if (dist - body.R > viewR * 1.2) {
+      if (distance - body.radius > viewRadius * 1.2) {
         const screenPoint = worldToScreenPoint(camera, centre.x, centre.y);
         if (
           screenPoint.x < -10 ||
@@ -219,24 +219,30 @@
       const screenPoint = worldToScreenPoint(camera, centre.x, centre.y);
       setScreen();
       context.beginPath();
-      context.arc(screenPoint.x, screenPoint.y, Math.max(radiusPixels, opts.minPx || 2.5), 0, FULL_TURN);
+      context.arc(
+        screenPoint.x,
+        screenPoint.y,
+        Math.max(radiusPixels, options.minPixels || 2.5),
+        0,
+        FULL_TURN,
+      );
       context.fillStyle = body.colors.disc;
       context.fill();
       return;
     }
 
-    const haloR = body.R + atmoH * 1.4;
-    const surfVisible = dist - body.R - maxH < viewR;
-    const haloVisible = body.atmo && dist - haloR < viewR;
-    if (!surfVisible && !haloVisible) {
+    const haloRadius = body.radius + atmosphereHeight * 1.4;
+    const surfaceVisible = distance - body.radius - maxHeight < viewRadius;
+    const haloVisible = body.atmosphere && distance - haloRadius < viewRadius;
+    if (!surfaceVisible && !haloVisible) {
       return;
     }
 
     setWorld(camera);
-    const localUp = dist > 0 ? Vector.scale(relative, -1 / dist) : { x: 0, y: 1 }; // centre → camera
-    const camAng = Math.atan2(localUp.y, localUp.x);
+    const localUp = distance > 0 ? Vector.scale(relative, -1 / distance) : { x: 0, y: 1 }; // centre → camera
+    const cameraAngle = Math.atan2(localUp.y, localUp.x);
     const full = radiusPixels < 4000;
-    const near = !full && radiusPixels > 30000 && dist - body.R < viewR * 3 + maxH;
+    const near = !full && radiusPixels > 30000 && distance - body.radius < viewRadius * 3 + maxHeight;
 
     // Visible window of longitudes
     let startAngle = 0;
@@ -244,14 +250,14 @@
     let sampleCount;
     if (!full) {
       const span =
-        dist > viewR * 1.5
-          ? Math.min(Math.PI, Math.asin(Math.min(1, (viewR * 1.5) / dist)) + 0.002)
+        distance > viewRadius * 1.5
+          ? Math.min(Math.PI, Math.asin(Math.min(1, (viewRadius * 1.5) / distance)) + 0.002)
           : Math.PI;
-      startAngle = camAng - span;
-      endAngle = camAng + span;
+      startAngle = cameraAngle - span;
+      endAngle = cameraAngle + span;
       sampleCount = near ? 420 : 360;
     } else {
-      sampleCount = Math.round(FS.clamp(radiusPixels * 0.8, 96, 1600));
+      sampleCount = Math.round(Flatspace.clamp(radiusPixels * 0.8, 96, 1600));
     }
     const arcPath = (radius, from, toAngle, steps, move = true) => {
       for (let step = 0; step <= steps; step++) {
@@ -261,13 +267,19 @@
         step === 0 && move ? context.moveTo(pointX, pointY) : context.lineTo(pointX, pointY);
       }
     };
-    const deepR = full ? 0 : Math.max(0, body.R - maxH - viewR * 2.5);
+    const deepRadius = full ? 0 : Math.max(0, body.radius - maxHeight - viewRadius * 2.5);
     const closeDeep = () => {
       if (full) {
         return;
       }
-      context.lineTo(relative.x + Math.cos(endAngle) * deepR, relative.y + Math.sin(endAngle) * deepR);
-      context.lineTo(relative.x + Math.cos(startAngle) * deepR, relative.y + Math.sin(startAngle) * deepR);
+      context.lineTo(
+        relative.x + Math.cos(endAngle) * deepRadius,
+        relative.y + Math.sin(endAngle) * deepRadius,
+      );
+      context.lineTo(
+        relative.x + Math.cos(startAngle) * deepRadius,
+        relative.y + Math.sin(startAngle) * deepRadius,
+      );
     };
     // gradient along local "up" starting at the surface below the camera
     const localGrad = (startRadius, endRadius, stops) => {
@@ -282,8 +294,8 @@
     };
 
     // ---- Atmosphere halo (not when we are down inside it) ----
-    if (body.atmo && !near) {
-      const [red, green, blue] = body.atmo.color;
+    if (body.atmosphere && !near) {
+      const [red, green, blue] = body.atmosphere.color;
       const stops = [
         [0, `rgba(${red},${green},${blue},0.55)`],
         [0.45, `rgba(${red},${green},${blue},0.18)`],
@@ -294,23 +306,23 @@
         const gradient = context.createRadialGradient(
           relative.x,
           relative.y,
-          body.R * 0.98,
+          body.radius * 0.98,
           relative.x,
           relative.y,
-          haloR,
+          haloRadius,
         );
         stops.forEach(([offset, colour]) => gradient.addColorStop(offset, colour));
         context.fillStyle = gradient;
-        context.arc(relative.x, relative.y, haloR, 0, FULL_TURN);
+        context.arc(relative.x, relative.y, haloRadius, 0, FULL_TURN);
       } else {
-        context.fillStyle = localGrad(body.R * 0.98, haloR, stops);
-        arcPath(haloR, startAngle, endAngle, sampleCount);
-        arcPath(body.R * 0.98, endAngle, startAngle, sampleCount, false);
+        context.fillStyle = localGrad(body.radius * 0.98, haloRadius, stops);
+        arcPath(haloRadius, startAngle, endAngle, sampleCount);
+        arcPath(body.radius * 0.98, endAngle, startAngle, sampleCount, false);
         context.closePath();
       }
       context.fill();
     }
-    if (!surfVisible) {
+    if (!surfaceVisible) {
       return;
     }
 
@@ -318,12 +330,12 @@
     const points = [];
     for (let step = 0; step <= sampleCount; step++) {
       const angle = startAngle + ((endAngle - startAngle) * step) / sampleCount;
-      const height = FS.terrainHeight(body, angle - rotation);
+      const height = Flatspace.terrainHeight(body, angle - rotation);
       points.push({
-        a: angle,
-        h: height,
-        x: relative.x + Math.cos(angle) * (body.R + height),
-        y: relative.y + Math.sin(angle) * (body.R + height),
+        angle,
+        height,
+        x: relative.x + Math.cos(angle) * (body.radius + height),
+        y: relative.y + Math.sin(angle) * (body.radius + height),
       });
     }
 
@@ -335,7 +347,7 @@
       );
       closeDeep();
       context.closePath();
-      context.fillStyle = localGrad(body.R, body.R - viewR * 1.5, [
+      context.fillStyle = localGrad(body.radius, body.radius - viewRadius * 1.5, [
         [0, body.colors.land],
         [1, body.colors.landDeep],
       ]);
@@ -343,17 +355,17 @@
       strokeRuns(
         points,
         (point) => {
-          const colour = surfaceColor(body, Math.max(point.h, body.ocean ? 0 : point.h));
+          const colour = surfaceColor(body, Math.max(point.height, body.ocean ? 0 : point.height));
           return colour === body.colors.land ? shade(body.colors.land, 1.3) : colour;
         },
         pixelSize * 3,
       );
       if (body.ocean) {
         context.beginPath();
-        arcPath(body.R, startAngle, endAngle, sampleCount);
+        arcPath(body.radius, startAngle, endAngle, sampleCount);
         closeDeep();
         context.closePath();
-        context.fillStyle = localGrad(body.R, body.R - viewR, [
+        context.fillStyle = localGrad(body.radius, body.radius - viewRadius, [
           [0, body.colors.ocean],
           [1, body.colors.oceanDeep],
         ]);
@@ -361,9 +373,9 @@
         context.beginPath();
         let penDown = false;
         for (const point of points) {
-          const pointX = relative.x + Math.cos(point.a) * body.R;
-          const pointY = relative.y + Math.sin(point.a) * body.R;
-          if (point.h > 0) {
+          const pointX = relative.x + Math.cos(point.angle) * body.radius;
+          const pointY = relative.y + Math.sin(point.angle) * body.radius;
+          if (point.height > 0) {
             penDown = false;
             continue;
           }
@@ -374,19 +386,19 @@
         context.lineWidth = pixelSize * 2;
         context.stroke();
       }
-      if (body.pad) {
+      if (body.launchPad) {
         drawSpaceCenter(camera, body, time, relative, pixelSize);
       }
       return;
     }
 
     // ---- Disc: interior, then a coloured band showing the surface type ----
-    const band = Math.max(pixelSize * 3, body.R * 0.035);
+    const band = Math.max(pixelSize * 3, body.radius * 0.035);
     context.beginPath();
     if (full) {
-      context.arc(relative.x, relative.y, body.R, 0, FULL_TURN);
+      context.arc(relative.x, relative.y, body.radius, 0, FULL_TURN);
     } else {
-      arcPath(body.R, startAngle, endAngle, sampleCount);
+      arcPath(body.radius, startAngle, endAngle, sampleCount);
       closeDeep();
       context.closePath();
     }
@@ -395,10 +407,10 @@
       const gradient = context.createRadialGradient(
         relative.x,
         relative.y,
-        body.R * 0.2,
+        body.radius * 0.2,
         relative.x,
         relative.y,
-        body.R,
+        body.radius,
       );
       gradient.addColorStop(0, shade(interior, 0.75));
       gradient.addColorStop(1, interior);
@@ -408,18 +420,18 @@
     }
     context.fill();
     // surface band (stroked arc runs)
-    const bandPts = points.map((point) => ({
+    const bandPoints = points.map((point) => ({
       ...point,
-      x: relative.x + Math.cos(point.a) * (body.R - band / 2),
-      y: relative.y + Math.sin(point.a) * (body.R - band / 2),
+      x: relative.x + Math.cos(point.angle) * (body.radius - band / 2),
+      y: relative.y + Math.sin(point.angle) * (body.radius - band / 2),
     }));
-    strokeRuns(bandPts, (point) => surfaceColor(body, point.h), band, 'butt');
+    strokeRuns(bandPoints, (point) => surfaceColor(body, point.height), band, 'butt');
     // relief line on top
     context.beginPath();
     points.forEach((point, index) => {
-      const radius = body.R + Math.max(body.ocean ? 0 : -1e9, point.h);
-      const pointX = relative.x + Math.cos(point.a) * radius;
-      const pointY = relative.y + Math.sin(point.a) * radius;
+      const radius = body.radius + Math.max(body.ocean ? 0 : -1e9, point.height);
+      const pointX = relative.x + Math.cos(point.angle) * radius;
+      const pointY = relative.y + Math.sin(point.angle) * radius;
       index ? context.lineTo(pointX, pointY) : context.moveTo(pointX, pointY);
     });
     context.strokeStyle = 'rgba(255,255,255,0.25)';
@@ -427,28 +439,28 @@
     context.stroke();
 
     // Night side
-    const sunDirection = FS.SUN_DIR;
+    const sunDirection = Flatspace.SUN_DIRECTION;
     if (full) {
       const gradient = context.createRadialGradient(
-        relative.x + sunDirection.x * body.R * 0.6,
-        relative.y + sunDirection.y * body.R * 0.6,
-        body.R * 0.1,
-        relative.x + sunDirection.x * body.R * 0.25,
-        relative.y + sunDirection.y * body.R * 0.25,
-        body.R * 1.35,
+        relative.x + sunDirection.x * body.radius * 0.6,
+        relative.y + sunDirection.y * body.radius * 0.6,
+        body.radius * 0.1,
+        relative.x + sunDirection.x * body.radius * 0.25,
+        relative.y + sunDirection.y * body.radius * 0.25,
+        body.radius * 1.35,
       );
       gradient.addColorStop(0, 'rgba(4,6,14,0)');
       gradient.addColorStop(0.62, 'rgba(4,6,14,0.05)');
       gradient.addColorStop(1, 'rgba(4,6,14,0.82)');
       context.fillStyle = gradient;
       context.beginPath();
-      context.arc(relative.x, relative.y, body.R + 1 * pixelSize, 0, FULL_TURN);
+      context.arc(relative.x, relative.y, body.radius + 1 * pixelSize, 0, FULL_TURN);
       context.fill();
     } else {
       const dark = (1 - sunlight(localUp)) * 0.7;
       if (dark > 0.01) {
         context.beginPath();
-        arcPath(body.R + band * 0.1, startAngle, endAngle, sampleCount);
+        arcPath(body.radius + band * 0.1, startAngle, endAngle, sampleCount);
         closeDeep();
         context.closePath();
         context.fillStyle = `rgba(4,6,14,${dark})`;
@@ -501,11 +513,11 @@
 
   // Launch pad, tower and a few buildings, drawn in the body's local frame.
   function drawSpaceCenter(camera, body, time, relative, pixelSize) {
-    const longitude = body.pad.lon;
-    const angle = longitude + FS.bodyRot(body, time);
+    const longitude = body.launchPad.longitude;
+    const angle = longitude + Flatspace.bodyRotation(body, time);
     const base = {
-      x: relative.x + Math.cos(angle) * (body.R + body.pad.height),
-      y: relative.y + Math.sin(angle) * (body.R + body.pad.height),
+      x: relative.x + Math.cos(angle) * (body.radius + body.launchPad.height),
+      y: relative.y + Math.sin(angle) * (body.radius + body.launchPad.height),
     };
     context.save();
     context.translate(base.x, base.y);
@@ -536,14 +548,14 @@
     context.fillStyle = time % 2 < 1 ? '#ff4a3a' : '#5a1a14';
     context.fillRect(8, 36, 0.8, 0.8);
     // buildings
-    const blds = [
+    const buildings = [
       [-160, 46, 38, '#c9ccd1'],
       [-95, 22, 14, '#b4b9bf'],
       [-60, 12, 9, '#9da3aa'],
       [70, 30, 10, '#bfc3c8'],
       [110, 16, 22, '#aeb3b9'],
     ];
-    for (const [buildingX, buildingWidth, buildingHeight, colour] of blds) {
+    for (const [buildingX, buildingWidth, buildingHeight, colour] of buildings) {
       context.fillStyle = colour;
       context.fillRect(buildingX, -2, buildingWidth, buildingHeight + 2);
       context.strokeStyle = 'rgba(15,18,24,0.6)';
@@ -565,42 +577,42 @@
   // Where a craft is drawn: its centre of mass on screen, and the turn of its drawing frame
   // (x = the craft's x, y = minus the craft's y). Shared by drawVessel and part clicks.
   function vesselFrame(camera, vessel, time) {
-    const centre = Vector.add(FS.bodyAbs(vessel.body, time), vessel.r);
+    const centre = Vector.add(Flatspace.bodyAbsolutePosition(vessel.body, time), vessel.position);
     return {
-      sp: worldToScreenPoint(camera, centre.x, centre.y),
-      th: -(vessel.angle - camera.rot) + Math.PI / 2,
+      screenCentre: worldToScreenPoint(camera, centre.x, centre.y),
+      screenAngle: -(vessel.angle - camera.rotation) + Math.PI / 2,
     };
   }
   Render.partToScreen = (camera, vessel, time, point) => {
     const frame = vesselFrame(camera, vessel, time);
-    const scaledX = point.x * camera.s;
-    const scaledY = -point.y * camera.s;
-    const cosAngle = Math.cos(frame.th);
-    const sinAngle = Math.sin(frame.th);
+    const scaledX = point.x * camera.scale;
+    const scaledY = -point.y * camera.scale;
+    const cosAngle = Math.cos(frame.screenAngle);
+    const sinAngle = Math.sin(frame.screenAngle);
     return {
-      x: frame.sp.x + scaledX * cosAngle - scaledY * sinAngle,
-      y: frame.sp.y + scaledX * sinAngle + scaledY * cosAngle,
+      x: frame.screenCentre.x + scaledX * cosAngle - scaledY * sinAngle,
+      y: frame.screenCentre.y + scaledX * sinAngle + scaledY * cosAngle,
     };
   };
   Render.screenToPart = (camera, vessel, time, screenX, screenY) => {
     const frame = vesselFrame(camera, vessel, time);
-    const deltaX = (screenX - frame.sp.x) / camera.s;
-    const deltaY = (screenY - frame.sp.y) / camera.s;
-    const cosAngle = Math.cos(-frame.th);
-    const sinAngle = Math.sin(-frame.th);
+    const deltaX = (screenX - frame.screenCentre.x) / camera.scale;
+    const deltaY = (screenY - frame.screenCentre.y) / camera.scale;
+    const cosAngle = Math.cos(-frame.screenAngle);
+    const sinAngle = Math.sin(-frame.screenAngle);
     return { x: deltaX * cosAngle - deltaY * sinAngle, y: -(deltaX * sinAngle + deltaY * cosAngle) };
   };
 
-  Render.drawVessel = (camera, vessel, time, opts = {}) => {
-    const centre = Vector.add(FS.bodyAbs(vessel.body, time), vessel.r);
+  Render.drawVessel = (camera, vessel, time, options = {}) => {
+    const centre = Vector.add(Flatspace.bodyAbsolutePosition(vessel.body, time), vessel.position);
     const screenPoint = worldToScreenPoint(camera, centre.x, centre.y);
-    const craftLength = vessel.layout.height * camera.s;
+    const craftLength = vessel.layout.height * camera.scale;
     setScreen();
     if (craftLength < 6) {
       // too small to draw: draw a marker
       context.save();
       context.translate(screenPoint.x, screenPoint.y);
-      const screenAngle = -(vessel.angle - camera.rot);
+      const screenAngle = -(vessel.angle - camera.rotation);
       context.rotate(screenAngle);
       context.fillStyle = vessel.isDebris ? 'rgba(200,200,200,0.6)' : '#ffd27a';
       context.beginPath();
@@ -615,58 +627,68 @@
     }
     context.save();
     context.translate(screenPoint.x, screenPoint.y);
-    const sigma = -(vessel.angle - camera.rot);
+    const sigma = -(vessel.angle - camera.rotation);
     context.rotate(sigma + Math.PI / 2);
-    context.scale(camera.s, camera.s);
-    const pixelSize = 1 / camera.s;
+    context.scale(camera.scale, camera.scale);
+    const pixelSize = 1 / camera.scale;
     // parachute canopy
     // Drawing frame: x = the craft's x, y = minus the craft's y (down the rocket).
-    const chutes = vessel.parts.filter((part) => part.chute === 'semi' || part.chute === 'full');
+    const chutes = vessel.parts.filter((part) => part.chute === 'halfOpen' || part.chute === 'full');
     if (chutes.length) {
       const full = chutes.some((part) => part.chute === 'full');
       const chutePart = chutes[0];
-      const chuteTip = Vector.add(chutePart.c, Vector.scale(chutePart.axis, chutePart.len / 2));
+      const chuteTip = Vector.add(chutePart.centreOffset, Vector.scale(chutePart.axis, chutePart.length / 2));
       context.save();
       context.translate(chuteTip.x, -chuteTip.y);
       const top = 0;
-      const dist = full ? 11 : 6;
+      const canopyDistance = full ? 11 : 6;
       const canopyWidth = full ? 7.5 : 1.6;
       context.strokeStyle = 'rgba(230,230,230,0.8)';
       context.lineWidth = pixelSize;
       context.beginPath();
       context.moveTo(0, top);
-      context.lineTo(-canopyWidth, top - dist);
+      context.lineTo(-canopyWidth, top - canopyDistance);
       context.moveTo(0, top);
-      context.lineTo(canopyWidth, top - dist);
+      context.lineTo(canopyWidth, top - canopyDistance);
       context.moveTo(0, top);
-      context.lineTo(0, top - dist - canopyWidth * 0.3);
+      context.lineTo(0, top - canopyDistance - canopyWidth * 0.3);
       context.stroke();
       context.beginPath();
-      context.moveTo(-canopyWidth, top - dist);
+      context.moveTo(-canopyWidth, top - canopyDistance);
       context.quadraticCurveTo(
         -canopyWidth,
-        top - dist - canopyWidth * 0.9,
+        top - canopyDistance - canopyWidth * 0.9,
         0,
-        top - dist - canopyWidth * 0.9,
+        top - canopyDistance - canopyWidth * 0.9,
       );
-      context.quadraticCurveTo(canopyWidth, top - dist - canopyWidth * 0.9, canopyWidth, top - dist);
-      context.quadraticCurveTo(0, top - dist - canopyWidth * 0.25, -canopyWidth, top - dist);
+      context.quadraticCurveTo(
+        canopyWidth,
+        top - canopyDistance - canopyWidth * 0.9,
+        canopyWidth,
+        top - canopyDistance,
+      );
+      context.quadraticCurveTo(
+        0,
+        top - canopyDistance - canopyWidth * 0.25,
+        -canopyWidth,
+        top - canopyDistance,
+      );
       context.fillStyle = '#e8622a';
       context.fill();
       context.fillStyle = '#f4efe6';
       context.beginPath();
-      context.moveTo(-canopyWidth * 0.35, top - dist - canopyWidth * 0.12);
+      context.moveTo(-canopyWidth * 0.35, top - canopyDistance - canopyWidth * 0.12);
       context.quadraticCurveTo(
         -canopyWidth * 0.3,
-        top - dist - canopyWidth * 0.85,
+        top - canopyDistance - canopyWidth * 0.85,
         0,
-        top - dist - canopyWidth * 0.88,
+        top - canopyDistance - canopyWidth * 0.88,
       );
       context.quadraticCurveTo(
         canopyWidth * 0.3,
-        top - dist - canopyWidth * 0.85,
+        top - canopyDistance - canopyWidth * 0.85,
         canopyWidth * 0.35,
-        top - dist - canopyWidth * 0.12,
+        top - canopyDistance - canopyWidth * 0.12,
       );
       context.closePath();
       context.fill();
@@ -678,12 +700,12 @@
     }
     for (const part of vessel.parts) {
       context.save();
-      context.translate(part.c.x, -part.c.y);
-      context.rotate(-part.rot);
+      context.translate(part.centreOffset.x, -part.centreOffset.y);
+      context.rotate(-part.rotation);
       if (part.flip) {
         context.scale(-1, 1);
       }
-      FS.drawPart(context, part, -part.len / 2, pixelSize, { glow: glowMap.get(part) || 0 });
+      Flatspace.drawPart(context, part, -part.length / 2, pixelSize, { glow: glowMap.get(part) || 0 });
       context.restore();
     }
     context.restore();
@@ -695,16 +717,16 @@
       return;
     }
     const body = vessel.body;
-    const vAir = Vector.sub(vessel.v, FS.airVel(body, vessel.r));
-    const direction = Vector.norm(vAir);
-    const centre = Vector.add(FS.bodyAbs(body, time), vessel.r);
+    const vAir = Vector.subtract(vessel.velocity, Flatspace.airVelocity(body, vessel.position));
+    const direction = Vector.normalise(vAir);
+    const centre = Vector.add(Flatspace.bodyAbsolutePosition(body, time), vessel.position);
     const lead = Vector.add(centre, Vector.scale(direction, vessel.layout.height * 0.45));
     const screenPoint = worldToScreenPoint(camera, lead.x, lead.y);
     const trailPoint = worldToScreenPoint(camera, lead.x - direction.x * 40, lead.y - direction.y * 40);
     setScreen();
     context.save();
     context.globalCompositeOperation = 'lighter';
-    const size = Math.max(14, vessel.layout.height * camera.s * 0.9);
+    const size = Math.max(14, vessel.layout.height * camera.scale * 0.9);
     context.globalAlpha = vessel.heat * 0.9;
     context.drawImage(sprites.glow, screenPoint.x - size, screenPoint.y - size, size * 2, size * 2);
     // streaks
@@ -741,10 +763,15 @@
     game.on('exploded', ({ vessel }) => {
       const active = game.vessel;
       if (active && vessel.body === active.body) {
-        Render.emitExplosion(vessel.body, vessel.r, vessel.v, Math.max(2, vessel.layout.height * 0.4));
+        Render.emitExplosion(
+          vessel.body,
+          vessel.position,
+          vessel.velocity,
+          Math.max(2, vessel.layout.height * 0.4),
+        );
       }
     });
-    game.on('soi', ({ vessel }) => {
+    game.on('sphere-change', ({ vessel }) => {
       if (vessel === game.vessel) {
         Render.clearParticles();
       }
@@ -764,13 +791,13 @@
       return;
     } // nothing burns on rails
     // move existing particles first, then add new ones at the current time
-    Render.updateParticles(frame.simDt, vessel.body, game.t);
+    Render.updateParticles(frame.simulationStep, vessel.body, game.time);
     if (!vessel.dead && frame.rate <= 4) {
-      Render.emitExhaust(vessel, frame.simDt, game.t);
+      Render.emitExhaust(vessel, frame.simulationStep, game.time);
     }
     for (const debrisVessel of game.debris) {
       if (!debrisVessel.dead && debrisVessel.body === vessel.body) {
-        Render.emitExhaust(debrisVessel, frame.simDt, game.t);
+        Render.emitExhaust(debrisVessel, frame.simulationStep, game.time);
       }
     }
   };
@@ -780,39 +807,41 @@
       return;
     }
     const body = vessel.body;
-    const pressure = FS.pressure(body, vessel.altitude);
+    const pressure = Flatspace.pressure(body, vessel.altitude);
     for (const nozzle of vessel.nozzles) {
       const enginePart = nozzle.part;
       if (!vessel.parts.includes(enginePart)) {
         continue;
       }
-      const partType = enginePart.def;
+      const partType = enginePart.type;
       // each engine pushes along its own axis; exhaust leaves from the bottom of its nozzle
       const nozzleDirection = vessel.toWorld(enginePart.axis);
-      const side = Vector.perp(nozzleDirection);
+      const side = Vector.perpendicular(nozzleDirection);
       const position = Vector.add(
-        vessel.r,
-        vessel.toWorld(Vector.sub(enginePart.c, Vector.scale(enginePart.axis, enginePart.len / 2))),
+        vessel.position,
+        vessel.toWorld(
+          Vector.subtract(enginePart.centreOffset, Vector.scale(enginePart.axis, enginePart.length / 2)),
+        ),
       );
       const power = nozzle.power;
-      const count = Math.ceil(timeStep * 120 * power * (enginePart.w > 2 ? 2 : 1));
+      const count = Math.ceil(timeStep * 120 * power * (enginePart.width > 2 ? 2 : 1));
       const spread = (1 - pressure) * 0.9 + 0.12;
       for (let particleIndex = 0; particleIndex < count; particleIndex++) {
         const speed = 40 + Math.random() * 40;
         const sideways = (Math.random() - 0.5) * 2 * spread * speed * 0.6;
         const velocity = Vector.add(
-          vessel.v,
+          vessel.velocity,
           Vector.add(Vector.scale(nozzleDirection, -speed), Vector.scale(side, sideways)),
         );
         const jitter = Math.random() * timeStep;
         Render.particles.push({
-          x: position.x + velocity.x * jitter - vessel.v.x * jitter,
-          y: position.y + velocity.y * jitter - vessel.v.y * jitter,
-          vx: velocity.x,
-          vy: velocity.y,
+          x: position.x + velocity.x * jitter - vessel.velocity.x * jitter,
+          y: position.y + velocity.y * jitter - vessel.velocity.y * jitter,
+          velocityX: velocity.x,
+          velocityY: velocity.y,
           life: 0,
           max: 0.25 + Math.random() * 0.35,
-          size: enginePart.w * (0.7 + Math.random() * 0.5),
+          size: enginePart.width * (0.7 + Math.random() * 0.5),
           grow: 2.5 + (1 - pressure) * 4,
           kind: nozzle.solid ? 'flame' : pressure < 0.05 ? 'blue' : 'flame',
         });
@@ -820,11 +849,11 @@
           Render.particles.push({
             x: position.x,
             y: position.y,
-            vx: vessel.v.x + (velocity.x - vessel.v.x) * 0.9 + (Math.random() - 0.5) * 6,
-            vy: vessel.v.y + (velocity.y - vessel.v.y) * 0.9 + (Math.random() - 0.5) * 6,
+            velocityX: vessel.velocity.x + (velocity.x - vessel.velocity.x) * 0.9 + (Math.random() - 0.5) * 6,
+            velocityY: vessel.velocity.y + (velocity.y - vessel.velocity.y) * 0.9 + (Math.random() - 0.5) * 6,
             life: 0,
             max: 1.0 + Math.random() * 1.8 * pressure,
-            size: enginePart.w * 1.1,
+            size: enginePart.width * 1.1,
             grow: 3 + 6 * pressure,
             kind: 'smoke',
           });
@@ -840,8 +869,8 @@
       Render.particles.push({
         x: position.x,
         y: position.y,
-        vx: velocity.x + Math.cos(angle) * speed,
-        vy: velocity.y + Math.sin(angle) * speed,
+        velocityX: velocity.x + Math.cos(angle) * speed,
+        velocityY: velocity.y + Math.sin(angle) * speed,
         life: 0,
         max: 0.4 + Math.random() * 0.9,
         size: size * (0.6 + Math.random()),
@@ -855,8 +884,8 @@
       Render.particles.push({
         x: position.x,
         y: position.y,
-        vx: velocity.x + Math.cos(angle) * speed,
-        vy: velocity.y + Math.sin(angle) * speed,
+        velocityX: velocity.x + Math.cos(angle) * speed,
+        velocityY: velocity.y + Math.sin(angle) * speed,
         life: 0,
         max: 2 + Math.random() * 4,
         size: size * 1.5,
@@ -877,30 +906,35 @@
       }
       const distanceSquared = particle.x * particle.x + particle.y * particle.y;
       const distance = Math.sqrt(distanceSquared);
-      const altitude = distance - body.R;
-      const airDensity = FS.density(body, altitude);
-      const gravityFactor = -body.mu / (distanceSquared * distance);
-      particle.vx += particle.x * gravityFactor * timeStep;
-      particle.vy += particle.y * gravityFactor * timeStep;
+      const altitude = distance - body.radius;
+      const airDensity = Flatspace.density(body, altitude);
+      const gravityFactor = -body.gravityParameter / (distanceSquared * distance);
+      particle.velocityX += particle.x * gravityFactor * timeStep;
+      particle.velocityY += particle.y * gravityFactor * timeStep;
       if (airDensity > 0) {
         const dragFactor = Math.min(1, airDensity * (particle.kind === 'smoke' ? 2.2 : 1.6) * timeStep);
-        const airVelocityX = -body.omega * particle.y;
-        const airVelocityY = body.omega * particle.x;
-        particle.vx += (airVelocityX - particle.vx) * dragFactor;
-        particle.vy += (airVelocityY - particle.vy) * dragFactor;
+        const airVelocityX = -body.angularVelocity * particle.y;
+        const airVelocityY = body.angularVelocity * particle.x;
+        particle.velocityX += (airVelocityX - particle.velocityX) * dragFactor;
+        particle.velocityY += (airVelocityY - particle.velocityY) * dragFactor;
       }
-      particle.x += particle.vx * timeStep;
-      particle.y += particle.vy * timeStep;
+      particle.x += particle.velocityX * timeStep;
+      particle.y += particle.velocityY * timeStep;
       if (
-        altitude < body.terrain.amp * 2.5 &&
-        distance < body.R + FS.surfaceHeight(body, FS.lonAt(body, Math.atan2(particle.y, particle.x), time))
+        altitude < body.terrain.amplitude * 2.5 &&
+        distance <
+          body.radius +
+            Flatspace.surfaceHeight(
+              body,
+              Flatspace.longitudeAt(body, Math.atan2(particle.y, particle.x), time),
+            )
       ) {
         // hit the ground: spread out sideways
         const localUp = { x: particle.x / distance, y: particle.y / distance };
-        const groundVelocityX = -body.omega * particle.y;
-        const groundVelocityY = body.omega * particle.x; // ground velocity
-        let relativeX = particle.vx - groundVelocityX;
-        let relativeY = particle.vy - groundVelocityY;
+        const groundVelocityX = -body.angularVelocity * particle.y;
+        const groundVelocityY = body.angularVelocity * particle.x; // ground velocity
+        let relativeX = particle.velocityX - groundVelocityX;
+        let relativeY = particle.velocityY - groundVelocityY;
         const normalSpeed = relativeX * localUp.x + relativeY * localUp.y;
         if (normalSpeed < 0) {
           relativeX -= localUp.x * normalSpeed;
@@ -915,8 +949,8 @@
             relativeX *= friction;
             relativeY *= friction;
           }
-          particle.vx = groundVelocityX + relativeX;
-          particle.vy = groundVelocityY + relativeY;
+          particle.velocityX = groundVelocityX + relativeX;
+          particle.velocityY = groundVelocityY + relativeY;
         }
         particle.x += localUp.x * 0.3;
         particle.y += localUp.y * 0.3;
@@ -930,7 +964,7 @@
   };
 
   function drawParticles(camera, body, time) {
-    const base = FS.bodyAbs(body, time);
+    const base = Flatspace.bodyAbsolutePosition(body, time);
     setScreen();
     context.save();
     // smoke first (normal blending), then flames (additive)
@@ -943,7 +977,7 @@
         }
         const screenPoint = worldToScreenPoint(camera, base.x + particle.x, base.y + particle.y);
         const lifeFraction = particle.life / particle.max;
-        const size = Math.max(1.5, (particle.size + particle.grow * particle.life) * camera.s);
+        const size = Math.max(1.5, (particle.size + particle.grow * particle.life) * camera.scale);
         if (
           screenPoint.x < -size ||
           screenPoint.y < -size ||
@@ -963,51 +997,59 @@
   // ---- Flight view ----
   Render.drawFlight = (game) => {
     const vessel = game.vessel;
-    const time = game.t;
-    const camera = game.cam;
+    const time = game.time;
+    const camera = game.camera;
     const currentBody = vessel.body;
     setScreen();
     // Sky
     const altitude = vessel.altitude;
-    let skyT = 1;
+    let spaceFraction = 1;
     let light = 1;
-    const localUp = Vector.norm(vessel.r);
+    const localUp = Vector.normalise(vessel.position);
     light = sunlight(localUp);
-    if (currentBody.atmo) {
-      skyT = FS.clamp(Math.pow(Math.max(altitude, 0) / currentBody.atmo.height, 0.55), 0, 1);
+    if (currentBody.atmosphere) {
+      spaceFraction = Flatspace.clamp(
+        Math.pow(Math.max(altitude, 0) / currentBody.atmosphere.height, 0.55),
+        0,
+        1,
+      );
     }
-    const sunsetK = currentBody.atmo
-      ? (1 - skyT) * Math.exp(-Math.pow(Vector.dot(localUp, FS.SUN_DIR) / 0.18, 2))
+    const sunsetAmount = currentBody.atmosphere
+      ? (1 - spaceFraction) * Math.exp(-Math.pow(Vector.dot(localUp, Flatspace.SUN_DIRECTION) / 0.18, 2))
       : 0;
-    const daylight = currentBody.atmo ? (1 - skyT) * light : 0;
+    const daylight = currentBody.atmosphere ? (1 - spaceFraction) * light : 0;
     const top = mix([6, 9, 20], [58, 118, 196], daylight);
-    const horizonColour = mix(mix([8, 12, 26], [140, 190, 236], daylight), [236, 132, 72], sunsetK * 0.8);
+    const horizonColour = mix(
+      mix([8, 12, 26], [140, 190, 236], daylight),
+      [236, 132, 72],
+      sunsetAmount * 0.8,
+    );
     const gradient = context.createLinearGradient(0, 0, 0, viewHeight);
-    gradient.addColorStop(0, toRgb(top));
-    gradient.addColorStop(1, toRgb(horizonColour));
+    gradient.addColorStop(0, colourToRGB(top));
+    gradient.addColorStop(1, colourToRGB(horizonColour));
     context.fillStyle = gradient;
     context.fillRect(0, 0, viewWidth, viewHeight);
     drawStars(camera, 1 - daylight * 1.15, true);
 
     // Bodies: farthest first
-    const order = FS.bodies
+    const order = Flatspace.bodies
       .slice()
       .sort(
         (first, second) =>
-          Vector.len(Vector.sub(FS.bodyAbs(second, time), camera)) -
-          Vector.len(Vector.sub(FS.bodyAbs(first, time), camera)),
+          Vector.length(Vector.subtract(Flatspace.bodyAbsolutePosition(second, time), camera)) -
+          Vector.length(Vector.subtract(Flatspace.bodyAbsolutePosition(first, time), camera)),
       );
     for (const body of order) {
-      drawBody(camera, body, time, { minPx: 2 });
+      drawBody(camera, body, time, { minPixels: 2 });
     }
 
     // When the ground is out of view, a soft glow at the bottom shows where it is
     {
-      const viewR = Math.hypot(viewWidth, viewHeight) / 2 / camera.s;
-      if (vessel.altitude - currentBody.terrain.amp * 2.5 > viewR) {
+      const viewRadius = Math.hypot(viewWidth, viewHeight) / 2 / camera.scale;
+      if (vessel.altitude - currentBody.terrain.amplitude * 2.5 > viewRadius) {
         setScreen();
-        const colour = currentBody.atmo ? currentBody.atmo.color : [150, 150, 150];
-        const strength = FS.clamp(1.2 - Math.log10(vessel.altitude / viewR) * 0.25, 0.25, 1);
+        const colour = currentBody.atmosphere ? currentBody.atmosphere.color : [150, 150, 150];
+        const strength = Flatspace.clamp(1.2 - Math.log10(vessel.altitude / viewRadius) * 0.25, 0.25, 1);
         const glowGradient = context.createLinearGradient(0, viewHeight, 0, viewHeight * 0.55);
         glowGradient.addColorStop(0, `rgba(${colour[0]},${colour[1]},${colour[2]},${0.28 * strength})`);
         glowGradient.addColorStop(1, `rgba(${colour[0]},${colour[1]},${colour[2]},0)`);
@@ -1017,9 +1059,9 @@
     }
 
     // Night darkening of the near surface
-    if (currentBody.atmo && light < 1 && altitude < currentBody.atmo.height * 2) {
+    if (currentBody.atmosphere && light < 1 && altitude < currentBody.atmosphere.height * 2) {
       setScreen();
-      context.fillStyle = `rgba(3,5,14,${(1 - light) * 0.55 * (1 - skyT * 0.6)})`;
+      context.fillStyle = `rgba(3,5,14,${(1 - light) * 0.55 * (1 - spaceFraction * 0.6)})`;
       context.fillRect(0, 0, viewWidth, viewHeight);
     }
 
@@ -1042,7 +1084,7 @@
       first[2] + (second[2] - first[2]) * fraction,
     ];
   }
-  function toRgb(colour) {
+  function colourToRGB(colour) {
     return `rgb(${colour[0] | 0},${colour[1] | 0},${colour[2] | 0})`;
   }
 
@@ -1050,51 +1092,51 @@
   const PATCH_COLORS = ['#55d6ff', '#ffb547', '#ff6fb1'];
 
   Render.drawMap = (game) => {
-    const time = game.t;
-    const camera = game.mapCam;
+    const time = game.time;
+    const camera = game.mapCamera;
     setScreen();
     context.fillStyle = '#05070f';
     context.fillRect(0, 0, viewWidth, viewHeight);
     drawStars(camera, 0.8, false);
 
     // Orbits and SOIs of bodies
-    for (const body of FS.bodies) {
+    for (const body of Flatspace.bodies) {
       if (!body.parent) {
         continue;
       }
-      const parentCentre = FS.bodyAbs(body.parent, time);
+      const parentCentre = Flatspace.bodyAbsolutePosition(body.parent, time);
       const screenPoint = worldToScreenPoint(camera, parentCentre.x, parentCentre.y);
       context.strokeStyle = 'rgba(150,170,210,0.22)';
       context.lineWidth = 1;
       context.beginPath();
-      context.arc(screenPoint.x, screenPoint.y, body.a * camera.s, 0, FULL_TURN);
+      context.arc(screenPoint.x, screenPoint.y, body.semiMajorAxis * camera.scale, 0, FULL_TURN);
       context.stroke();
-      const bodyCentre = FS.bodyAbs(body, time);
+      const bodyCentre = Flatspace.bodyAbsolutePosition(body, time);
       const bodyScreen = worldToScreenPoint(camera, bodyCentre.x, bodyCentre.y);
-      if (body.soi * camera.s > 6) {
+      if (body.sphereOfInfluence * camera.scale > 6) {
         context.setLineDash([4, 6]);
         context.strokeStyle = 'rgba(150,170,210,0.28)';
         context.beginPath();
-        context.arc(bodyScreen.x, bodyScreen.y, body.soi * camera.s, 0, FULL_TURN);
+        context.arc(bodyScreen.x, bodyScreen.y, body.sphereOfInfluence * camera.scale, 0, FULL_TURN);
         context.stroke();
         context.setLineDash([]);
       }
     }
-    for (const body of FS.bodies) {
-      drawBody(camera, body, time, { minPx: 3.5 });
+    for (const body of Flatspace.bodies) {
+      drawBody(camera, body, time, { minPixels: 3.5 });
     }
     // Labels
     setScreen();
     context.font = '600 12px "Saira Semi Condensed", "Arial Narrow", sans-serif';
     context.textAlign = 'center';
-    for (const body of FS.bodies) {
-      const bodyCentre = FS.bodyAbs(body, time);
+    for (const body of Flatspace.bodies) {
+      const bodyCentre = Flatspace.bodyAbsolutePosition(body, time);
       const bodyScreen = worldToScreenPoint(camera, bodyCentre.x, bodyCentre.y);
       context.fillStyle = 'rgba(214,224,245,0.85)';
       context.fillText(
         body.name.toUpperCase(),
         bodyScreen.x,
-        bodyScreen.y + Math.max(body.R * camera.s, 4) + 16,
+        bodyScreen.y + Math.max(body.radius * camera.scale, 4) + 16,
       );
     }
 
@@ -1102,14 +1144,17 @@
     if (!vessel.dead && !vessel.landed) {
       drawPatches(camera, game.patches, time, false);
       if (game.node && game.nodePatches) {
-        drawPatches(camera, game.nodePatches, time, true, game.node.originT);
+        drawPatches(camera, game.nodePatches, time, true, game.node.originTime);
       }
     }
     // Node marker
     if (game.node) {
       const node = game.node;
       // A node on a later patch is drawn around where its body will be when that patch starts.
-      const position = Vector.add(FS.bodyAbs(node.body, node.originT ?? time), node.r);
+      const position = Vector.add(
+        Flatspace.bodyAbsolutePosition(node.body, node.originTime ?? time),
+        node.position,
+      );
       const screenPoint = worldToScreenPoint(camera, position.x, position.y);
       context.save();
       context.translate(screenPoint.x, screenPoint.y);
@@ -1123,7 +1168,7 @@
     }
     // Vessel
     if (!vessel.dead) {
-      const vesselPosition = Vector.add(FS.bodyAbs(vessel.body, time), vessel.r);
+      const vesselPosition = Vector.add(Flatspace.bodyAbsolutePosition(vessel.body, time), vessel.position);
       const screenPoint = worldToScreenPoint(camera, vesselPosition.x, vesselPosition.y);
       context.save();
       context.translate(screenPoint.x, screenPoint.y);
@@ -1143,7 +1188,7 @@
     }
   };
 
-  function drawPatches(camera, patches, time, planned, firstRef) {
+  function drawPatches(camera, patches, time, planned, firstReferenceTime) {
     if (!patches) {
       return;
     }
@@ -1151,10 +1196,10 @@
       const orbit = patch.orbit;
       // Frame: the current SOI body is drawn where it is now; later patches
       // are drawn around where their body will be when the patch starts.
-      const tRef = index === 0 ? (firstRef ?? time) : patch.tStart;
-      const origin = FS.bodyAbs(patch.body, tRef);
-      const startTime = Math.max(patch.tStart, index === 0 ? time : patch.tStart);
-      const points = FS.sampleOrbit(orbit, startTime, patch.tEnd, 360);
+      const referenceTime = index === 0 ? (firstReferenceTime ?? time) : patch.startTime;
+      const origin = Flatspace.bodyAbsolutePosition(patch.body, referenceTime);
+      const startTime = Math.max(patch.startTime, index === 0 ? time : patch.startTime);
+      const points = Flatspace.sampleOrbit(orbit, startTime, patch.endTime, 360);
       context.strokeStyle = PATCH_COLORS[index % PATCH_COLORS.length];
       context.lineWidth = planned ? 1.6 : 2;
       context.globalAlpha = planned ? 0.85 : 1;
@@ -1174,7 +1219,13 @@
         const screenPoint = worldToScreenPoint(camera, origin.x, origin.y);
         context.strokeStyle = 'rgba(255,255,255,0.3)';
         context.beginPath();
-        context.arc(screenPoint.x, screenPoint.y, Math.max(patch.body.R * camera.s, 4), 0, FULL_TURN);
+        context.arc(
+          screenPoint.x,
+          screenPoint.y,
+          Math.max(patch.body.radius * camera.scale, 4),
+          0,
+          FULL_TURN,
+        );
         context.stroke();
       }
       if (planned) {
@@ -1183,20 +1234,24 @@
       // Ap / Pe markers
       const body = patch.body;
       const mark = (trueAnomaly, label, value) => {
-        const dtTo = FS.timeToNu(orbit, trueAnomaly, startTime);
-        if (!isFinite(dtTo) || startTime + dtTo > patch.tEnd) {
+        const timeUntil = Flatspace.timeToTrueAnomaly(orbit, trueAnomaly, startTime);
+        if (!isFinite(timeUntil) || startTime + timeUntil > patch.endTime) {
           return;
         }
-        const state = FS.orbitState(orbit, startTime + dtTo);
-        const screenPoint = worldToScreenPoint(camera, origin.x + state.r.x, origin.y + state.r.y);
-        marker(screenPoint, label, FS.fmtDist(value));
+        const state = Flatspace.orbitState(orbit, startTime + timeUntil);
+        const screenPoint = worldToScreenPoint(
+          camera,
+          origin.x + state.position.x,
+          origin.y + state.position.y,
+        );
+        marker(screenPoint, label, Flatspace.formatDistance(value));
       };
-      if (orbit.e > 1e-4) {
-        if (orbit.e < 1) {
-          mark(Math.PI, 'Ap', orbit.ap - body.R);
+      if (orbit.eccentricity > 1e-4) {
+        if (orbit.eccentricity < 1) {
+          mark(Math.PI, 'Ap', orbit.apoapsis - body.radius);
         }
-        if (orbit.pe > body.R * 0.2) {
-          mark(0, 'Pe', orbit.pe - body.R);
+        if (orbit.periapsis > body.radius * 0.2) {
+          mark(0, 'Pe', orbit.periapsis - body.radius);
         }
       }
       const end = points[points.length - 1];
@@ -1211,7 +1266,7 @@
         marker(
           screenPoint,
           label,
-          FS.fmtTime(patch.tEnd - time),
+          Flatspace.formatTime(patch.endTime - time),
           patch.end === 'impact' ? '#ff6b5a' : '#c7d6ff',
         );
       }
@@ -1234,5 +1289,5 @@
   }
 
   // The active renderer until main.js picks one (WebGL2 when available).
-  FS.Renderer = Render;
+  Flatspace.Renderer = Render;
 })();

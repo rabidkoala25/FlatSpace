@@ -1,6 +1,6 @@
 // thy will hath been done. edit thy png then run thy code once more. 
-FS.SPRITES = FS.SPRITES || {};
-FS.SPRITES['bulwark'] = {
+Flatspace.SPRITES = Flatspace.SPRITES || {};
+Flatspace.SPRITES['bulwark'] = {
   "legend": {
     ".": null,
     "a": [

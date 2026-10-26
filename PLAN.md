@@ -50,7 +50,7 @@ js/vessel.js        a flying craft: forces, fuel, staging, landing, crashing; re
 js/sim.js           game state, the event bus, stepping craft and debris (physics or on rails)
 js/warp.js          time warp rates and limits, warping to a time
 js/nodes.js         maneuver nodes on any patch of the predicted path
-js/render.js        the Canvas 2D renderer (FS.Renderer interface): flight, map, particles
+js/render.js        the Canvas 2D renderer (Flatspace.Renderer interface): flight, map, particles
 js/hud.js           flight instruments: attitude dial, readouts, stage list
 js/editor.js        the Vehicle Assembly hangar
 js/input.js         keyboard, mouse and touch (including pinch zoom)
@@ -59,7 +59,9 @@ tests/              headless checks: node tests/run.js (npm install once for the
 tools/roadmap.js    redraws docs/roadmap.svg (the README's roadmap) from the status table below
 ```
 
-Simulation code (`data/`, `save.js` to `nodes.js`) never touches the page. It reports what happens through events (`staged`, `touchdown`, `exploded`, `soi`, `message`), which the renderer and `main.js` listen to. The tests load exactly these files in Node.
+**Names in the code are plain English words** (Oct 2026): `part.length`, `vessel.position`, `body.radius`, `orbit.eccentricity`, `camera.scale`, `Flatspace.formatDistance`, and the same in the shaders, the HTML ids and the CSS classes. Short names and abbreviations (`len`, `r`, `R`, `e`, `cam.s`, `FS`) were replaced everywhere in v0.8.0. Saves made before then still load: `js/save.js` renames the old fields (format version 4). New code keeps to this: a name says what the thing is, and `x`/`y` are only used for coordinates.
+
+Simulation code (`data/`, `save.js` to `nodes.js`) never touches the page. It reports what happens through events (`staged`, `touchdown`, `exploded`, `sphere-change`, `message`), which the renderer and `main.js` listen to. The tests load exactly these files in Node.
 
 Added by the roadmap:
 
@@ -454,7 +456,7 @@ Each step is meant to fit in **one session within a single 5-hour usage limit on
    - ticks the step in the status table below, ticks any finished rows in `PARTS.md`, and adds a line to the changelog at the end of this file;
    - if the step added or changed a part: adds or updates its entry in `art/sprite-notes.js`, so `sprite-guide.html` covers it (`tests/test_sprite_notes.js` fails otherwise);
    - from E4 on, if the step added parts or features: notes in its Result which tech node each belongs in and ideas for contracts that use it, for the next "Tech and contracts" step (section 4.4);
-   - bumps `FS.VERSION` in `js/util.js` and the matching `?v=` tags on every script and style link in `index.html` (so browsers never mix cached old files with new ones; the page test checks they match);
+   - bumps `Flatspace.VERSION` in `js/util.js` and the matching `?v=` tags on every script and style link in `index.html` (so browsers never mix cached old files with new ones; the page test checks they match);
    - runs `node tools/roadmap.js` to redraw the roadmap graphic in the README;
    - republishes the playable page and hands back the updated project.
 4. If a session runs short, unfinished Must items move to the top of the next step. The game must run at the end of every session, so nothing is left half-built.
@@ -635,7 +637,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 - **Second half (v0.2.0):**
   - **Split:** `main.js` split into `sim.js`, `warp.js`, `nodes.js` and `input.js`.
   - **Events:** craft report events instead of calling the page.
-  - **Renderer interface:** `FS.Renderer`, which `main.js` checks at start-up.
+  - **Renderer interface:** `Flatspace.Renderer`, which `main.js` checks at start-up.
   - **Maneuver nodes:** they survive SOI changes and can be placed on any patch.
   - **Debris:** kept, on rails, during time warp.
   - **Touch:** pinch zoom in flight and the map.
@@ -739,7 +741,7 @@ The tech tree arrives in E4 and contracts in F2. Everything after that must fit 
 - **Physics change brought forward from C4:**
   - The overlay showed the drag-only model gave fins almost no straightening force at small angles; with SAS off, every sample rocket turned away from the airflow.
   - Each part now also feels a sideways push across it. On bodies it grows with the square of the angle; fins act like small wings and push back from the first degree.
-  - Flight and the editor share one function (`FS.partAero`), so the overlay matches how the craft flies.
+  - Flight and the editor share one function (`Flatspace.partAerodynamics`), so the overlay matches how the craft flies.
   - Now a finned rocket straightens itself and a finless one doesn't, matching its centre of pressure.
 - **Sample change:** finned rockets now fall nose-first and fast. The Hopper went 33 km up and came down too fast for its parachute, so it now uses the short tank and makes a 2.4 km hop.
 - **Tests:** 8 files, about 60 new checks. They cover mirrored boosters and their staging, tilted fins touching the tank, offset with its twin, overlaps refused, save and load of angles and mirror links, the centre of pressure moving behind the centre of mass with fins, and flight agreeing. The page test builds the done-when rocket with pointer events and keys, then Ctrl+Z reverses every step and Ctrl+Y restores them.
@@ -836,7 +838,7 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 
 **Result (v0.7.0):** done, including the stretch (a pixel-size setting).
 - **One pixel grid:** world art pixels are (1/16)·2^k m. k is the smallest value that keeps an art pixel at least the chosen pixel size on screen, and parts, terrain, planets and particles all share it, so pixels of different sizes never sit side by side. The setting is in the Esc menu: Fine (1.5 CSS px, the default), Medium (2) or Chunky (3). It is saved under a new versioned key, `flatspace.settings`.
-- **WebGL2 renderer (`js/render-gl.js`)**, behind the same `FS.Renderer` interface:
+- **WebGL2 renderer (`js/render-gl.js`)**, behind the same `Flatspace.Renderer` interface:
   - **sprite batcher and sharp-pixel shader (`js/gl.js`):** a 2048² atlas filled on demand. Each art pixel is a flat colour, smoothed over exactly one screen pixel at its edges, at any angle. Sprites fade by Bayer dither, not transparency;
   - **planet meshes:** a full-screen shader per body, limited to its screen area, works out each art pixel's height and depth. It draws ocean (with a foam line), the surface layer (grass with tufts, sand, rock, snow), soil, rock strata, the deep interior seen from afar, the atmosphere rim, and a dithered night side. Heights come from a 4096-sample texture for each body, or, close to the ground, a 1024-sample window around the camera refreshed every frame, worked out in the ground's own frame so nothing jitters far from the planet's centre;
   - **particle buffer:** exhaust, smoke and explosions are pixel puffs coloured from palette ramps. The particle simulation stays in `render.js` and is shared by both renderers;
@@ -871,7 +873,7 @@ All steps follow the art rules in section 1.5: sprites rotate freely, and their 
 
 **Done when:** the gallery shows every part rotating under 4 sun angles. **Checkpoint:** you review the gallery and give direction before B3 starts.
 
-**How B2 is being done (Oct 2026):** the user is coding it from a session-by-session guide (sprite format and converter, profile generator and tank caps, lighting from the sun, then the rest over half term), drawing the sprites in Pixilart. One change from the Must list: lighting is worked out in JavaScript when a sprite is made, one lit copy per sun angle (32 steps), not in the shader; moving it into the shader is optional later. Another change: tanks are drawn whole in Pixilart, one per width, and `FS.Sprites.tank()` stretches them by repeating the middle rows between the caps (`TANK_CAPS` in `js/sprites.js` says where each cap ends).
+**How B2 is being done (Oct 2026):** the user is coding it from a session-by-session guide (sprite format and converter, profile generator and tank caps, lighting from the sun, then the rest over half term), drawing the sprites in Pixilart. One change from the Must list: lighting is worked out in JavaScript when a sprite is made, one lit copy per sun angle (32 steps), not in the shader; moving it into the shader is optional later. Another change: tanks are drawn whole in Pixilart, one per width, and `Flatspace.Sprites.tank()` stretches them by repeating the middle rows between the caps (`TANK_CAPS` in `js/sprites.js` says where each cap ends).
 
 #### B3 · The world up close
 **Goal:** ground, sea and the launch site look as good as the rockets.
@@ -1024,7 +1026,7 @@ See the table in section 1.3 for what changes.
 
 **Done when:** a rocket without fins flips in the lower atmosphere and the same rocket with fins flies straight; drag peaks near Mach 1; a capsule floats after splashdown.
 
-*Already in place from A3:* every part feels a sideways push across it, with fins pushing back like small wings (`FS.partAero`, shared by flight and the editor overlay). C4 replaces that with proper lift curves and stall, and adds Mach effects and shielding.
+*Already in place from A3:* every part feels a sideways push across it, with fins pushing back like small wings (`Flatspace.partAerodynamics`, shared by flight and the editor overlay). C4 replaces that with proper lift curves and stall, and adds Mach effects and shielding.
 
 #### C5 · Orbit precision and prediction
 **Goal:** orbits that stay exactly where they should.
@@ -1856,11 +1858,12 @@ Touch devices get on-screen buttons for rotate, throttle and stage; A0 adds pinc
 - **Plan revision 8**: new step E10, "Terrain detail" (realistic landforms, strata, collidable ground scatter and deep parallax layers, the idea behind the Parallax mod); new section 4.4, which says every new part and feature gets a tech-tree node and contracts of its own, with a "Tech and contracts" step closing each phase (E11, F11, G9, H10) and automated checks; tech nodes and contracts are data that packs can extend; 63 steps in total.
 - **Plan revision 7**: new Phase H, "Beyond KSP" (section 2.8): living astronauts with ragdolls (H1), walkable interiors (H2), hands-on objects and tools (H3), damage and repairs (H4), life on board and spin gravity (H5), self-landing rockets (H6), launch and recovery infrastructure (H7), tethers, solar sails and mass drivers (H8), and a flight recorder with replays (H9); 58 steps in total. Original parts added to `PARTS.md`.
 - **v0.3.0 (A1)**: part tree; per-engine thrust lines; per-part, angle-dependent drag; ground contact on every part; decoupling anywhere; tree-aware staging and Δv; save format 3; Side Decoupler part and Twin Boosters sample; roadmap graphic in the README.
+- **v0.8.0 (during B2)**: plain-English names everywhere: variables, object fields, functions on `Flatspace` (was `FS`), shader uniforms and locals, HTML ids, CSS classes and CSS variables. Save format 4 renames the old saved fields (`rot`, `len`, `sym`, `chuteAlt`), the surface node (`srf` → `surface`) and the side decoupler's id (`radec` → `sidedecoupler`); older saves and craft files still load.
 - **v0.7.0 (B1)**: WebGL2 renderer with one shared art-pixel grid, sharp-pixel sprite shader, atlas and batcher (`js/gl.js`, `js/render-gl.js`); 53-colour palette with dithering (`art/palette.js`); banded, dithered sky with pixel stars and galaxy band; per-pixel planet shader (ocean, surface, soil, strata, atmosphere rim, night side) for flight and map; temporary art baked to palette pixels; pixel puffs for particles; overlay canvas for orbits and labels; Canvas 2D fallback with notice; pixel-size setting (`flatspace.settings`); `art.html` gallery; `tests/test_gl.js`.
 - **v0.6.2 fix**: engines that turn a craft sitting on the ground now tip it over once their turning effect beats what its weight can hold (before, a landed craft ignored turning completely unless it had enough thrust to lift off). While it turns on the ground, a simple contact model lets it pivot, roll and bounce, a part hitting the ground too fast breaks the craft, and it comes to rest at whatever angle it ends up. C1 replaces this with full rigid-body contact.
 - **v0.6.1 (A4 follow-up)**: side parts line up with sloped faces; floating parts in the hangar (left behind, or launched beside the craft); part pop-ups that open on select, pin, drag and point at their part, in the hangar and in flight; settings and actions mid-flight (thrust limit, gimbal, engine on/off, crossfeed, decouple, chute height and arming); `partToScreen` / `screenToPart` in the renderer; `Vessel.act`. Later parts of this request added to B5, C3, D2, D3, D5 and E5.
 - **v0.6.0 (A4)**: stretchable tanks in six widths with handles and 21 presets; one tank density (tank lengths moved to the 0.25 m grid); five tank looks; part settings panel (fuel level, thrust limit, gimbal, crossfeed, parachute height, fires in staging); staging editor with chips, custom staging saved on parts; craft files (download, open, copy and paste as text); `js/staging-editor.js`, `js/part-panel.js`.
-- **v0.5.0 (A3)**: tool rail; mirror symmetry with linked twins; rotate and flip; offset with snap; undo/redo (100 steps); Alt-click copy; subassemblies tab; centre of mass, thrust and pressure overlays with warnings; Swept Fin part; sideways force on parts and wing-like fins (`FS.partAero`), brought forward from C4; Hopper sample uses the short tank.
+- **v0.5.0 (A3)**: tool rail; mirror symmetry with linked twins; rotate and flip; offset with snap; undo/redo (100 steps); Alt-click copy; subassemblies tab; centre of mass, thrust and pressure overlays with warnings; Swept Fin part; sideways force on parts and wing-like fins (`Flatspace.partAerodynamics`), brought forward from C4; Hopper sample uses the short tank.
 - **v0.4.0 fix**: script and style links carry `?v=<version>`, after a browser served a cached old `editor.js` with the new page and the hangar came up blank.
 - **v0.4.0 (A2)**: drag-and-drop hangar: tray with tabs and hover cards, stack and surface snapping, overlap checks, carrying subassemblies, drop on tray to remove, pan and zoom, touch long-press and pinch, live stats while dragging, re-root; `js/build.js`.
-- **v0.2.0 (A0 complete)**: simulation split from the page (`sim.js`, `warp.js`, `nodes.js`, `input.js`) with events; renderer interface (`FS.Renderer`); maneuver nodes survive SOI changes and can go on any patch; debris kept on rails; pinch zoom; `?debug` start in orbit.
+- **v0.2.0 (A0 complete)**: simulation split from the page (`sim.js`, `warp.js`, `nodes.js`, `input.js`) with events; renderer interface (`Flatspace.Renderer`); maneuver nodes survive SOI changes and can go on any patch; debris kept on rails; pinch zoom; `?debug` start in orbit.
