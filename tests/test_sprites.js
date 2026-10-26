@@ -160,11 +160,29 @@ let goldTop = false;
 for (let column = 0; column < goldBar.width; column++) if (same(pixelColour(goldLit, column, 1).slice(0, 3), Palette.ramps.gold[4])) goldTop = true;
 check(!goldTop, 'shiny highlight only visible on shiny surface (ie. metal)');
 
-const engine = Sprites.profile({ id: 'e', length: 1, widestHalfWidth: 0.625, halfWidthAt: () => 0.625, rampName: 'metal', tone: 4});
+const engine = Sprites.profile({ id: 'e', length: 1, widestHalfWidth: 0.625, halfWidthAt: () => 0.625, rampName: 'metal', tone: 2}); // nozzles are drawn dark
 const firing = Sprites.light(engine, 0, 1, 1, 1);
-check(same(pixelColour(firing, 10, 15).slice(0, 3), Palette.ramps.orange[5]), "a burning engine's nozzle glows orange");
-check(!same(pixelColour(firing, 10, 2).slice(0, 3), Palette.ramps.orange[5]), 'the rest of the engine doesnt glow');
+const isOrange = (colour) => Palette.ramps.orange.some((orange) => same(orange, colour));
+check(isOrange(pixelColour(firing, 10, 14).slice(0, 3)), "a burning engine's nozzle glows orange");
+check(!isOrange(pixelColour(firing, 0, 14).slice(0, 3)), 'the outline of the nozzle stays dark');
+check(!isOrange(pixelColour(firing, 10, 2).slice(0, 3)), 'the rest of the engine doesnt glow');
 
+// zoom tests
+
+// 4x4 metal test
+const square = Sprites.parse('square', {legend: {'.': null, o: ['metal', 1], m: ['metal', 4]}, rows: [
+    'oooo',
+    'ommo',
+    'ommo',
+    'oooo'
+]});
+const halfSquare = Sprites.halve(square);
+
+check(halfSquare.width === 2 && halfSquare.height ===2, 'halving 4x4 gives 2x2');
+check(halfSquare.solid.every((solid) => solid === 1), 'a solid is solid');
+check(halfSquare.tone.every((tone) => tone === 1), 'outline stays dark after halving');
+
+//odd block rounging testing
 
 //das it
 

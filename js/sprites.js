@@ -230,18 +230,23 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
         const sun3DAcross = sunAcross / sunLength, sun3DAlong = sunAlong / sunLength, sun3DOut = tilt / sunLength;
         const metalRamp = rampNumber('metal');
         const orangeRamp = rampNumber('orange');
-        const nozzleStartRow = Math.floor(sprite.height * 0.75);
+        const nozzleStartRow = Math.floor(sprite.height * 0.8); // the bottom fifth of an engine is its nozzle
         const litRamp = sprite.ramp.slice();
         const litTone = sprite.tone.slice();
+        // a pixel on the edge of the sprite (next to a see-through pixel) is part of its outline
+        const isSolid = (column, rowNumber) => column >= 0 && rowNumber >= 0 && column < sprite.width && rowNumber < sprite.height && sprite.solid[rowNumber * sprite.width + column] === 1;
+        const isOutline = (column, rowNumber) => !(isSolid(column - 1, rowNumber) && isSolid(column + 1, rowNumber) && isSolid(column, rowNumber - 1) && isSolid(column, rowNumber + 1));
 
         for (let rowNumber = 0; rowNumber < sprite.height; rowNumber++) {
             for (let column = 0; column < sprite.width; column++) {
                 const pixel = rowNumber * sprite.width + column;
                 if (!sprite.solid[pixel]) continue;
-                if (glow > 0 && rowNumber >= nozzleStartRow) {
-                    // tip of engine nozzle glows
+                if (glow > 0 && rowNumber >= nozzleStartRow && sprite.tone[pixel] <= 3 && !isOutline(column, rowNumber)) {
+                    // the nozzle (the dark pixels low on the engine) glows, hottest at the exit;
+                    // the outline stays dark so the shape still shows
+                    const heat = (rowNumber - nozzleStartRow + 1) / (sprite.height - nozzleStartRow); // just above 0 at the top of the nozzle, 1 at the exit
                     litRamp[pixel] = orangeRamp;
-                    litTone[pixel] = Math.min(toneCount(orangeRamp) - 1, 2 + Math.round(glow * 3)); // change for glow brightness
+                    litTone[pixel] = FS.clamp(1 + Math.round(heat * glow * 4), 0, toneCount(orangeRamp) - 1); // 1 and 4 set how dim and how bright it gets
                     continue;
                 }
 
@@ -262,6 +267,8 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
     }
 
     // -------- zoomed out sprites
+    // basically halves the sprite at different levels of zoom
+    // 4x4 -> 2x2 -> 1x1 etc
 
     function halve(sprite) {
         const width = Math.ceil(sprite.width / 2);
@@ -269,9 +276,79 @@ FS.SPRITES = FS.SPRITES || {}; // the drawn sprites from art/sprites/ go here
         const half = blankSprite(sprite.id + '-half', width, height);
         const outlineRamp = new Int16Array(width * height).fill(-1);
         const outlineTone = new Uint8Array( width * height);
-        
+
+        const isSolid = (column, row) => column >= 0 && row >= 0 && column < sprite.width && row < sprite.height && sprite.solid[row * sprite.width + column] === 1;
+        const isOutline = (column, row) => isSolid(column, row) && !(isSolid(column - 1, row) && isSolid(column + 1, row) && isSolid(column, row - 1) && isSolid(column, row + 1));
+// we implement a democracy among our pixels, letting them vote for who's the most popular
+        for (let row = 0; row < height; row++) {
+            for (let column = 0; column < width; column++) {
+                const votes = new Map();
+                let pixelsInBlock = 0, solidPixels = 0, acrossTotal = 0, alongTotal = 0;
+                const halfPixel = row * width + column;
+
+                for (const [stepAcross, stepDown] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+                    const sourceColumn = column * 2 + stepAcross;
+                    const sourceRow = row * 2 + stepDown;
+                    if (sourceColumn >= sprite.width || sourceRow >= sprite.height) continue;
+                    pixelsInBlock++;
+                    if (!isSolid(sourceColumn, sourceRow)) continue;
+
+                    const pixel = sourceRow * sprite.width + sourceColumn;
+                    solidPixels++;
+
+                    const colour = sprite.ramp[pixel] *256 + sprite.tone[pixel];
+                    votes.set(colour, (CountQueuingStrategy.get(colour) || 0) +1);
+
+                    acrossTotal += sprite.normalAcross[pixel];
+                    alongTotal += sprite.normalAlong[pixel];
+
+                    const darkerOutline = outlineRamp[halfPixel] < 0 || sprite.tone[pixel] < outlineTone[halfPixel];
+
+                    if (isOutline(sourceColumn, sourceRow) && darkerOutline) {
+                        outlineRamp[halfPixel] = sprite.ramp[pixel];
+                        outlineTone[halfPixel] = sprite.tone[pixel];
+
+                    }
+                }
+                if (solidPixels * 2 < pixelsInBlock) continue;
+
+                let bestColour = -1, bestVotes = 0;
+                for (const [colour, count] of votes) {
+                    if (count > bestVotes || (count === bestVotes && colour%256 <bestColour%256)) {
+                        bestColour = colour;
+                        bestVotes = count; 
+                    }
+                }
+
+                half.solid[halfPixel] = 1;
+                half.ramp[halfPixel] = Math.floor(bestColour/256);
+                half.tone[halfPixel] = bestColour % 256;
+                half.normalAcross[halfPixel] = Math.round(acrossTotal/solidPixels);
+                half.normalAlong[halfPixel] = Math.round(alongTotal / solidPixels);
+
+
+            }
+        }
+
+        for (let row = 0; row < height; row++) {
+            for (let column = 0; column < width; column++) {
+                const halfPixel = row * width + column;
+                if (!half.solid[halfPixel] || outlineRamp[halfPixel] < 0) continue;
+                
+                const solidAt = (otherColumn, otherRow) => otherColumn >= 0 && otherRow >= 0&&otherColumn<width && otherRow < height && half.solid[otherRow*width + otherColumn] === 1;
+                const onEdge = !(solidAt(column=1, row) && solidAt(column + 1, row) && solidAt(column, row -1) && solidAt(column, row +1));
+
+                if (onEdge) {
+                    half.ramp[halfPixel] = outlineRamp[halfPixel];
+                    half.tone[halfPixel] = outlineTone[halfPixel];
+                }
+            }
+        }
+        return half
     }
 
-    FS.Sprites = {PIXELS_PER_METRE, RAMP_NAMES, SKINS, parse, profile, tank, applySkin, toImage, light };
+    
+
+    FS.Sprites = {PIXELS_PER_METRE, RAMP_NAMES, SKINS, parse, profile, tank, applySkin, toImage, light, halve };
 
 })();
